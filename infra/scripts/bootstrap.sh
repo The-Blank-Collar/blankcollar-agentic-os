@@ -30,11 +30,20 @@ else
   ok ".env already exists"
 fi
 
-# 3. Pull images
-say "Pulling images (this is faster on subsequent runs)"
-docker compose pull
+# 3. Pull images that come from a registry (postgres, qdrant, …) — skip
+#    services that build locally so we don't fail with "pull access denied".
+#    --ignore-buildable is supported by docker compose 2.22+; if older, we
+#    silently skip the pull and let `up --build` handle everything.
+say "Pulling registry images"
+if ! docker compose pull --ignore-buildable 2>/dev/null; then
+  warn "skipping pull (older docker compose without --ignore-buildable)"
+fi
 
-# 4. Up
+# 4. Build local images (gbrain, paperclip, hermes, openclaw, email-ingest)
+say "Building local images (this is the slow step on first run; minutes, not seconds)"
+docker compose build
+
+# 5. Up
 say "Starting stack"
 docker compose up -d
 
