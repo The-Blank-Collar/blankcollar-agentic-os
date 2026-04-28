@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Question or discussion
+    url: https://github.com/The-Blank-Collar/blankcollar-agentic-os/discussions
+    about: For open-ended questions, ideas, or "is this a good fit?" — start a discussion instead of an issue.
+  - name: 📚 Read the docs first
+    url: https://github.com/The-Blank-Collar/blankcollar-agentic-os/tree/main/docs
+    about: ARCHITECTURE, GOAL_FIRST, ROLES, COMPANY_BRAIN, ROADMAP, FAQ — most "how do I…" questions are answered there.
+  - name: 🔐 Security report
+    url: https://github.com/The-Blank-Collar/blankcollar-agentic-os/security/advisories/new
+    about: Found a vulnerability? Please report privately, not in a public issue.

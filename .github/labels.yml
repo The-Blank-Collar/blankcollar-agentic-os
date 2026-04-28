@@ -1,0 +1,77 @@
+# Suggested label set. Apply manually in GitHub Settings → Labels,
+# or run a label-sync action against this file.
+- name: bug
+  color: d73a4a
+  description: Something is broken
+- name: feature
+  color: 0e8a16
+  description: New capability
+- name: enhancement
+  color: a2eeef
+  description: Improvement to an existing capability
+- name: docs
+  color: 0075ca
+  description: Documentation only
+- name: question
+  color: cc317c
+  description: Open question, not a bug or feature
+- name: infra
+  color: 5319e7
+  description: Docker, scripts, repo plumbing
+- name: ci
+  color: 5319e7
+  description: GitHub Actions, lint, schema checks
+- name: devx
+  color: c5def5
+  description: Developer experience
+- name: security
+  color: b60205
+  description: Security-relevant
+- name: refactor
+  color: cfd3d7
+  description: Internal restructuring with no user-visible change
+- name: chore
+  color: cfd3d7
+  description: Housekeeping
+- name: deps
+  color: 0366d6
+  description: Dependency updates (Dependabot)
+- name: docker
+  color: 0db7ed
+  description: Docker / Compose / image
+- name: phase-0
+  color: ededed
+  description: Groundwork
+- name: phase-1
+  color: ededed
+  description: Memory layer (gbrain)
+- name: phase-2
+  color: ededed
+  description: Paperclip orchestrator
+- name: phase-3
+  color: ededed
+  description: Real workforce agents
+- name: phase-4
+  color: ededed
+  description: Goal Command Centre
+- name: phase-5
+  color: ededed
+  description: Intelligence layer
+- name: phase-6
+  color: ededed
+  description: Auth & multi-tenancy
+- name: phase-7
+  color: ededed
+  description: Payments & onboarding
+- name: phase-8
+  color: ededed
+  description: Public launch
+- name: good-first-issue
+  color: 7057ff
+  description: Approachable for newcomers
+- name: help-wanted
+  color: 008672
+  description: Looking for contributors
+- name: ignore-for-release
+  color: 333333
+  description: Excluded from auto-generated release notes
