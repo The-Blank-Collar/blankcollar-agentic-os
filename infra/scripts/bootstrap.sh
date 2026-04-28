@@ -66,11 +66,18 @@ ok "All local images present"
 # 5. Wait for healthy. For services with no in-container healthcheck
 #    (e.g. qdrant — see docker-compose.yml note), accept "running" as
 #    good enough; downstream services have their own retries.
+#
+# Format: "container_name:max_wait_seconds". paperclip-real needs longer
+# because its first-boot `npx paperclipai@latest` fetch is slow.
 say "Waiting for services to become healthy"
-for service in bc_postgres bc_qdrant bc_gbrain bc_hermes bc_openclaw bc_paperclip bc_paperclip_real bc_email_ingest; do
+for entry in bc_postgres:60 bc_qdrant:60 bc_gbrain:60 bc_hermes:60 \
+             bc_openclaw:60 bc_paperclip:90 bc_paperclip_real:300 \
+             bc_email_ingest:60; do
+  service=${entry%:*}
+  max_wait=${entry##*:}
   printf "   %s " "$service"
   status=""
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "$max_wait"); do
     status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || true)
     if [ "$status" = "healthy" ]; then
       printf "\033[1;32mhealthy\033[0m\n"
@@ -90,7 +97,9 @@ for service in bc_postgres bc_qdrant bc_gbrain bc_hermes bc_openclaw bc_papercli
   done
   if [ "$status" != "healthy" ]; then
     err "$service did not become healthy in time"
-    docker compose logs --tail=80 "${service#bc_}"
+    # Use the container name directly with `docker logs` — avoids
+    # the bc_ prefix / underscore-vs-dash service-name conversion bug.
+    docker logs --tail=80 "$service" || true
     exit 1
   fi
 done
