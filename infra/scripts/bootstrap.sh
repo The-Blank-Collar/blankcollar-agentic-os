@@ -30,21 +30,16 @@ else
   ok ".env already exists"
 fi
 
-# 3. Pull images that come from a registry (postgres, qdrant, …) — skip
-#    services that build locally so we don't fail with "pull access denied".
-#    --ignore-buildable is supported by docker compose 2.22+; if older, we
-#    silently skip the pull and let `up --build` handle everything.
-say "Pulling registry images"
-if ! docker compose pull --ignore-buildable 2>/dev/null; then
-  warn "skipping pull (older docker compose without --ignore-buildable)"
-fi
-
-# 4. Build local images (gbrain, paperclip, hermes, openclaw, email-ingest)
-say "Building local images (this is the slow step on first run; minutes, not seconds)"
+# 3. Build local images (gbrain, paperclip, hermes, openclaw, email-ingest).
+#    First run is slow (minutes) — each image installs its own deps.
+say "Building local images (first run takes 5–10 minutes; subsequent runs are seconds)"
 docker compose build
 
-# 5. Up
-say "Starting stack"
+# 4. Start the stack. `up -d` automatically pulls postgres/qdrant on first
+#    run if they aren't already cached. We deliberately don't call
+#    `compose pull` first because that tries to pull EVERY service —
+#    including the five we just built locally — and dies on access denied.
+say "Starting stack (will pull postgres/qdrant if not already cached)"
 docker compose up -d
 
 # 5. Wait for healthy
