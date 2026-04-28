@@ -1,0 +1,23 @@
+# Don't ship the kitchen sink into any future image builds.
+.git
+.github
+.vscode
+.idea
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules
+dist
+build
+.next
+.turbo
+.cache
+coverage
+*.log
+docs
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
+LICENSE

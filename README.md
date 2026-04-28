@@ -189,7 +189,11 @@ cp .env.example .env
 
 ```bash
 docker compose up -d
+# …or, if you prefer the ergonomic wrappers:
+make bootstrap
 ```
+
+> Run `make help` to see every shortcut (`up`, `down`, `doctor`, `psql`, `logs`, `reset`, …).
 
 This brings up:
 - **PostgreSQL** on `localhost:5432`

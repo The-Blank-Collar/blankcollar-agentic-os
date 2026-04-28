@@ -1,0 +1,20 @@
+# CODEOWNERS — Blank Collar Agentic OS
+#
+# A line of the form `<pattern> <owner1> <owner2>` makes those owners the
+# default reviewers for matching files. The last matching pattern wins.
+#
+# Replace @kristian-kabashi with the actual GitHub handle.
+
+*                                     @kristian-kabashi
+
+# Architecture & philosophy: extra scrutiny.
+docs/ARCHITECTURE.md                  @kristian-kabashi
+docs/GOAL_FIRST.md                    @kristian-kabashi
+docs/ROLES.md                         @kristian-kabashi
+
+# Schema changes are forever — eyes on every diff.
+infra/docker/postgres/init.sql        @kristian-kabashi
+
+# Compose / env are easy to break in subtle ways.
+docker-compose.yml                    @kristian-kabashi
+.env.example                          @kristian-kabashi
