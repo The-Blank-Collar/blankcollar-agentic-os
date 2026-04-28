@@ -22,6 +22,20 @@ else
   echo "[paperclip] reusing existing config at ${CONFIG_FILE}"
 fi
 
+# Quickstart binds to 127.0.0.1 inside the container, which means Docker's
+# host port-forward can never reach it. Patch the config to bind on
+# 0.0.0.0 instead. Safe inside Docker because the container's network
+# isolation is what we rely on, not the in-app bind address.
+if grep -q '127\.0\.0\.1' "${CONFIG_FILE}" 2>/dev/null; then
+  sed -i 's/127\.0\.0\.1/0.0.0.0/g' "${CONFIG_FILE}"
+  echo "[paperclip] patched bind 127.0.0.1 → 0.0.0.0 in config.json"
+fi
+# Some paperclip versions store the bind mode as the string "loopback".
+if grep -q '"loopback"' "${CONFIG_FILE}" 2>/dev/null; then
+  sed -i 's/"loopback"/"0.0.0.0"/g' "${CONFIG_FILE}"
+  echo "[paperclip] patched bind \"loopback\" → \"0.0.0.0\" in config.json"
+fi
+
 # Bind to all interfaces so Docker port-forward works (paperclip defaults to 127.0.0.1).
 # Their config.json controls bind; we override via env where supported.
 export PAPERCLIP_BIND="${PAPERCLIP_BIND:-0.0.0.0}"
