@@ -40,7 +40,7 @@ docker compose up -d
 
 # 5. Wait for healthy
 say "Waiting for services to become healthy"
-for service in bc_postgres bc_qdrant bc_gbrain; do
+for service in bc_postgres bc_qdrant bc_gbrain bc_paperclip; do
   printf "   %s " "$service"
   for _ in $(seq 1 60); do
     status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || echo "missing")

@@ -109,7 +109,7 @@ You manage **outcomes**, the OS manages **execution**.
 
 | Layer            | Component         | Purpose                                                              | Status         |
 |------------------|-------------------|----------------------------------------------------------------------|----------------|
-| Orchestration    | **Paperclip**     | Turns goals into agent runs, owns the dashboard, holds the queue     | placeholder    |
+| Orchestration    | **Paperclip**     | Turns goals into agent runs, owns the dashboard, holds the queue     | ✅ runs locally (v0.1.0) |
 | Workforce        | **Hermes Agent**  | General‑purpose agent (via official adapter)                         | placeholder    |
 | Workforce        | **OpenClaw**      | Tool‑heavy agent for browser/computer use                            | placeholder    |
 | Memory           | **gbrain**        | Advanced memory layer (semantic, episodic, factual; role‑scoped)     | ✅ runs locally (v0.1.0) |

@@ -28,15 +28,18 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] CI job: ruff lint + pytest + image build
 - [ ] CLI: `bc memory remember "fact" --dept=marketing` *(deferred to Phase 2 alongside Paperclip CLI)*
 
-## Phase 2 — Paperclip Orchestrator
+## Phase 2 — Paperclip Orchestrator ✅
 
 **Goal:** create goals via API; runs are dispatched (against fake agents) and visible.
 
-- [ ] Paperclip HTTP API (goals, runs, agents, audit)
-- [ ] Run queue (Postgres-backed in-memory queue is fine to start)
-- [ ] Agent registry (`ops.agent`)
-- [ ] Minimal dashboard at `/` listing goals + runs
-- [ ] Websocket for live run telemetry
+- [x] Paperclip HTTP API (goals, runs, agents, audit, plan/dispatch) — `docs/API.md`
+- [x] Run queue (Postgres-backed `FOR UPDATE SKIP LOCKED`, in-process worker)
+- [x] Agent registry CRUD (`ops.agent`) — hire / update / fire endpoints
+- [x] Goal-first dashboard at `/` — server-rendered, htmx-driven
+- [x] Built-in fake agent that writes an `episode` memory to gbrain (proves L1↔L4 wiring)
+- [x] Audit-log entries on every state change
+- [x] Vitest tests, typecheck, Docker image, CI job
+- [ ] WebSocket for live run telemetry *(deferred to Phase 3 — polling works for v0)*
 
 ## Phase 3 — First Real Workforce
 

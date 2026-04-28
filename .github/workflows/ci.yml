@@ -65,6 +65,33 @@ jobs:
       - name: Build Docker image
         run: docker build -t blankcollar/gbrain:ci .
 
+  paperclip:
+    name: paperclip — typecheck + tests + image build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/paperclip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/paperclip/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Build Docker image
+        run: docker build -t blankcollar/paperclip:ci .
+
   schema:
     name: Postgres init.sql smoke test
     runs-on: ubuntu-latest

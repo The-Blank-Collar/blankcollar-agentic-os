@@ -100,22 +100,33 @@ services:
     networks: [bc_net]
 
   # =========================================================================
-  # Paperclip — orchestrator + dashboard (PLACEHOLDER)
-  #   Phase 2 will replace this with a real Node/TS service.
-  #   For now, nginx serves apps/paperclip/public/index.html.
+  # Paperclip — orchestrator + dashboard (Phase 2, real)
+  #   Node 22 + Fastify + pg. Owns goals, runs, agents, audit log, and the
+  #   goal-first dashboard at /. See docs/API.md for the HTTP contract.
   # =========================================================================
   paperclip:
     <<: [*restart-policy, *default-logging]
-    image: nginx:1.27-alpine
+    build:
+      context: ./apps/paperclip
+      dockerfile: Dockerfile
+    image: blankcollar/paperclip:0.1.0
     container_name: bc_paperclip
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/blankcollar}
+      GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      PAPERCLIP_DEFAULT_ORG_SLUG: ${PAPERCLIP_DEFAULT_ORG_SLUG:-blankcollar-demo}
+      PAPERCLIP_WORKER_POLL_MS: ${PAPERCLIP_WORKER_POLL_MS:-1500}
+      PAPERCLIP_WORKER_ENABLED: ${PAPERCLIP_WORKER_ENABLED:-true}
     ports:
       - "${PAPERCLIP_PORT:-3000}:80"
-    volumes:
-      - ./apps/paperclip/public:/usr/share/nginx/html:ro
     depends_on:
       postgres:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      gbrain:
         condition: service_healthy
     networks: [bc_net]
 

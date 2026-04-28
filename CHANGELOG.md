@@ -4,6 +4,35 @@ All notable changes to Blank Collar Agentic OS land here. The format follows [Ke
 
 ## [Unreleased]
 
+### Phase 2 — Paperclip Orchestrator (v0.1.0)
+
+- New service: `apps/paperclip/` — Node 22 + Fastify 5 + pg + Zod (TypeScript, ESM)
+- HTTP API matching `docs/API.md`:
+  - `GET /api/health` — Postgres + gbrain probes
+  - Goals: `POST/GET/PATCH/DELETE /api/goals`, `GET /api/goals/{id}`
+  - Plan + dispatch: `POST /api/goals/{id}/plan`, `POST /api/goals/{id}/dispatch`
+  - Runs: `GET /api/runs`, `GET /api/runs/{id}`, `POST /api/runs/{id}/cancel`
+  - Agents: `GET/POST /api/agents`, `PATCH /api/agents/{id}` (hire/update/fire)
+  - Audit: `GET /api/audit`
+- Server-rendered, htmx-driven dashboard at `/`:
+  - Goals list with create form, status pills, auto-refresh every 4s
+  - Goal detail page with plan, dispatch buttons, runs auto-refreshing every 2s
+- In-process queue worker:
+  - Polls `ops.run` with `FOR UPDATE SKIP LOCKED` (safe for future scale-out)
+  - Dispatches `queued → running → succeeded/failed` with audit entries on each
+  - Configurable poll interval, can be disabled with `PAPERCLIP_WORKER_ENABLED=false`
+- Built-in **fake agent** (until Phase 3 brings real Hermes / OpenClaw):
+  - Writes an `episode` memory to gbrain on success — proves the L1↔L4 wiring
+- Audit-log integration: every goal create/update/archive, plan, dispatch, run state change, and agent change writes to `core.audit_log`
+- Caller-scope stub: hardcoded to the demo org's `owner` (Phase 6 will swap in Supabase JWT)
+- 13 unit tests (plan + schema validation), all passing
+- Multi-stage Node 22 Dockerfile (deps → build → prod-deps → runtime), non-root, healthcheck
+- `docker-compose.yml`: nginx placeholder replaced with build directive (image `blankcollar/paperclip:0.1.0`)
+- `bootstrap.sh`: waits for `bc_paperclip` healthy
+- `doctor.sh`: hits `/api/health` instead of `/`
+- `.env.example`: `PAPERCLIP_DEFAULT_ORG_SLUG`, `PAPERCLIP_WORKER_POLL_MS`, `PAPERCLIP_WORKER_ENABLED`, `GBRAIN_URL`
+- CI: new `paperclip` job runs `tsc --noEmit`, `vitest`, and `docker build`
+
 ### Phase 1 — Real Memory Layer (gbrain v0.1.0)
 
 - New service: `packages/gbrain/` — Python 3.12 + FastAPI + pydantic v2 + asyncpg + qdrant-client
