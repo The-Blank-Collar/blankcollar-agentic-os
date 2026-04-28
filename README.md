@@ -109,8 +109,8 @@ You manage **outcomes**, the OS manages **execution**.
 
 | Layer            | Component         | Purpose                                                              | Status         |
 |------------------|-------------------|----------------------------------------------------------------------|----------------|
-| Command centre   | **Paperclip (real)** | Upstream `paperclipai` — Org chart, Heartbeats, Cost control, etc. | ✅ runs locally on :3100  |
-| Orchestration    | **Paperclip (legacy)** | Our custom Fastify orchestrator — Stripe webhook + Supabase auth + custom audit | ✅ runs locally on :3000  |
+| Command centre   | **Paperclip (real)** | Upstream `paperclipai` — Org chart, Heartbeats, Cost control, etc. | ✅ run natively on Mac on :3100 — see `docs/PAPERCLIP_REAL.md`  |
+| Orchestration    | **Paperclip (legacy)** | Our custom Fastify orchestrator — Stripe webhook + Supabase auth + custom audit | ✅ Docker on :3000  |
 | Workforce        | **Hermes Agent**  | General‑purpose reasoning agent (Anthropic Claude, fake fallback)    | ✅ runs locally (v0.1.0) |
 | Workforce        | **OpenClaw**      | Tool‑action agent — `web.fetch` skill                                 | ✅ runs locally (v0.1.0) |
 | Memory           | **gbrain**        | Advanced memory layer (semantic, episodic, factual; role‑scoped)     | ✅ runs locally (v0.1.0) |

@@ -51,8 +51,6 @@ volumes:
     name: bc_qdrant_data
   bc_pgadmin_data:
     name: bc_pgadmin_data
-  bc_paperclip_real_data:
-    name: bc_paperclip_real_data
 
 services:
   # =========================================================================
@@ -101,35 +99,23 @@ services:
     networks: [bc_net]
 
   # =========================================================================
-  # Paperclip (real) — the upstream paperclipai package, our PRIMARY command
-  #   centre. See https://github.com/paperclipai/paperclip and
-  #   docs/PAPERCLIP_REAL.md for how to register Hermes + OpenClaw as agents.
-  #   Uses its own embedded Postgres (bc_paperclip_real_data volume) so it
-  #   doesn't fight our shared bc_postgres.
+  # Paperclip (real) — REMOVED from the default compose stack.
+  #
+  # paperclipai's quickstart hard-locks loopback bind ("local_trusted" mode
+  # ignores PAPERCLIP_BIND, --bind flags via --yes, and config patches),
+  # which fights Docker's port-forward. After several attempts we accepted
+  # the upstream design choice: it's meant to run natively on the host.
+  #
+  # → To use real Paperclip: run on your Mac directly:
+  #     npx paperclipai@latest onboard --yes
+  #     npx paperclipai@latest run
+  #   Then open http://localhost:3100. The agents in this compose stack
+  #   (hermes, openclaw, gbrain) are all reachable from native paperclipai
+  #   at http://localhost:8001 / 8002 / 8003.
+  #
+  # See docs/PAPERCLIP_REAL.md for the full walkthrough.
   # =========================================================================
-  paperclip-real:
-    <<: [*restart-policy, *default-logging]
-    build:
-      context: ./apps/paperclip-real
-      dockerfile: Dockerfile
-    image: blankcollar/paperclip-real:0.1.0
-    container_name: bc_paperclip_real
-    environment:
-      ENV: ${ENV:-local}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      PAPERCLIP_BIND: "0.0.0.0"
-      PAPERCLIP_TELEMETRY_DISABLED: "1"
-    ports:
-      - "${PAPERCLIP_REAL_PORT:-3100}:3100"
-    volumes:
-      - bc_paperclip_real_data:/home/node/.paperclip
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:3100/api/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 180s
-    networks: [bc_net]
+  # (intentionally no `paperclip-real` service here)
 
   # =========================================================================
   # Paperclip (legacy / integrations) — our custom Fastify orchestrator.
