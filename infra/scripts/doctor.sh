@@ -110,11 +110,19 @@ check_http "Hermes"      "http://localhost:${HM_PORT}/healthz"
 check_http "OpenClaw"    "http://localhost:${OC_PORT}/healthz"
 check_http "gbrain"      "http://localhost:${GB_PORT}/healthz"
 
-# Optional: native paperclipai on the Mac (port 3100).
-if curl -fsS --max-time 2 "http://localhost:${PR_PORT}/api/health" >/dev/null 2>&1; then
-  ok "Paperclip(real, native) responding on :${PR_PORT}"
+# Optional: native paperclipai on the Mac. paperclipai auto-picks the next
+# free port if 3100 is busy, so probe both 3100 and 3101.
+pr_url=""
+for p in 3100 3101; do
+  if curl -fsS --max-time 2 "http://localhost:${p}/api/health" >/dev/null 2>&1; then
+    pr_url="http://localhost:${p}"
+    break
+  fi
+done
+if [ -n "$pr_url" ]; then
+  ok "Paperclip(real, native) responding on $pr_url"
 else
-  printf "\033[1;33m✓\033[0m Paperclip(real, native) not running on :${PR_PORT} (optional — start with: make paperclip)\n"
+  printf "\033[1;33m✓\033[0m Paperclip(real, native) not running on :3100/:3101 (optional — start with: make paperclip)\n"
 fi
 
 # Postgres TCP probe (no psql dependency)
