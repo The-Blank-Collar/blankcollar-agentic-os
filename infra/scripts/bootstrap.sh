@@ -30,17 +30,33 @@ else
   ok ".env already exists"
 fi
 
-# 3. Build local images (gbrain, paperclip, hermes, openclaw, email-ingest).
-#    First run is slow (minutes) — each image installs its own deps.
-say "Building local images (first run takes 5–10 minutes; subsequent runs are seconds)"
-docker compose build
+# 3. Pre-pull just the registry-only services (postgres, qdrant) so we
+#    don't fight with compose's auto-pull logic.
+say "Pulling postgres + qdrant (registry images only)"
+docker compose pull postgres qdrant
 
-# 4. Start the stack. `up -d` automatically pulls postgres/qdrant on first
-#    run if they aren't already cached. We deliberately don't call
-#    `compose pull` first because that tries to pull EVERY service —
-#    including the five we just built locally — and dies on access denied.
-say "Starting stack (will pull postgres/qdrant if not already cached)"
-docker compose up -d
+# 4. Build + start in a single step.  --build forces compose to use the
+#    build contexts for the five locally-built services; combined with the
+#    pre-pull above, nothing else is left to fetch from a registry.
+say "Building local images + starting stack (first run takes 5–10 minutes for the build)"
+docker compose up -d --build
+
+# Verify the build actually produced the tagged images.
+say "Verifying built images are present"
+missing=()
+for img in blankcollar/gbrain:0.1.0 blankcollar/paperclip:0.1.0 \
+           blankcollar/hermes:0.1.0 blankcollar/openclaw:0.1.0 \
+           blankcollar/email-ingest:0.1.0; do
+  if ! docker image inspect "$img" >/dev/null 2>&1; then
+    missing+=("$img")
+  fi
+done
+if [ "${#missing[@]}" -ne 0 ]; then
+  err "These images did not build successfully: ${missing[*]}"
+  err "Run: docker compose build  — and look for the failing service."
+  exit 1
+fi
+ok "All local images present"
 
 # 5. Wait for healthy
 say "Waiting for services to become healthy"
