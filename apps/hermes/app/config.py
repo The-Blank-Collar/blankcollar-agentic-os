@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     # gbrain
     gbrain_url: str = Field(default="http://gbrain:80", alias="GBRAIN_URL")
 
-    # LLM
+    # LLM provider — Nexos preferred (Hostinger), Anthropic next, FakeLLM if none.
+    nexos_api_key: str | None = Field(default=None, alias="NEXOS_API_KEY")
+    nexos_base_url: str = Field(default="https://api.nexos.ai/v1", alias="NEXOS_BASE_URL")
+    nexos_model: str = Field(default="claude-sonnet", alias="NEXOS_MODEL")
+
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     model: str = Field(default="claude-sonnet-4-6", alias="HERMES_MODEL")
     max_tokens: int = Field(default=1024, alias="HERMES_MAX_TOKENS")

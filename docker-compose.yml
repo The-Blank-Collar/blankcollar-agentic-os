@@ -153,6 +153,10 @@ services:
       ENV: ${ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      # Provider preference: Nexos (Hostinger) > Anthropic > FakeLLM
+      NEXOS_API_KEY: ${NEXOS_API_KEY:-}
+      NEXOS_BASE_URL: ${NEXOS_BASE_URL:-https://api.nexos.ai/v1}
+      NEXOS_MODEL: ${NEXOS_MODEL:-claude-sonnet}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       HERMES_MODEL: ${HERMES_MODEL:-claude-sonnet-4-6}
       HERMES_MAX_TOKENS: ${HERMES_MAX_TOKENS:-1024}

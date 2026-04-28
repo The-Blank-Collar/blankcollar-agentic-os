@@ -1,8 +1,12 @@
-"""LLM provider for Hermes.
+"""LLM providers for Hermes.
 
-Default: Anthropic Claude. Fallback: a deterministic, no-API-key "summarizer"
-that lets the demo run offline. A loud WARNING log line says when the fake
-is in effect.
+Provider preference (first match wins):
+  1. Nexos.ai     — OpenAI-compatible, base https://api.nexos.ai/v1
+                     (Hostinger-issued credits; the production default).
+  2. Anthropic    — direct Claude API (handy for local dev).
+  3. FakeLLM      — deterministic offline fallback so the demo stays runnable.
+
+A loud INFO/WARNING line on startup says which one is active.
 """
 
 from __future__ import annotations
@@ -21,12 +25,47 @@ class LLM(Protocol):
     async def complete(self, *, system: str, user: str) -> str: ...
 
 
+# ---------- Nexos.ai (OpenAI-compatible) -----------------------------------
+
+
+class NexosLLM:
+    """Nexos.ai uses the OpenAI Chat Completions wire format. We use the
+    official `openai` SDK pointed at the Nexos base URL.
+
+    Note: per Hostinger's nexos.ai guide, *do not* use the newer Responses API —
+    Nexos targets the classic Chat Completions endpoint.
+    """
+
+    name = "nexos"
+
+    def __init__(self, api_key: str, base_url: str, model: str, max_tokens: int) -> None:
+        from openai import AsyncOpenAI
+
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._model = model
+        self._max_tokens = max_tokens
+
+    async def complete(self, *, system: str, user: str) -> str:
+        resp = await self._client.chat.completions.create(
+            model=self._model,
+            max_tokens=self._max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        choice = resp.choices[0]
+        content = choice.message.content or ""
+        return content.strip()
+
+
+# ---------- Anthropic (direct) ---------------------------------------------
+
+
 class AnthropicLLM:
     name = "anthropic"
 
     def __init__(self, api_key: str, model: str, max_tokens: int) -> None:
-        # Imported lazily so the fake mode doesn't need the SDK installed at runtime.
-        from anthropic import AsyncAnthropic  # noqa: F401  (just verifying availability)
         from anthropic import AsyncAnthropic as _Client
 
         self._client = _Client(api_key=api_key)
@@ -40,7 +79,6 @@ class AnthropicLLM:
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        # Concatenate text blocks; ignore tool-use blocks for v0.
         parts: list[str] = []
         for block in msg.content:
             if getattr(block, "type", None) == "text":
@@ -48,18 +86,16 @@ class AnthropicLLM:
         return "\n".join(p for p in parts if p).strip()
 
 
-class FakeLLM:
-    """No-key fallback. Returns a structured, deterministic stand-in.
+# ---------- Deterministic fake (no API key) -------------------------------
 
-    Useful for the demo when ANTHROPIC_API_KEY is not set: the agent still
-    goes through its motions and writes a real episode memory.
-    """
+
+class FakeLLM:
+    """No-key fallback. Returns a structured, deterministic stand-in."""
 
     name = "fake"
 
     async def complete(self, *, system: str, user: str) -> str:
-        head = "FAKE-LLM (set ANTHROPIC_API_KEY for real answers)"
-        # Trim aggressively so the fake response stays short and deterministic.
+        head = "FAKE-LLM (set NEXOS_API_KEY or ANTHROPIC_API_KEY for real answers)"
         sys_excerpt = (system[:160] + "…") if len(system) > 160 else system
         user_excerpt = (user[:240] + "…") if len(user) > 240 else user
         return (
@@ -71,6 +107,19 @@ class FakeLLM:
 
 
 def make_llm() -> LLM:
+    if settings.nexos_api_key:
+        log.info(
+            "hermes.llm=nexos base=%s model=%s",
+            settings.nexos_base_url,
+            settings.nexos_model,
+        )
+        return NexosLLM(
+            api_key=settings.nexos_api_key,
+            base_url=settings.nexos_base_url,
+            model=settings.nexos_model,
+            max_tokens=settings.max_tokens,
+        )
+
     if settings.anthropic_api_key:
         log.info("hermes.llm=anthropic model=%s", settings.model)
         return AnthropicLLM(
@@ -78,8 +127,9 @@ def make_llm() -> LLM:
             model=settings.model,
             max_tokens=settings.max_tokens,
         )
+
     log.warning(
-        "hermes.llm=FAKE — set ANTHROPIC_API_KEY for real reasoning. "
+        "hermes.llm=FAKE — set NEXOS_API_KEY or ANTHROPIC_API_KEY for real reasoning. "
         "Service stays runnable; answers are deterministic stand-ins."
     )
     return FakeLLM()
