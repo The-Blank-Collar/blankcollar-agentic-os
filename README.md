@@ -343,6 +343,7 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 - [`docs/API.md`](docs/API.md) — Paperclip / agent / gbrain / skills HTTP contracts.
 - [`docs/SCHEMA.md`](docs/SCHEMA.md) — Full Postgres data model + Qdrant collections.
 - [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) — Anthropic, Qdrant, Supabase, Stripe, email.
+- [`docs/STRIPE.md`](docs/STRIPE.md) — Stripe deep dive: webhook flow, schema, security rules.
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — Every term defined once.
 - [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) — Every env var explained.
 
