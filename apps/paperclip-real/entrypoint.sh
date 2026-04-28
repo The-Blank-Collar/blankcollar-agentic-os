@@ -16,29 +16,46 @@ fi
 rm -f "${HOME}/.paperclip/.write-probe"
 
 if [ ! -f "${CONFIG_FILE}" ]; then
-  echo "[paperclip] no config found — running onboard with quickstart defaults"
-  npx --yes paperclipai@latest onboard --yes
+  echo "[paperclip] no config found — running onboard in LAN mode"
+  # --bind lan tells paperclip to listen on the LAN interface (0.0.0.0
+  # inside our container) instead of loopback-only. Required for Docker's
+  # host port-forward to work. Switches paperclip to 'authenticated' mode
+  # (API calls need a JWT — the UI handles login on first visit).
+  npx --yes paperclipai@latest onboard --yes --bind lan
 else
   echo "[paperclip] reusing existing config at ${CONFIG_FILE}"
 fi
 
-# Quickstart binds to 127.0.0.1 inside the container, which means Docker's
-# host port-forward can never reach it. Patch the config to bind on
-# 0.0.0.0 instead. Safe inside Docker because the container's network
-# isolation is what we rely on, not the in-app bind address.
-if grep -q '127\.0\.0\.1' "${CONFIG_FILE}" 2>/dev/null; then
-  sed -i 's/127\.0\.0\.1/0.0.0.0/g' "${CONFIG_FILE}"
-  echo "[paperclip] patched bind 127.0.0.1 → 0.0.0.0 in config.json"
-fi
-# Some paperclip versions store the bind mode as the string "loopback".
-if grep -q '"loopback"' "${CONFIG_FILE}" 2>/dev/null; then
-  sed -i 's/"loopback"/"0.0.0.0"/g' "${CONFIG_FILE}"
-  echo "[paperclip] patched bind \"loopback\" → \"0.0.0.0\" in config.json"
+# Defensive patch: even with --bind lan, walk the config and replace any
+# remaining loopback-only values. We use Node (already in the image) so
+# the JSON parse/write is robust.
+if [ -f "${CONFIG_FILE}" ]; then
+  node -e "
+    const fs = require('fs');
+    const p = '${CONFIG_FILE}';
+    const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+    let changed = 0;
+    (function walk(o){
+      if (!o || typeof o !== 'object') return;
+      if ('bind' in o && (o.bind === 'loopback' || o.bind === '127.0.0.1')) { o.bind = 'lan'; changed++; }
+      if ('host' in o && o.host === '127.0.0.1') { o.host = '0.0.0.0'; changed++; }
+      if ('allowedHostnames' in o && Array.isArray(o.allowedHostnames) && o.allowedHostnames.length === 0) {
+        o.allowedHostnames = ['*']; changed++;
+      }
+      for (const k in o) walk(o[k]);
+    })(c);
+    if (changed) {
+      fs.writeFileSync(p, JSON.stringify(c, null, 2));
+      console.log('[paperclip] config patched (' + changed + ' field(s) updated for non-loopback access)');
+    } else {
+      console.log('[paperclip] config already non-loopback; no patch needed');
+    }
+  "
+
+  echo '[paperclip] effective bind/host/port:'
+  grep -E '"(bind|host|port|allowedHostnames)"' "${CONFIG_FILE}" | sed 's/^/  /' || true
 fi
 
-# Bind to all interfaces so Docker port-forward works (paperclip defaults to 127.0.0.1).
-# Their config.json controls bind; we override via env where supported.
-export PAPERCLIP_BIND="${PAPERCLIP_BIND:-0.0.0.0}"
 export PAPERCLIP_TELEMETRY_DISABLED=1
 
 echo "[paperclip] starting server"
