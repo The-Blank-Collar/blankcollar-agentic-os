@@ -35,11 +35,16 @@ fi
 say "Pulling postgres + qdrant (registry images only)"
 docker compose pull postgres qdrant
 
-# 4. Build + start in a single step.  --build forces compose to use the
-#    build contexts for the five locally-built services; combined with the
-#    pre-pull above, nothing else is left to fetch from a registry.
-say "Building local images + starting stack (first run takes 5–10 minutes for the build)"
-docker compose up -d --build
+# 4. Build local images first, explicitly. Don't combine with `up` — keep
+#    the steps separate so a build failure is unambiguous.
+say "Building local images (first run takes 5–10 minutes; subsequent runs are seconds)"
+docker compose build
+
+# 5. Start. `--pull never` forbids any registry pull attempts (postgres +
+#    qdrant were already pulled above, locally-built images now exist
+#    after the build, so nothing else needs fetching).
+say "Starting stack"
+docker compose up -d --pull never
 
 # Verify the build actually produced the tagged images.
 say "Verifying built images are present"
