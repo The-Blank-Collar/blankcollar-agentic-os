@@ -17,7 +17,9 @@ export type Subtask = {
 };
 
 const URL_RE = /\bhttps?:\/\/[^\s)>\]"]+/i;
+const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/i;
 const SEARCH_TRIGGERS_RE = /\b(search|google|find|look\s+up|research|investigate|browse)\b/i;
+const EMAIL_TRIGGERS_RE = /\b(email|mail|send.*to|reply\s+to|write\s+to)\b/i;
 
 export function generatePlan(input: {
   title: string;
@@ -49,6 +51,31 @@ export function generatePlan(input: {
         description: "Identify the first decision the human needs to make about this content.",
         agent_kind: "hermes",
         input: { action: "first_decision", goal_title: title },
+      },
+    ]);
+  }
+
+  // Goal mentions an email address + an email-action verb → draft + send.
+  const emailMatch = haystack.match(EMAIL_RE);
+  if (emailMatch && EMAIL_TRIGGERS_RE.test(haystack)) {
+    const to = emailMatch[0];
+    return numbered([
+      {
+        title: "Draft the email",
+        description: "Compose subject + body using the goal context and brain memories.",
+        agent_kind: "hermes",
+        input: { action: "draft_email", goal_title: title, to },
+      },
+      {
+        title: `Send the email to ${to}`,
+        description: "Send via the dedicated mailbox (or save as drafted if SMTP is unset).",
+        agent_kind: "openclaw",
+        input: {
+          skill: "email.send",
+          to,
+          subject: title.slice(0, 200),
+          body: ctx || `(see goal "${title}" — drafted automatically)`,
+        },
       },
     ]);
   }

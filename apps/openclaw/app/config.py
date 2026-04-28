@@ -35,5 +35,15 @@ class Settings(BaseSettings):
     oxylabs_default_results: int = Field(default=10, alias="OXYLABS_DEFAULT_RESULTS")
     oxylabs_request_timeout_s: float = Field(default=30.0, alias="OXYLABS_TIMEOUT_S")
 
+    # ----- email.send (SMTP via the dedicated agent@blankcollar.ai mailbox) -----
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="agent@blankcollar.ai", alias="SMTP_FROM")
+    # STARTTLS on 587 by default; flip to True for SMTPS (465).
+    smtp_use_tls: bool = Field(default=False, alias="SMTP_USE_TLS")
+    smtp_timeout_s: float = Field(default=20.0, alias="SMTP_TIMEOUT_S")
+
 
 settings = Settings()

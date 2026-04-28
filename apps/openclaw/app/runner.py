@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from app.brain import brain
+from app.email import EmailSendError, email_send
 from app.fetch import FetchError, web_fetch
 from app.models import RunRequest
 from app.search import SearchError, web_search
@@ -14,7 +15,7 @@ from app.state import RunState, RunStatus, runs
 
 log = logging.getLogger("openclaw.runner")
 
-SUPPORTED_SKILLS: tuple[str, ...] = ("web.fetch", "web.search")
+SUPPORTED_SKILLS: tuple[str, ...] = ("web.fetch", "web.search", "email.send")
 
 
 async def run(req: RunRequest) -> None:
@@ -32,11 +33,14 @@ async def run(req: RunRequest) -> None:
 
         if not skill:
             # Default skill: if input has a `url`, treat as web.fetch;
-            # if it has a `query`, treat as web.search.
+            # if it has a `query`, treat as web.search;
+            # if it has a `to`, treat as email.send.
             if "url" in sub_input:
                 skill = "web.fetch"
             elif "query" in sub_input:
                 skill = "web.search"
+            elif "to" in sub_input:
+                skill = "email.send"
             else:
                 state.mark_failed(
                     f"no skill specified; supported: {', '.join(SUPPORTED_SKILLS)}"
@@ -159,6 +163,68 @@ async def run(req: RunRequest) -> None:
                     "query": query,
                     "result_count": len(results),
                     "results": results[:5],  # echo top 5 in the run output for the dashboard
+                    "memory_id": memory_id,
+                }
+            )
+            return
+
+        # ---- email.send ----
+        if skill == "email.send":
+            to = sub_input.get("to")
+            subject = sub_input.get("subject") or ""
+            body = sub_input.get("body") or ""
+            cc_raw = sub_input.get("cc") or []
+            cc: list[str] = [c for c in cc_raw if isinstance(c, str)]
+            reply_to = sub_input.get("reply_to") if isinstance(sub_input.get("reply_to"), str) else None
+
+            if not isinstance(to, str) or not to:
+                state.mark_failed("email.send requires `input.to`")
+                return
+            if not isinstance(subject, str):
+                subject = str(subject)
+            if not isinstance(body, str):
+                body = str(body)
+
+            try:
+                outcome = await email_send(
+                    to=to,
+                    subject=subject,
+                    body=body,
+                    cc=cc,
+                    reply_to=reply_to,
+                )
+            except EmailSendError as ee:
+                state.mark_failed(str(ee))
+                return
+
+            if state.cancel_event.is_set():
+                state.mark_cancelled()
+                return
+
+            # Always record the message as a `conversation` memory so it
+            # appears in audit + brain even when we couldn't actually deliver.
+            memory_id = await brain.remember(
+                kind="conversation",
+                title=f"Email to {to}: {subject or '(no subject)'}",
+                content=f"To: {to}\nSubject: {subject}\n\n{body}",
+                scope=req.scope,
+                metadata={
+                    "run_id": rid,
+                    "goal_id": str(req.goal_id),
+                    "skill": "email.send",
+                    "delivered": outcome.get("delivered"),
+                    "status": outcome.get("status"),
+                    "to": to,
+                    "cc": cc,
+                    "source": "openclaw",
+                },
+            )
+
+            state.mark_succeeded(
+                {
+                    "agent_kind": "openclaw",
+                    "skill": "email.send",
+                    **outcome,
                     "memory_id": memory_id,
                 }
             )

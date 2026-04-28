@@ -192,9 +192,48 @@ services:
       OXYLABS_SEARCH_PATH: ${OXYLABS_SEARCH_PATH:-/v1/search}
       OXYLABS_DEFAULT_RESULTS: ${OXYLABS_DEFAULT_RESULTS:-10}
       OXYLABS_TIMEOUT_S: ${OXYLABS_TIMEOUT_S:-30}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-agent@blankcollar.ai}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      SMTP_TIMEOUT_S: ${SMTP_TIMEOUT_S:-20}
     ports:
       - "${OPENCLAW_PORT:-8002}:80"
     depends_on:
+      gbrain:
+        condition: service_healthy
+    networks: [bc_net]
+
+  # =========================================================================
+  # email-ingest — IMAP-poll service for agent@blankcollar.ai
+  #   Idle/heartbeat-only mode unless IMAP_HOST + IMAP_USER are set.
+  # =========================================================================
+  email-ingest:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: ./apps/email-ingest
+      dockerfile: Dockerfile
+    image: blankcollar/email-ingest:0.1.0
+    container_name: bc_email_ingest
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PAPERCLIP_URL: ${PAPERCLIP_URL:-http://paperclip:80}
+      GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      PAPERCLIP_DEFAULT_ORG_SLUG: ${PAPERCLIP_DEFAULT_ORG_SLUG:-blankcollar-demo}
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+      IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
+      IMAP_USE_SSL: ${IMAP_USE_SSL:-true}
+      EMAIL_POLL_INTERVAL_S: ${EMAIL_POLL_INTERVAL_S:-60}
+      INBOUND_EMAIL_WEBHOOK_SECRET: ${INBOUND_EMAIL_WEBHOOK_SECRET:-}
+    depends_on:
+      paperclip:
+        condition: service_healthy
       gbrain:
         condition: service_healthy
     networks: [bc_net]

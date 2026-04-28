@@ -55,6 +55,7 @@ check_container_health bc_gbrain
 check_container_health bc_hermes
 check_container_health bc_openclaw
 check_container_health bc_paperclip
+check_container_health bc_email_ingest
 
 check_http "Qdrant"      "http://localhost:${QD_PORT}/healthz"
 check_http "Paperclip"   "http://localhost:${PC_PORT}/api/health"

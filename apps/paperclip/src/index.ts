@@ -11,6 +11,7 @@ import { agentRoutes } from "./routes/agents.js";
 import { auditRoutes } from "./routes/audit.js";
 import { goalRoutes } from "./routes/goals.js";
 import { healthRoutes } from "./routes/health.js";
+import { orgRoutes } from "./routes/orgs.js";
 import { runRoutes } from "./routes/runs.js";
 import { uiRoutes } from "./routes/ui.js";
 
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   await app.register(formbody);
 
   await app.register(healthRoutes);
+  await app.register(orgRoutes);
   await app.register(goalRoutes);
   await app.register(runRoutes);
   await app.register(agentRoutes);

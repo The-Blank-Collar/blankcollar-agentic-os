@@ -87,3 +87,30 @@ describe("generatePlan — search-aware", () => {
     expect(plan[0]!.input.skill).toBe("web.fetch");
   });
 });
+
+describe("generatePlan — email-aware", () => {
+  it("recognises an email-send goal and produces draft → send", () => {
+    const plan = generatePlan({
+      title: "Email alice@example.com about the launch",
+    });
+    expect(plan.length).toBe(2);
+    expect(plan[0]!.agent_kind).toBe("hermes");
+    expect(plan[0]!.input.action).toBe("draft_email");
+    expect(plan[1]!.agent_kind).toBe("openclaw");
+    expect(plan[1]!.input.skill).toBe("email.send");
+    expect(plan[1]!.input.to).toBe("alice@example.com");
+  });
+
+  it("requires both an address AND an email-action verb", () => {
+    // Address only — no verb → falls through to generic.
+    const plan = generatePlan({ title: "Note: alice@example.com is interested" });
+    expect(plan.every((s) => s.agent_kind === "hermes")).toBe(true);
+  });
+
+  it("URL still wins over email-trigger words", () => {
+    const plan = generatePlan({
+      title: "Email me about https://news.ycombinator.com/",
+    });
+    expect(plan[0]!.input.skill).toBe("web.fetch");
+  });
+});
