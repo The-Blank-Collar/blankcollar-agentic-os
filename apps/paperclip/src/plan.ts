@@ -17,6 +17,7 @@ export type Subtask = {
 };
 
 const URL_RE = /\bhttps?:\/\/[^\s)>\]"]+/i;
+const SEARCH_TRIGGERS_RE = /\b(search|google|find|look\s+up|research|investigate|browse)\b/i;
 
 export function generatePlan(input: {
   title: string;
@@ -46,6 +47,32 @@ export function generatePlan(input: {
       {
         title: "Surface the first decision",
         description: "Identify the first decision the human needs to make about this content.",
+        agent_kind: "hermes",
+        input: { action: "first_decision", goal_title: title },
+      },
+    ]);
+  }
+
+  // No URL — but if the goal sounds like a research / search task,
+  // route through OpenClaw's web.search skill (Oxylabs / DDG).
+  if (SEARCH_TRIGGERS_RE.test(haystack)) {
+    const queryHint = title;
+    return numbered([
+      {
+        title: "Search the web",
+        description: "Run a web search relevant to the goal and store results as a document.",
+        agent_kind: "openclaw",
+        input: { skill: "web.search", query: queryHint, max_results: 10 },
+      },
+      {
+        title: "Synthesise the findings",
+        description: "Read the search results from the brain and produce a brief synthesis.",
+        agent_kind: "hermes",
+        input: { action: "synthesise_recent_document", goal_title: title },
+      },
+      {
+        title: "Surface the first decision",
+        description: "Identify the first decision the human needs to make from the findings.",
         agent_kind: "hermes",
         input: { action: "first_decision", goal_title: title },
       },

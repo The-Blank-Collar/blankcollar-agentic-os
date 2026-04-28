@@ -64,3 +64,26 @@ describe("generatePlan — URL-aware", () => {
     expect(String(plan[0]!.input.url)).toBe("https://example.com/path");
   });
 });
+
+describe("generatePlan — search-aware", () => {
+  it("routes 'research X' to OpenClaw web.search", () => {
+    const plan = generatePlan({ title: "Research the best CRM for SaaS startups" });
+    expect(plan[0]!.agent_kind).toBe("openclaw");
+    expect(plan[0]!.input.skill).toBe("web.search");
+    expect(plan[0]!.input.query).toMatch(/Research/);
+    expect(plan[1]!.agent_kind).toBe("hermes");
+    expect(plan[2]!.agent_kind).toBe("hermes");
+  });
+
+  it("routes 'find/look up' phrasing to web.search", () => {
+    const plan = generatePlan({ title: "Find competitors for our pricing page" });
+    expect(plan[0]!.input.skill).toBe("web.search");
+  });
+
+  it("a URL still wins over search keywords", () => {
+    const plan = generatePlan({
+      title: "Research https://news.ycombinator.com/",
+    });
+    expect(plan[0]!.input.skill).toBe("web.fetch");
+  });
+});

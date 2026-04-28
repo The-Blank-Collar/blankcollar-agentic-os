@@ -9,11 +9,12 @@ from typing import Any
 from app.brain import brain
 from app.fetch import FetchError, web_fetch
 from app.models import RunRequest
+from app.search import SearchError, web_search
 from app.state import RunState, RunStatus, runs
 
 log = logging.getLogger("openclaw.runner")
 
-SUPPORTED_SKILLS: tuple[str, ...] = ("web.fetch",)
+SUPPORTED_SKILLS: tuple[str, ...] = ("web.fetch", "web.search")
 
 
 async def run(req: RunRequest) -> None:
@@ -30,9 +31,12 @@ async def run(req: RunRequest) -> None:
             return
 
         if not skill:
-            # Default skill: if input has a `url`, treat as web.fetch.
+            # Default skill: if input has a `url`, treat as web.fetch;
+            # if it has a `query`, treat as web.search.
             if "url" in sub_input:
                 skill = "web.fetch"
+            elif "query" in sub_input:
+                skill = "web.search"
             else:
                 state.mark_failed(
                     f"no skill specified; supported: {', '.join(SUPPORTED_SKILLS)}"
@@ -92,6 +96,70 @@ async def run(req: RunRequest) -> None:
                     "truncated": fetched.get("truncated"),
                     "memory_id": memory_id,
                     "excerpt_chars": len(fetched.get("excerpt") or ""),
+                }
+            )
+            return
+
+        # ---- web.search ----
+        if skill == "web.search":
+            query = sub_input.get("query")
+            max_results = sub_input.get("max_results")
+            if not isinstance(query, str) or not query:
+                state.mark_failed("web.search requires `input.query`")
+                return
+            if max_results is not None and not isinstance(max_results, int):
+                try:
+                    max_results = int(max_results)  # be forgiving
+                except (TypeError, ValueError):
+                    state.mark_failed("web.search `max_results` must be an integer")
+                    return
+
+            try:
+                result = await asyncio.wait_for(
+                    web_search(query, max_results=max_results),
+                    timeout=45.0,
+                )
+            except SearchError as se:
+                state.mark_failed(str(se))
+                return
+
+            if state.cancel_event.is_set():
+                state.mark_cancelled()
+                return
+
+            results = result.get("results") or []
+            # Persist as a `document` memory so Hermes can reason on the SERP.
+            content_lines = [f"Search results for: {query}", ""]
+            for i, r in enumerate(results, 1):
+                title = (r.get("title") or "(no title)")[:200]
+                url = r.get("url") or ""
+                snippet = (r.get("snippet") or "")[:400]
+                content_lines.append(f"{i}. {title}\n   {url}\n   {snippet}")
+            memory_id = await brain.remember(
+                kind="document",
+                title=f"Search: {query}",
+                content="\n".join(content_lines),
+                scope=req.scope,
+                metadata={
+                    "run_id": rid,
+                    "goal_id": str(req.goal_id),
+                    "skill": "web.search",
+                    "provider": result.get("provider"),
+                    "query": query,
+                    "result_count": len(results),
+                    "source": "openclaw",
+                },
+            )
+
+            state.mark_succeeded(
+                {
+                    "agent_kind": "openclaw",
+                    "skill": "web.search",
+                    "provider": result.get("provider"),
+                    "query": query,
+                    "result_count": len(results),
+                    "results": results[:5],  # echo top 5 in the run output for the dashboard
+                    "memory_id": memory_id,
                 }
             )
             return

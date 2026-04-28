@@ -22,5 +22,18 @@ class Settings(BaseSettings):
     # Cap how much extracted text we hand back to keep payloads sane.
     text_excerpt_chars: int = Field(default=8_000, alias="OPENCLAW_TEXT_EXCERPT_CHARS")
 
+    # ----- Oxylabs AI Studio (web.search) -----
+    # The Hostinger order includes Oxylabs Credits 10000.
+    # When OXYLABS_API_KEY is unset, web.search falls back to a "DuckDuckGo
+    # Instant Answer" path so the demo stays runnable without credits.
+    oxylabs_api_key: str | None = Field(default=None, alias="OXYLABS_API_KEY")
+    oxylabs_base_url: str = Field(
+        default="https://api.aistudio.oxylabs.io",
+        alias="OXYLABS_BASE_URL",
+    )
+    oxylabs_search_path: str = Field(default="/v1/search", alias="OXYLABS_SEARCH_PATH")
+    oxylabs_default_results: int = Field(default=10, alias="OXYLABS_DEFAULT_RESULTS")
+    oxylabs_request_timeout_s: float = Field(default=30.0, alias="OXYLABS_TIMEOUT_S")
+
 
 settings = Settings()

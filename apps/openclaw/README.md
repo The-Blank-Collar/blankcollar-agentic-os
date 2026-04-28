@@ -10,12 +10,21 @@ Endpoints (per `docs/API.md`):
 
 ## Skills shipped in v0
 
-| Skill        | Inputs                  | Behaviour                                                          |
-|--------------|-------------------------|--------------------------------------------------------------------|
-| `web.fetch`  | `url`                   | Politely fetches a URL, extracts visible text, writes a `document` memory to gbrain. |
+| Skill         | Inputs                          | Behaviour                                                                                              |
+|---------------|---------------------------------|--------------------------------------------------------------------------------------------------------|
+| `web.fetch`   | `url`                           | Politely fetches a URL, extracts visible text, writes a `document` memory to gbrain.                   |
+| `web.search`  | `query`, `max_results?`         | Searches the web (Oxylabs AI Studio if `OXYLABS_API_KEY` set; DuckDuckGo otherwise) and stores results. |
 
-The skill is selected by `subtask.input.skill`. If a `url` is present and no
-skill is named, `web.fetch` is the default.
+The skill is selected by `subtask.input.skill`. If a `url` is present, `web.fetch`
+is the default. If a `query` is present, `web.search` is the default.
+
+## Search providers
+
+- **Oxylabs AI Studio** — production default on Hostinger, where `OXYLABS_API_KEY`
+  is set. The Oxylabs response shape is normalised into `{title, url, snippet}`
+  so Hermes always sees the same shape.
+- **DuckDuckGo Instant Answer** — anonymous fallback when no Oxylabs key is set.
+  Low rate limit, fewer results, but keeps the demo runnable offline.
 
 ## Politeness controls
 
