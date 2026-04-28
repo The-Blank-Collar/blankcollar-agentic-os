@@ -1,14 +1,17 @@
 # =============================================================================
 # Paperclip (real) — wraps the upstream paperclipai package from npm.
 #
-# Used with `network_mode: host` in docker-compose.yml so paperclipai's
-# loopback-only bind reaches the host's localhost directly.
+# Strategy: paperclipai binds 127.0.0.1:3100 inside the container (its
+# `local_trusted` mode forces loopback). We run a `socat` forwarder on
+# 0.0.0.0:3101 → 127.0.0.1:3100 alongside it. docker-compose.yml maps
+# host:3100 → container:3101, so the host's curl reaches socat → paperclipai.
 # =============================================================================
 
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git python3 \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl git python3 socat \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NPM_CONFIG_FUND=false \
@@ -30,6 +33,7 @@ RUN mkdir -p /home/node/.npm-cache \
 COPY --chown=node:node entrypoint.sh /home/node/entrypoint.sh
 RUN chmod +x /home/node/entrypoint.sh
 
-EXPOSE 3100
+# socat listens on this; paperclipai listens on 3100 (loopback).
+EXPOSE 3101
 
 CMD ["/home/node/entrypoint.sh"]
