@@ -49,13 +49,22 @@ check_http() {
 
 check_container_health() {
   local name=$1
-  local status
-  status=$(docker inspect --format='{{.State.Health.Status}}' "$name" 2>/dev/null || echo "missing")
-  case "$status" in
+  local running health
+  running=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null || echo "missing")
+  if [ "$running" = "missing" ]; then
+    bad "$name container is missing — run ./infra/scripts/bootstrap.sh"
+    return
+  fi
+  if [ "$running" != "running" ]; then
+    bad "$name is $running"
+    return
+  fi
+  health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$name" 2>/dev/null || true)
+  case "$health" in
     healthy) ok "$name healthy" ;;
     starting) bad "$name still starting (try again in a moment)" ;;
-    missing) bad "$name container is missing — run ./infra/scripts/bootstrap.sh" ;;
-    *) bad "$name is $status" ;;
+    "") ok "$name running (no healthcheck)" ;;
+    *) bad "$name is $health" ;;
   esac
 }
 
