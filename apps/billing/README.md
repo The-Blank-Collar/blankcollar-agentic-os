@@ -1,33 +1,41 @@
-# Billing
+# Billing — Stripe webhook + idempotent event log
 
-Stripe-powered billing for the hosted product. Phase 7 deliverable.
+Stripe billing for the hosted product. Like the auth scaffolding, the
+**Phase 7 implementation lives inside Paperclip**:
 
-## Status
+- `apps/paperclip/src/stripe.ts` — `verifyStripeSignature()` + `recordStripeEvent()` + schema bootstrap
+- `apps/paperclip/src/routes/webhooks.ts` — `POST /api/webhooks/stripe`
 
-Empty placeholder. The folder reserves the slot in the monorepo and signals to future contributors that billing is a first-class app, not a sprinkle of Stripe code in the orchestrator.
+This folder is reserved for future billing-specific code (entitlement service,
+portal session minting, plan-change reactors). Empty in v0 by design.
 
-## What lands here
+## What ships now
 
-- Stripe customer/subscription bootstrap on org creation
-- `POST /webhooks/stripe` with signature verification
-- Entitlement service: per-org `(plan, agents_max, runs_per_day_max, monthly_budget_cents)`
-- Usage metering — daily aggregation of run cost into a billable counter
-- Customer portal links
+- Webhook endpoint at `POST /api/webhooks/stripe` accepts Stripe events,
+  verifies the `Stripe-Signature` header against `STRIPE_WEBHOOK_SECRET`
+  using HMAC-SHA256 with a 5-minute timestamp tolerance.
+- Idempotent recording: every event is written once into `billing.stripe_event`
+  (`ON CONFLICT DO NOTHING`). The endpoint reports `duplicate: true` for replays.
+- Audit-log entry per first-seen event (`stripe.<type>`).
+- Returns `503 stripe_disabled` when `STRIPE_WEBHOOK_SECRET` is unset, so
+  the rest of the stack runs healthy without billing configured.
 
-## Env vars (from `.env.example`)
+## Setup checklist
 
-- `STRIPE_SECRET_KEY`
-- `STRIPE_PUBLISHABLE_KEY`
-- `STRIPE_WEBHOOK_SECRET`
+1. Create a Stripe account and a test-mode webhook endpoint pointing at
+   `https://<your-domain>/api/webhooks/stripe`.
+2. Copy the **Signing secret** (`whsec_…`) into `.env` as `STRIPE_WEBHOOK_SECRET`.
+3. (For server-side API calls) copy your secret key into `STRIPE_SECRET_KEY`.
+4. Restart Paperclip; the `billing` schema and `billing.stripe_event` table
+   are created on startup if missing.
+5. From Stripe's dashboard, send a test event — confirm it shows up in
+   `billing.stripe_event` and a row appears in `core.audit_log`.
 
-## Integration points
+## Phase 7+ will add
 
-- Reads/writes `billing.*` schema (added in Phase 7).
-- Calls Paperclip's `entitlement` API to gate feature access.
-- Listens on the audit log for "run finished" events to roll up cost.
-
-## Non-goals
-
-- No billing UI. The Stripe-hosted customer portal is the UI. We don't build a card form.
-- No invoicing edge cases beyond what Stripe handles natively.
-- No third-party tax engines until we have a real reason.
+- Customer / subscription tables mirrored from Stripe.
+- Entitlement endpoint `/api/billing/entitlement` Paperclip uses to gate
+  features per plan tier.
+- Stripe Customer Portal session minting.
+- Reactors that translate `customer.subscription.deleted` etc. into
+  `core.role_assignment` changes.

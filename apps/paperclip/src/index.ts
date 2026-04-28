@@ -15,6 +15,7 @@ import { healthRoutes } from "./routes/health.js";
 import { orgRoutes } from "./routes/orgs.js";
 import { runRoutes } from "./routes/runs.js";
 import { uiRoutes } from "./routes/ui.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -37,6 +38,9 @@ async function main(): Promise<void> {
     app.log.info("auth=stub (Supabase not configured; demo-org owner for all callers)");
   }
 
+  // webhookRoutes registers its own content-type parser; must be before the
+  // route registrations that rely on the default JSON parser.
+  await app.register(webhookRoutes);
   await app.register(healthRoutes);
   await app.register(orgRoutes);
   await app.register(goalRoutes);

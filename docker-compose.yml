@@ -125,6 +125,9 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
       PAPERCLIP_AUTH_ENFORCE: ${PAPERCLIP_AUTH_ENFORCE:-false}
+      # Stripe webhook receiver — returns 503 when STRIPE_WEBHOOK_SECRET unset.
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
     ports:
       - "${PAPERCLIP_PORT:-3000}:80"
     depends_on:
