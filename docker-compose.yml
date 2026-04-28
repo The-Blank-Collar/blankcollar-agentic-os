@@ -121,6 +121,10 @@ services:
       PAPERCLIP_DEFAULT_ORG_SLUG: ${PAPERCLIP_DEFAULT_ORG_SLUG:-blankcollar-demo}
       PAPERCLIP_WORKER_POLL_MS: ${PAPERCLIP_WORKER_POLL_MS:-1500}
       PAPERCLIP_WORKER_ENABLED: ${PAPERCLIP_WORKER_ENABLED:-true}
+      # Supabase auth — verify when SUPABASE_JWT_SECRET is set; enforce only when explicit.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      PAPERCLIP_AUTH_ENFORCE: ${PAPERCLIP_AUTH_ENFORCE:-false}
     ports:
       - "${PAPERCLIP_PORT:-3000}:80"
     depends_on:

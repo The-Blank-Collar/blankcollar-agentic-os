@@ -20,7 +20,7 @@ type RunRow = {
 export async function runRoutes(app: FastifyInstance): Promise<void> {
   // -- list (by goal) -----------------------------------------------------
   app.get<{ Querystring: { goal_id?: string } }>("/api/runs", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const where: string[] = ["g.org_id = $1"];
     const params: unknown[] = [scope.org_id];
     if (req.query.goal_id) {
@@ -43,7 +43,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
 
   // -- get ----------------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/runs/:id", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const { rows } = await query<RunRow>(
       `SELECT r.*
        FROM ops.run r
@@ -57,7 +57,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
 
   // -- cancel -------------------------------------------------------------
   app.post<{ Params: { id: string } }>("/api/runs/:id/cancel", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const result = await tx(async (client) => {
       const { rows } = await client.query<RunRow>(
         `UPDATE ops.run r

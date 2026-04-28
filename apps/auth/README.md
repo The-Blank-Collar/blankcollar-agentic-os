@@ -1,33 +1,42 @@
-# Auth
+# Auth — Supabase JWT scaffolding
 
-Supabase-backed authentication and role mapping. Phase 6 deliverable.
+The Supabase auth layer is **embedded inside Paperclip** rather than running
+as a separate service. The actual implementation lives in:
 
-## Status
+- `apps/paperclip/src/auth.ts` — `verifyBearer()` + `authPreHandler` (Fastify hook)
+- `apps/paperclip/src/scope.ts` — `resolveCallerScope(req)` honours JWT-derived scope
+- `apps/paperclip/src/config.ts` — Supabase config
 
-Empty placeholder. Reserves the slot for the JWT-validating edge layer that will sit in front of Paperclip.
+This folder remains as a **slot for future auth helpers** (admin bootstrap,
+invitation flow, role re-mapping CLI, etc.) once Phase 6 needs them. Today
+it's intentionally empty.
 
-## What lands here
+## How it works in v0
 
-- `verifyJWT` middleware (validates Supabase tokens, attaches `Scope` to the request)
-- Role-mapping job: copies Supabase user metadata into `core.role_assignment`
-- Invitation flow: invite by email, role pre-assigned, link expires in 7 days
-- Org creation flow (server-side, never client-side)
-- Service-role-key guard: detects accidental browser-bound usage at build time
+| `SUPABASE_JWT_SECRET` | `PAPERCLIP_AUTH_ENFORCE` | Behaviour |
+|---|---|---|
+| unset | any                | All callers → demo-org owner stub. (Today's default.) |
+| set   | `false` (default)   | Verify token if present; fall back to stub if absent. |
+| set   | `true`              | Require a valid JWT for every API call (401/403 otherwise). |
 
-## Env vars (from `.env.example`)
+The verifier accepts HS256 tokens (Supabase's default). When a token verifies,
+Paperclip looks up `core.user_account` by email and resolves the highest-
+privilege role from `core.role_assignment` into the request scope.
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`           — safe to ship to browser
-- `SUPABASE_SERVICE_ROLE_KEY`   — **server-only**, never expose
+## Setting it up
 
-## Hard rules
+1. Create a Supabase project (free tier is fine).
+2. Settings → API → copy **JWT Secret** into `SUPABASE_JWT_SECRET` in `.env`.
+3. (Optional) copy **Project URL** into `SUPABASE_URL`.
+4. Provision users by inserting into `core.user_account` with the email
+   matching their Supabase email; add a `core.role_assignment` row.
+5. Restart Paperclip — its startup log will say `auth=supabase`.
+6. To enforce: set `PAPERCLIP_AUTH_ENFORCE=true` and restart.
 
-- Verify the JWT on **every** request. No "trusted internal" bypass.
-- The service-role key never leaves this app.
-- Role changes always write to `core.audit_log`.
-- A user with no `role_assignment` rows for an org is treated as no access — never as a default.
+## Phase 6 will add
 
-## Non-goals
-
-- We don't build our own password reset or magic-link UI. Supabase handles that.
-- No social login bonanza. Phase 6 ships email + magic link. OAuth providers come post-launch.
+- A `/login` UI route in Paperclip that hands off to Supabase Auth UI.
+- A session cookie path so the dashboard (not just API clients) is
+  authenticated.
+- An admin tool to invite users by email and assign roles.
+- Anti-CSRF for state-changing UI fragments.

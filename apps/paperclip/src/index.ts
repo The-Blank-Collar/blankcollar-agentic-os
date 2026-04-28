@@ -3,6 +3,7 @@
 import formbody from "@fastify/formbody";
 import Fastify from "fastify";
 
+import { authPreHandler } from "./auth.js";
 import { ensureDefaultAgents } from "./bootstrap.js";
 import { config } from "./config.js";
 import { close as closeDb } from "./db.js";
@@ -25,6 +26,16 @@ async function main(): Promise<void> {
   });
 
   await app.register(formbody);
+
+  // Supabase JWT auth (no-op when SUPABASE_JWT_SECRET unset).
+  app.addHook("preHandler", authPreHandler);
+  if (config.supabaseJwtSecret) {
+    app.log.info(
+      `auth=supabase enforce=${config.authEnforce} (set PAPERCLIP_AUTH_ENFORCE=true to require tokens)`,
+    );
+  } else {
+    app.log.info("auth=stub (Supabase not configured; demo-org owner for all callers)");
+  }
 
   await app.register(healthRoutes);
   await app.register(orgRoutes);

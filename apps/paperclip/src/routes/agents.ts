@@ -17,7 +17,7 @@ type AgentRow = {
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { is_active?: string } }>("/api/agents", async (req) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const where: string[] = ["org_id = $1"];
     const params: unknown[] = [scope.org_id];
     if (req.query.is_active === "true") where.push("is_active = true");
@@ -37,7 +37,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const result = await tx(async (client) => {
       const { rows } = await client.query<AgentRow>(
         `INSERT INTO ops.agent (org_id, kind, name, config)
@@ -66,7 +66,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const sets: string[] = [];
     const params: unknown[] = [req.params.id, scope.org_id];
     if (parsed.data.name !== undefined) {

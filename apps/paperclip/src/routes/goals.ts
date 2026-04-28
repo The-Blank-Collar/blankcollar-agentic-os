@@ -26,7 +26,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_query", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const where: string[] = ["org_id = $1"];
     const params: unknown[] = [scope.org_id];
     if (parsed.data.status) {
@@ -55,7 +55,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const result = await tx(async (client) => {
       const { rows } = await client.query<GoalRow>(
         `
@@ -89,7 +89,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
 
   // -- get ----------------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/goals/:id", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const { rows } = await query<GoalRow>(
       `SELECT id, org_id, department_id, owner_id, title, description, status, metadata, created_at, updated_at
        FROM ops.goal WHERE id = $1 AND org_id = $2`,
@@ -105,7 +105,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const sets: string[] = [];
     const params: unknown[] = [req.params.id, scope.org_id];
     if (parsed.data.title !== undefined) {
@@ -149,7 +149,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
 
   // -- archive ------------------------------------------------------------
   app.delete<{ Params: { id: string } }>("/api/goals/:id", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const result = await tx(async (client) => {
       const { rows } = await client.query<GoalRow>(
         `UPDATE ops.goal SET status = 'archived', updated_at = now()
@@ -170,7 +170,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
 
   // -- plan ---------------------------------------------------------------
   app.post<{ Params: { id: string } }>("/api/goals/:id/plan", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const { rows } = await query<GoalRow>(
       "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
       [req.params.id, scope.org_id],
@@ -207,7 +207,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const { rows } = await query<GoalRow>(
       "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
       [req.params.id, scope.org_id],
@@ -254,7 +254,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
 
   // -- dispatch all (run plan) -------------------------------------------
   app.post<{ Params: { id: string } }>("/api/goals/:id/dispatch-all", async (req, reply) => {
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const { rows } = await query<GoalRow>(
       "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
       [req.params.id, scope.org_id],

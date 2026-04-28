@@ -21,7 +21,7 @@ export async function auditRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_query", details: parsed.error.flatten() });
     }
-    const scope = await resolveCallerScope();
+    const scope = await resolveCallerScope(req);
     const where: string[] = ["org_id = $1"];
     const params: unknown[] = [scope.org_id];
     if (parsed.data.action) {
