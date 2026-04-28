@@ -41,14 +41,21 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] Vitest tests, typecheck, Docker image, CI job
 - [ ] WebSocket for live run telemetry *(deferred to Phase 3 — polling works for v0)*
 
-## Phase 3 — First Real Workforce
+## Phase 3 — First Real Workforce ✅
 
-**Goal:** an end-to-end demo: create a goal → real Hermes agent does the work → result visible in dashboard.
+**Goal:** an end-to-end demo: create a goal → real agent does the work → result visible in dashboard.
 
-- [ ] Hermes adapter (real container, `/run` contract)
-- [ ] OpenClaw integration (real container)
-- [ ] Skills minimal set (web fetch, file read, send email)
-- [ ] Demo goal: "Summarize today's HN front page and email me"
+- [x] Hermes adapter (real Python/FastAPI container, full adapter contract)
+- [x] OpenClaw integration (real Python/FastAPI container, full adapter contract)
+- [x] Adapter HTTP client + registry on Paperclip (`http://hermes:80`, `http://openclaw:80`)
+- [x] In-process fake-agent retired; worker now polls real adapters until terminal
+- [x] Default Hermes + OpenClaw rows auto-inserted into `ops.agent` on Paperclip startup
+- [x] Plan generator recognises URLs in goals → fetch → summarise → decision
+- [x] "Run plan" button dispatches all subtasks at once
+- [x] Skills (v0): `web.fetch` (politeness controls + IP-literal safety)
+- [x] Demo goal works: *"Summarize https://news.ycombinator.com/ for me."*
+- [ ] Email send skill *(deferred to Phase 5 alongside the policy engine)*
+- [ ] WebSocket telemetry *(deferred — polling is sufficient for v0)*
 
 ## Phase 4 — Goal Command Centre
 

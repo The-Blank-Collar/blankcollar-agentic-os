@@ -116,6 +116,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/blankcollar}
       GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      HERMES_URL: ${HERMES_URL:-http://hermes:80}
+      OPENCLAW_URL: ${OPENCLAW_URL:-http://openclaw:80}
       PAPERCLIP_DEFAULT_ORG_SLUG: ${PAPERCLIP_DEFAULT_ORG_SLUG:-blankcollar-demo}
       PAPERCLIP_WORKER_POLL_MS: ${PAPERCLIP_WORKER_POLL_MS:-1500}
       PAPERCLIP_WORKER_ENABLED: ${PAPERCLIP_WORKER_ENABLED:-true}
@@ -128,38 +130,64 @@ services:
         condition: service_healthy
       gbrain:
         condition: service_healthy
+      hermes:
+        condition: service_healthy
+      openclaw:
+        condition: service_healthy
     networks: [bc_net]
 
   # =========================================================================
-  # Hermes Agent — general-purpose workforce agent (PLACEHOLDER)
-  #   Phase 3 will replace with the official Hermes adapter image.
+  # Hermes — general-purpose reasoning agent (Phase 3, real)
+  #   Implements the Agent Adapter Contract (docs/AGENTS.md). Wraps Anthropic
+  #   Claude Sonnet; deterministic FakeLLM fallback when ANTHROPIC_API_KEY is
+  #   unset so the demo runs offline.
   # =========================================================================
   hermes:
     <<: [*restart-policy, *default-logging]
-    image: nginx:1.27-alpine
+    build:
+      context: ./apps/hermes
+      dockerfile: Dockerfile
+    image: blankcollar/hermes:0.1.0
     container_name: bc_hermes
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HERMES_MODEL: ${HERMES_MODEL:-claude-sonnet-4-6}
+      HERMES_MAX_TOKENS: ${HERMES_MAX_TOKENS:-1024}
+      HERMES_MAX_RECALL: ${HERMES_MAX_RECALL:-8}
     ports:
       - "${HERMES_PORT:-8001}:80"
-    volumes:
-      - ./apps/hermes/public:/usr/share/nginx/html:ro
     depends_on:
-      - paperclip
+      gbrain:
+        condition: service_healthy
     networks: [bc_net]
 
   # =========================================================================
-  # OpenClaw — tool-heavy / browser agent (PLACEHOLDER)
-  #   Phase 3 will replace with the real OpenClaw image.
+  # OpenClaw — tool / web-action agent (Phase 3, real)
+  #   web.fetch skill ships in v0; safe-by-default URL handling.
   # =========================================================================
   openclaw:
     <<: [*restart-policy, *default-logging]
-    image: nginx:1.27-alpine
+    build:
+      context: ./apps/openclaw
+      dockerfile: Dockerfile
+    image: blankcollar/openclaw:0.1.0
     container_name: bc_openclaw
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      OPENCLAW_FETCH_TIMEOUT_S: ${OPENCLAW_FETCH_TIMEOUT_S:-10}
+      OPENCLAW_FETCH_MAX_BYTES: ${OPENCLAW_FETCH_MAX_BYTES:-1500000}
+      OPENCLAW_USER_AGENT: ${OPENCLAW_USER_AGENT:-BlankCollar-OpenClaw/0.1 (+https://www.blankcollar.ai)}
+      OPENCLAW_TEXT_EXCERPT_CHARS: ${OPENCLAW_TEXT_EXCERPT_CHARS:-8000}
     ports:
       - "${OPENCLAW_PORT:-8002}:80"
-    volumes:
-      - ./apps/openclaw/public:/usr/share/nginx/html:ro
     depends_on:
-      - paperclip
+      gbrain:
+        condition: service_healthy
     networks: [bc_net]
 
   # =========================================================================

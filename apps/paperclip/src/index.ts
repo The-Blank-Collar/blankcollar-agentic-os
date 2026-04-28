@@ -3,6 +3,7 @@
 import formbody from "@fastify/formbody";
 import Fastify from "fastify";
 
+import { ensureDefaultAgents } from "./bootstrap.js";
 import { config } from "./config.js";
 import { close as closeDb } from "./db.js";
 import { worker } from "./queue/worker.js";
@@ -40,6 +41,13 @@ async function main(): Promise<void> {
       `<!doctype html><body style="font-family:system-ui;background:#0b0d10;color:#e7eaee;display:grid;place-items:center;min-height:100vh"><div style="text-align:center"><h1>Not found</h1><p><a style="color:#7aa7ff" href="/">← Goals</a></p></div></body>`,
     );
   });
+
+  // First-boot bootstrap: ensure Hermes + OpenClaw rows exist in ops.agent.
+  try {
+    await ensureDefaultAgents({ info: (msg) => app.log.info(msg) });
+  } catch (err) {
+    app.log.error({ err }, "default-agents bootstrap failed");
+  }
 
   if (config.workerEnabled) {
     worker.start({

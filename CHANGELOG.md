@@ -4,6 +4,32 @@ All notable changes to Blank Collar Agentic OS land here. The format follows [Ke
 
 ## [Unreleased]
 
+### Phase 3 — First Real Workforce (Hermes + OpenClaw v0.1.0; Paperclip 0.2.0)
+
+- **Hermes** (`apps/hermes/`) — Python 3.12 / FastAPI / `anthropic` SDK
+  - Implements the Agent Adapter Contract: `/run` → 202, `/run/{id}`, cancel, `/healthz`
+  - Reasoning loop: `gbrain /recall` → LLM call → `gbrain /remember` (episode)
+  - Default model `claude-sonnet-4-6`; falls back to deterministic FakeLLM when `ANTHROPIC_API_KEY` is unset
+  - 3 unit tests (succeed-path, cancel, idempotent state map)
+- **OpenClaw** (`apps/openclaw/`) — Python 3.12 / FastAPI / httpx / selectolax
+  - Same adapter contract
+  - Skill: `web.fetch` — politeness (timeout, max-bytes, declared UA), refuses non-http(s) schemes and IP literals on private/loopback/link-local/reserved (incl. AWS IMDS)
+  - Successful fetches write a `document` memory to gbrain
+  - 9 unit tests (URL safety + HTML extraction)
+- **Paperclip** integration (`apps/paperclip/`)
+  - New `src/queue/adapter-client.ts` and `src/queue/registry.ts` (kind → URL)
+  - `src/queue/worker.ts` rewritten: dispatch to real adapter, poll until terminal, mirror state into `ops.run`, write audit on succeeded/failed/cancelled
+  - In-process fake agent removed
+  - `src/bootstrap.ts`: idempotent default-agent hire on startup (Hermes + OpenClaw rows in `ops.agent`)
+  - `src/plan.ts`: subtasks now carry `agent_kind`; URL-bearing goals auto-produce a fetch → summarise → decision plan
+  - New `POST /api/goals/{id}/dispatch-all` endpoint (queues every subtask in one tx)
+  - Dashboard: per-subtask kind pill; "Run plan" button on goal detail
+  - 4 new plan tests (URL-aware planning); total 17/17 green
+- Compose: Hermes + OpenClaw placeholders → real `build:` directives; agents depend on `gbrain` healthcheck; paperclip depends on agents
+- `.env.example`: `HERMES_URL`, `OPENCLAW_URL`, `HERMES_MODEL`, `HERMES_MAX_TOKENS`, `HERMES_MAX_RECALL`, `OPENCLAW_FETCH_TIMEOUT_S`, `OPENCLAW_FETCH_MAX_BYTES`, `OPENCLAW_USER_AGENT`, `OPENCLAW_TEXT_EXCERPT_CHARS`
+- `bootstrap.sh` waits for `bc_hermes` and `bc_openclaw`; `doctor.sh` hits `/healthz` on both
+- CI: new `hermes` and `openclaw` jobs (ruff + pytest + image build)
+
 ### Phase 2 — Paperclip Orchestrator (v0.1.0)
 
 - New service: `apps/paperclip/` — Node 22 + Fastify 5 + pg + Zod (TypeScript, ESM)

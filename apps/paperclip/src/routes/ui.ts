@@ -24,6 +24,17 @@ const STATUS_PILL: Record<string, string> = {
   archived: "background:#1a1f25;color:#5a626c",
 };
 
+const KIND_PILL: Record<string, string> = {
+  hermes: "background:#1f2e3a;color:#9ec5ff",
+  openclaw: "background:#3a2f12;color:#f5c97a",
+};
+
+function renderKindPill(kind: string | undefined): string {
+  if (!kind) return "";
+  const style = KIND_PILL[kind] ?? "background:#1a1f25;color:#9aa4b1";
+  return `<span class="pill" style="${style};font-size:.7rem;margin-left:.25rem">${escape(kind)}</span>`;
+}
+
 const RUN_STATUS_PILL: Record<string, string> = {
   queued: "background:#1a1f25;color:#9aa4b1",
   running: "background:#1f3a52;color:#9ec5ff",
@@ -254,7 +265,7 @@ async function renderGoalDetail(id: string): Promise<string | undefined> {
   );
   if (rows.length === 0) return undefined;
   const goal = rows[0]!;
-  const plan = (goal.metadata as { plan?: { subtasks: { index: number; title: string; description: string }[] } } | null)
+  const plan = (goal.metadata as { plan?: { subtasks: { index: number; title: string; description: string; agent_kind?: string }[] } } | null)
     ?.plan;
   const subtasks = plan?.subtasks ?? [];
 
@@ -263,12 +274,19 @@ async function renderGoalDetail(id: string): Promise<string | undefined> {
          <button type="submit">Generate plan</button>
        </form>`
     : `<div class="card">
-         <strong>Plan (${subtasks.length} subtasks)</strong>
+         <div class="row" style="justify-content:space-between;margin-bottom:.4rem">
+           <strong>Plan (${subtasks.length} subtasks)</strong>
+           <form hx-post="/api/goals/${escape(goal.id)}/dispatch-all" hx-swap="none"
+                 hx-on::after-request="document.getElementById('runsList').dispatchEvent(new Event('refresh'))">
+             <button type="submit">Run plan</button>
+           </form>
+         </div>
          <ol class="subtask-list">
            ${subtasks
              .map(
                (s) => `<li>
-                 <strong>${escape(s.title)}</strong> — ${escape(s.description)}
+                 <strong>${escape(s.title)}</strong> ${renderKindPill(s.agent_kind)}
+                 — ${escape(s.description)}
                  <form style="display:inline" hx-post="/api/goals/${escape(goal.id)}/dispatch" hx-ext="json-enc-form" hx-swap="none" hx-on::after-request="document.getElementById('runsList').dispatchEvent(new Event('refresh'))">
                    <input type="hidden" name="subtask_index" value="${s.index}" />
                    <button class="subtle" type="submit" style="margin-left:.5rem;font-size:.8rem;padding:.2rem .55rem">Dispatch</button>

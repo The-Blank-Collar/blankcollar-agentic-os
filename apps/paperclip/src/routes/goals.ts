@@ -251,4 +251,47 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     });
     return reply.code(201).send({ run_id: result, status: "queued" });
   });
+
+  // -- dispatch all (run plan) -------------------------------------------
+  app.post<{ Params: { id: string } }>("/api/goals/:id/dispatch-all", async (req, reply) => {
+    const scope = await resolveCallerScope();
+    const { rows } = await query<GoalRow>(
+      "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
+      [req.params.id, scope.org_id],
+    );
+    if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
+    const goal = rows[0]!;
+    const plan = (goal.metadata as { plan?: { subtasks: { index: number }[] } } | null)?.plan;
+    if (!plan || !Array.isArray(plan.subtasks) || plan.subtasks.length === 0) {
+      return reply.code(409).send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
+    }
+    const queued = await tx(async (client) => {
+      const ids: string[] = [];
+      for (const st of plan.subtasks) {
+        const { rows: runRows } = await client.query<{ id: string }>(
+          `INSERT INTO ops.run (goal_id, status, input)
+           VALUES ($1, 'queued', $2::jsonb) RETURNING id`,
+          [goal.id, JSON.stringify({ subtask: st })],
+        );
+        const runId = runRows[0]!.id;
+        ids.push(runId);
+        await audit(
+          {
+            scope,
+            action: "run.dispatch",
+            target_type: "run",
+            target_id: runId,
+            metadata: { goal_id: goal.id, subtask_index: st.index, source: "dispatch-all" },
+          },
+          client,
+        );
+      }
+      await client.query(
+        "UPDATE ops.goal SET status = CASE WHEN status = 'draft' THEN 'active'::ops.goal_status ELSE status END, updated_at = now() WHERE id = $1",
+        [goal.id],
+      );
+      return ids;
+    });
+    return reply.code(201).send({ run_ids: queued, queued: queued.length });
+  });
 }

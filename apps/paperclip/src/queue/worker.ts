@@ -1,34 +1,50 @@
 /**
- * Tiny in-process queue worker. Polls ops.run for `queued` rows, atomically
- * claims one with FOR UPDATE SKIP LOCKED, dispatches it to the fake agent,
- * and updates status. Single-instance for now; scale-out is a Phase 3 concern.
+ * Queue worker.
+ *
+ * Phase 2: dispatched runs to an in-process fake agent.
+ * Phase 3: dispatches to a real adapter HTTP service (Hermes / OpenClaw),
+ *   polls it until terminal, mirrors state into ops.run, writes audit entries.
+ *
+ * Selection rule: a subtask may carry `subtask.agent_kind`. If unset, fall
+ * back to "hermes". A row in ops.agent of that kind (active) becomes
+ * `agent_id` on the run.
  */
 
-import { config } from "../config.js";
 import { audit } from "../audit.js";
-import { tx, query } from "../db.js";
+import { config } from "../config.js";
+import { query, tx } from "../db.js";
 import type { Scope } from "../schemas.js";
-import { runFakeAgent } from "./fake-agent.js";
+import type { AdapterClient } from "./adapter-client.js";
+import { getAdapter, knownKinds } from "./registry.js";
+
+type Logger = {
+  info: (msg: string) => void;
+  warn?: (msg: string) => void;
+  error: (err: unknown, msg: string) => void;
+};
 
 export class Worker {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
-  private busy = false;
+  private busyClaim = false;
+  private inFlight: Map<string, AdapterClient> = new Map();
 
-  start(log: { info: (msg: string) => void; error: (err: unknown, msg: string) => void }): void {
+  start(log: Logger): void {
     if (this.running) return;
     this.running = true;
-    log.info(`paperclip worker started (poll=${config.workerPollIntervalMs}ms)`);
+    log.info(
+      `paperclip worker started (poll=${config.workerPollIntervalMs}ms, kinds=[${knownKinds().join(", ")}])`,
+    );
     const tick = async (): Promise<void> => {
       if (!this.running) return;
-      if (!this.busy) {
-        this.busy = true;
+      if (!this.busyClaim) {
+        this.busyClaim = true;
         try {
-          await this.processOne();
+          await this.claimAndDispatch(log);
         } catch (err) {
           log.error(err, "worker tick failed");
         } finally {
-          this.busy = false;
+          this.busyClaim = false;
         }
       }
       if (this.running) {
@@ -41,25 +57,23 @@ export class Worker {
   async stop(): Promise<void> {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);
-    // Wait briefly so an in-flight tick can finish.
-    for (let i = 0; i < 20 && this.busy; i++) {
+    // Cancel in-flight runs at the adapter layer; the polling loops below will
+    // see status=cancelled and finalize the rows.
+    for (const [runId, client] of this.inFlight.entries()) {
+      void client.cancel(runId);
+    }
+    // Brief grace period for tick + poll loops to settle.
+    for (let i = 0; i < 40 && (this.busyClaim || this.inFlight.size > 0); i++) {
       await new Promise((r) => setTimeout(r, 50));
     }
   }
 
-  private async processOne(): Promise<void> {
-    type ClaimedRun = {
-      id: string;
-      goal_id: string;
-      input: Record<string, unknown>;
-    };
-    type ClaimedGoal = {
-      id: string;
-      org_id: string;
-      department_id: string | null;
-    };
+  /** Claim one queued run, dispatch to its adapter, and start polling. */
+  private async claimAndDispatch(log: Logger): Promise<void> {
+    type ClaimedRun = { id: string; goal_id: string; input: Record<string, unknown> };
+    type ClaimedGoal = { id: string; org_id: string; department_id: string | null };
 
-    const claimed = await tx(async (client) => {
+    const claim = await tx(async (client) => {
       const { rows } = await client.query<ClaimedRun>(
         `
         UPDATE ops.run
@@ -81,18 +95,45 @@ export class Worker {
         [run.goal_id],
       );
       if (goalRows.length === 0) {
-        await client.query("UPDATE ops.run SET status = 'failed', error = $2, finished_at = now() WHERE id = $1", [
-          run.id,
-          "goal not found",
-        ]);
+        await client.query(
+          "UPDATE ops.run SET status = 'failed', error = $2, finished_at = now() WHERE id = $1",
+          [run.id, "goal not found"],
+        );
         return undefined;
       }
       return { run, goal: goalRows[0]! };
     });
 
-    if (!claimed) return;
+    if (!claim) return;
+    const { run, goal } = claim;
 
-    const { run, goal } = claimed;
+    const subtask = (run.input as { subtask?: SubtaskShape }).subtask;
+    if (!subtask) {
+      await this.fail(run.id, goal, "missing subtask in input");
+      return;
+    }
+
+    const kind = subtask.agent_kind ?? "hermes";
+    const adapter = getAdapter(kind);
+    if (!adapter) {
+      await this.fail(run.id, goal, `no adapter registered for kind '${kind}'`);
+      return;
+    }
+
+    // Pick (or null) an active agent of this kind for the audit trail.
+    let agentId: string | null = null;
+    {
+      const { rows } = await query<{ id: string }>(
+        `SELECT id FROM ops.agent
+         WHERE org_id = $1 AND kind = $2 AND is_active = true
+         ORDER BY created_at LIMIT 1`,
+        [goal.org_id, kind],
+      );
+      if (rows.length > 0) agentId = rows[0]!.id;
+    }
+    if (agentId !== null) {
+      await query("UPDATE ops.run SET agent_id = $2 WHERE id = $1", [run.id, agentId]);
+    }
 
     const scope: Scope = {
       org_id: goal.org_id,
@@ -101,66 +142,173 @@ export class Worker {
       role: "agent",
     };
 
-    const subtask = (run.input as { subtask?: unknown }).subtask as
-      | { index: number; title: string; description: string; input: Record<string, unknown> }
-      | undefined;
-
-    if (!subtask) {
-      await query(
-        "UPDATE ops.run SET status = 'failed', error = $2, finished_at = now() WHERE id = $1",
-        [run.id, "missing subtask in input"],
-      );
-      return;
-    }
-
     try {
-      const result = await runFakeAgent({
-        scope,
+      await adapter.startRun({
         goal_id: goal.id,
         run_id: run.id,
-        subtask,
-      });
-
-      await tx(async (client) => {
-        await client.query(
-          `UPDATE ops.run
-           SET status = 'succeeded', output = $2::jsonb, finished_at = now()
-           WHERE id = $1`,
-          [run.id, JSON.stringify(result.output)],
-        );
-        await audit(
-          {
-            scope: { ...scope, role: "agent" },
-            action: "run.succeeded",
-            target_type: "run",
-            target_id: run.id,
-            metadata: { goal_id: goal.id, ...(result.memory_id ? { memory_id: result.memory_id } : {}) },
-          },
-          client,
-        );
+        input: { subtask },
+        scope,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await tx(async (client) => {
-        await client.query(
-          `UPDATE ops.run
-           SET status = 'failed', error = $2, finished_at = now()
-           WHERE id = $1`,
-          [run.id, message],
+      log.error(err, `dispatch to ${kind} failed`);
+      await this.fail(run.id, goal, `dispatch to ${kind} failed: ${message}`);
+      return;
+    }
+
+    log.info(`dispatched run ${run.id} to ${kind}`);
+    this.inFlight.set(run.id, adapter);
+    void this.pollUntilTerminal(run.id, goal, kind, adapter, log);
+  }
+
+  /** Long-lived poll that mirrors adapter state into ops.run. */
+  private async pollUntilTerminal(
+    runId: string,
+    goal: { id: string; org_id: string; department_id: string | null },
+    kind: string,
+    adapter: AdapterClient,
+    log: Logger,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const POLL_MS = 750;
+    const HARD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+    try {
+      while (this.running && Date.now() - startedAt < HARD_TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+
+        // Has paperclip-side cancel happened?
+        const { rows: localRows } = await query<{ status: string }>(
+          "SELECT status FROM ops.run WHERE id = $1",
+          [runId],
         );
+        const local = localRows[0]?.status;
+        if (local === "cancelled") {
+          await adapter.cancel(runId);
+          break;
+        }
+
+        let state;
+        try {
+          state = await adapter.getRun(runId);
+        } catch (err) {
+          log.error(err, `poll ${runId} on ${kind} failed`);
+          continue;
+        }
+
+        if (state.status === "succeeded") {
+          await this.succeed(runId, goal, state.output ?? {});
+          break;
+        }
+        if (state.status === "failed") {
+          await this.fail(runId, goal, state.error ?? "agent reported failure");
+          break;
+        }
+        if (state.status === "cancelled") {
+          await this.cancelLocal(runId, goal);
+          break;
+        }
+      }
+      if (Date.now() - startedAt >= HARD_TIMEOUT_MS) {
+        await adapter.cancel(runId);
+        await this.fail(runId, goal, "run exceeded hard timeout");
+      }
+    } finally {
+      this.inFlight.delete(runId);
+    }
+  }
+
+  private async succeed(
+    runId: string,
+    goal: { id: string; org_id: string; department_id: string | null },
+    output: Record<string, unknown>,
+  ): Promise<void> {
+    await tx(async (client) => {
+      await client.query(
+        `UPDATE ops.run
+         SET status = 'succeeded', output = $2::jsonb, finished_at = now()
+         WHERE id = $1`,
+        [runId, JSON.stringify(output)],
+      );
+      await audit(
+        {
+          scope: scopeFor(goal),
+          action: "run.succeeded",
+          target_type: "run",
+          target_id: runId,
+          metadata: { goal_id: goal.id, ...(output.memory_id ? { memory_id: output.memory_id } : {}) },
+        },
+        client,
+      );
+    });
+  }
+
+  private async fail(
+    runId: string,
+    goal: { id: string; org_id: string; department_id: string | null },
+    error: string,
+  ): Promise<void> {
+    await tx(async (client) => {
+      await client.query(
+        `UPDATE ops.run
+         SET status = 'failed', error = $2, finished_at = now()
+         WHERE id = $1`,
+        [runId, error],
+      );
+      await audit(
+        {
+          scope: scopeFor(goal),
+          action: "run.failed",
+          target_type: "run",
+          target_id: runId,
+          metadata: { goal_id: goal.id, error },
+        },
+        client,
+      );
+    });
+  }
+
+  private async cancelLocal(
+    runId: string,
+    goal: { id: string; org_id: string; department_id: string | null },
+  ): Promise<void> {
+    await tx(async (client) => {
+      const { rowCount } = await client.query(
+        `UPDATE ops.run
+         SET status = 'cancelled', finished_at = now()
+         WHERE id = $1 AND status NOT IN ('succeeded','failed','cancelled')`,
+        [runId],
+      );
+      if ((rowCount ?? 0) > 0) {
         await audit(
           {
-            scope: { ...scope, role: "agent" },
-            action: "run.failed",
+            scope: scopeFor(goal),
+            action: "run.cancelled",
             target_type: "run",
-            target_id: run.id,
-            metadata: { goal_id: goal.id, error: message },
+            target_id: runId,
+            metadata: { goal_id: goal.id },
           },
           client,
         );
-      });
-    }
+      }
+    });
   }
+}
+
+type SubtaskShape = {
+  index: number;
+  title: string;
+  description: string;
+  input: Record<string, unknown>;
+  agent_kind?: string;
+};
+
+function scopeFor(goal: { org_id: string; department_id: string | null; id: string }): Scope {
+  return {
+    org_id: goal.org_id,
+    department_id: goal.department_id,
+    goal_id: goal.id,
+    role: "agent",
+  };
 }
 
 export const worker = new Worker();
