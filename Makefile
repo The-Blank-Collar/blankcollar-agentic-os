@@ -71,6 +71,22 @@ validate: ## Validate docker-compose.yml without starting anything
 	$(COMPOSE) config -q && echo "✅ docker-compose.yml valid"
 
 # -----------------------------------------------------------------------------
+# Native paperclipai runner — see docs/PAPERCLIP_REAL.md for the rationale.
+# Runs from $HOME so it doesn't pick up our project's .env (which has Docker-
+# only hostnames like postgres:5432 that crash native paperclipai).
+# -----------------------------------------------------------------------------
+.PHONY: paperclip
+paperclip: ## Launch real Paperclip command centre natively at :3100 (Ctrl+C to stop)
+	@command -v node >/dev/null || { echo "Node.js not found — install with: brew install node"; exit 1; }
+	@echo "→ Starting paperclipai natively. Open http://localhost:3100"
+	@echo "→ Ctrl+C to stop. State persists at ~/.paperclip"
+	@cd "$$HOME" && exec npx --yes paperclipai@latest run
+
+.PHONY: paperclip-onboard
+paperclip-onboard: ## One-time setup for native paperclipai (rarely needed; onboard runs on first start anyway)
+	@cd "$$HOME" && npx --yes paperclipai@latest onboard --yes
+
+# -----------------------------------------------------------------------------
 # Supabase local-testing helpers — see docs/SUPABASE_LOCAL.md
 # -----------------------------------------------------------------------------
 .PHONY: user-add

@@ -51,8 +51,6 @@ volumes:
     name: bc_qdrant_data
   bc_pgadmin_data:
     name: bc_pgadmin_data
-  bc_paperclip_real_data:
-    name: bc_paperclip_real_data
 
 services:
   # =========================================================================
@@ -101,37 +99,19 @@ services:
     networks: [bc_net]
 
   # =========================================================================
-  # Paperclip (real) — upstream paperclipai, in Docker.
+  # Paperclip (real) — REMOVED. Run natively on your Mac instead:
+  #     make paperclip
+  # (or: cd ~ && npx paperclipai@latest run)
   #
-  # paperclipai's `local_trusted` mode hard-locks 127.0.0.1 binding. Docker
-  # host networking on Mac doesn't actually expose container loopback to the
-  # host (Mac limitation, unlike Linux). So we put a tiny `socat` forwarder
-  # inside the container that listens on 0.0.0.0:3101 and forwards to
-  # paperclipai's 127.0.0.1:3100. Docker port-forward host:3100 → container:3101
-  # (the socat side) does the rest.
+  # Why not Docker: paperclipai's `local_trusted` mode hard-locks 127.0.0.1
+  # binding inside the container, and Docker Desktop on Mac doesn't expose
+  # container loopback to the host (Mac-specific limitation, unlike Linux).
+  # Tried: PAPERCLIP_BIND env, --bind lan, sed config patches, Node JSON
+  # patches, host networking, socat reverse proxy. None worked end-to-end
+  # in our environment. Native install does — `npx paperclipai run` from
+  # your home folder takes 30 seconds and Just Works.
   # =========================================================================
-  paperclip-real:
-    <<: [*restart-policy, *default-logging]
-    build:
-      context: ./apps/paperclip-real
-      dockerfile: Dockerfile
-    image: blankcollar/paperclip-real:0.2.0
-    container_name: bc_paperclip_real
-    environment:
-      PAPERCLIP_TELEMETRY_DISABLED: "1"
-    ports:
-      # host:3100 → container:3101 (socat) → 127.0.0.1:3100 (paperclipai).
-      - "${PAPERCLIP_REAL_PORT:-3100}:3101"
-    volumes:
-      - bc_paperclip_real_data:/home/node/.paperclip
-    healthcheck:
-      # Healthcheck runs inside the container; hits paperclipai directly.
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3100/api/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 180s
-    networks: [bc_net]
+  # (intentionally no `paperclip-real` service)
 
   # =========================================================================
   # Paperclip (legacy / integrations) — our custom Fastify orchestrator.

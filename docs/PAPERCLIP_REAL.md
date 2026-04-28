@@ -1,92 +1,67 @@
-# Real Paperclip — primary command centre (Docker, host networking)
+# Real Paperclip — run natively on your Mac
 
 The upstream **paperclipai** package
-(https://github.com/paperclipai/paperclip) runs as a Docker service in our
-stack at **http://localhost:3100**, alongside our custom orchestrator at
-`:3000` (which keeps owning Stripe webhooks, Supabase JWT, and our custom
-audit log).
+(https://github.com/paperclipai/paperclip) is the primary command centre
+at **http://localhost:3100**.
 
-## Why this works (the short version)
+**It runs natively on your Mac, not in Docker.** One make target.
 
-paperclipai's `local_trusted` mode hard-locks a `127.0.0.1` bind regardless
-of every flag, env var, or config patch we tried. So instead of fighting it,
-we use Docker's **host networking** (`network_mode: host`): the container
-shares your Mac's network namespace, so paperclipai's `127.0.0.1:3100` *is*
-your Mac's `localhost:3100`. No port-forward, no socat, no auth wall.
-
-## Requirements
-
-- **Docker Desktop 4.34+** (host networking on Mac is GA from there).
-  Check with `docker --version`. Older? Update Docker Desktop or run
-  paperclipai natively with `npx paperclipai@latest run`.
-- Native `npx paperclipai run` **must not be running** on your Mac when
-  the Docker version starts — they'd fight for port 3100.
-
-## Bring it up
+## How to start it
 
 ```bash
-make bootstrap
+make paperclip
 ```
 
-(or `docker compose up -d` if everything else is already running). First
-boot of `paperclip-real` takes ~2 min — fetching the `paperclipai` npm
-package, running `onboard --yes`, then starting the server.
+That runs `npx paperclipai@latest run` from your home folder. Open
+**http://localhost:3100**. Loads straight into the dashboard. Ctrl+C in
+that terminal to stop it. State lives in `~/.paperclip/` and survives
+restarts.
 
-```bash
-make doctor
-```
+## Why not Docker
 
-Should be all green, including `Paperclip(real) responding (http://localhost:3100/api/health)`.
+We tried, hard. Six different attempts:
 
-```bash
-open http://localhost:3100
-```
+1. `PAPERCLIP_BIND=0.0.0.0` env var → ignored (`--yes` quickstart locks loopback)
+2. `--bind lan` flag → enables auth wall before the user can do anything
+3. `sed`-patching `config.json` → paperclipai re-reads at startup, reverts
+4. Node-based JSON patch on `bind`/`host` keys → same problem
+5. `network_mode: host` → Mac Docker Desktop doesn't actually share host loopback (Linux-only)
+6. `socat` reverse proxy inside the container → never went healthy in the time budget
 
-Loads straight into Paperclip's dashboard. `local_trusted` mode = no auth wall.
+The root cause: paperclipai's `local_trusted` deployment mode hard-locks
+`127.0.0.1` binding, and Docker Desktop on macOS doesn't expose container
+loopback to the host. Native install bypasses all of it. Done in 30 seconds.
 
-## Where everything lives
+When this codebase ships to Hostinger (Linux VPS), the situation is different —
+Linux Docker DOES expose container loopback via `network_mode: host`, so
+deploying paperclipai there is feasible. We'll cross that bridge in
+`docs/HOSTINGER_DEPLOY.md` when we get to it.
 
-| Service | URL |
+## How native paperclipai talks to the Docker stack
+
+Native paperclipai on your Mac and our Dockerized services share `localhost`:
+
+| Service | URL paperclipai uses |
 |---|---|
-| **Paperclip (real)** — command centre | http://localhost:3100 |
-| Paperclip (legacy / integrations) | http://localhost:3000 |
-| Hermes | http://localhost:8001 |
-| OpenClaw | http://localhost:8002 |
-| gbrain | http://localhost:8003 |
-| Postgres | localhost:5432 |
-| Qdrant | http://localhost:6333 |
+| Hermes (HTTP webhook agent) | `http://localhost:8001/run` · `/healthz` |
+| OpenClaw (HTTP webhook agent) | `http://localhost:8002/run` · `/healthz` |
+| gbrain (memory) | `http://localhost:8003/remember` · `/recall` |
 
-## Registering Hermes + OpenClaw inside Paperclip's UI
+Inside paperclipai's UI, register Hermes and OpenClaw as **HTTP webhook
+agents** pointing at those URLs. The agents keep running in Docker.
 
-In paperclip's UI (whatever the upstream calls it — "Agents", "Hire an agent", etc.), add HTTP-webhook agents pointing at our Docker services:
+## `make doctor` and native paperclipai
 
-| Name | Endpoint | Health |
-|---|---|---|
-| `Hermes` | `http://localhost:8001/run` | `http://localhost:8001/healthz` |
-| `OpenClaw` | `http://localhost:8002/run` | `http://localhost:8002/healthz` |
+`make doctor` probes `:3100` as an **optional** check:
+- If native paperclipai is running → green check
+- If not → yellow info line with the command to start it
 
-(Because paperclip-real uses host networking, it reaches the other Docker
-services via host-published ports — same URLs as you'd use from a browser.)
+So `make doctor` always returns success regardless of whether you have
+paperclipai running on your host.
 
-## Persistence
+## Files retained
 
-paperclipai's state lives in the `bc_paperclip_real_data` Docker volume,
-mounted at `/home/node/.paperclip` inside the container. Survives restarts.
-Wipe with:
-
-```bash
-docker compose stop paperclip-real
-docker compose rm -f paperclip-real
-docker volume rm bc_paperclip_real_data
-make bootstrap     # onboard re-runs from scratch
-```
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| `bc_paperclip_real is restarting` | `docker logs bc_paperclip_real --tail=80` — look for `[paperclip][FATAL]` write-probe lines (volume permissions). Wipe & rebuild as above. |
-| `:3100 connection refused` from Mac | Native `paperclipai run` already running? `pkill -f paperclipai` then `docker compose restart paperclip-real`. |
-| `network_mode: host` rejected by compose | Docker Desktop too old. Update to 4.34+, or fall back to running paperclipai natively (`npx paperclipai@latest run` from your home folder, NOT the repo dir). |
-| Onboard re-runs every boot | `bc_paperclip_real_data` volume isn't persisting. Check `docker volume ls \| grep paperclip_real`. |
-| Login screen instead of dashboard | You're in `--bind lan` (authenticated) mode somehow. The default `local_trusted` skips auth. Wipe the volume and rebuild. |
+`apps/paperclip-real/` (Dockerfile + entrypoint) is **kept on disk but
+unreferenced**. If upstream paperclipai ever ships a `bind: 0.0.0.0` config
+option, we can revive the Docker path. Until then it's dead code we just
+don't delete.
