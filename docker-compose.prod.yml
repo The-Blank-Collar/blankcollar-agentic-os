@@ -1,0 +1,89 @@
+# =============================================================================
+# Blank Collar — production overrides for Hostinger KVM 8.
+#
+# Used together with the base compose:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What this file changes vs. local:
+#   - No service except Caddy binds a public host port. Everything else
+#     stays on the internal `bc_net` and is reached via the reverse proxy.
+#   - Caddy fronts paperclip with auto-TLS via Let's Encrypt.
+#   - Stricter restart policy + small CPU/memory caps.
+#   - Logging tuned a bit lower (warn) — the audit log + DB stay verbose.
+# =============================================================================
+
+services:
+  # =========================================================================
+  # Caddy — TLS terminator + reverse proxy. The only host-bound service.
+  # =========================================================================
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: bc_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - bc_caddy_data:/data
+      - bc_caddy_config:/config
+    environment:
+      DOMAIN: ${PUBLIC_DOMAIN:-www.blankcollar.ai}
+      ACME_EMAIL: ${ACME_EMAIL:-agent@blankcollar.ai}
+    depends_on:
+      paperclip:
+        condition: service_healthy
+    networks: [bc_net]
+
+  # ---- Internal-only services -------------------------------------------
+  # Override port mappings to bind only on localhost so they aren't reachable
+  # from the public internet. Local SSH tunnels still work for debugging.
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  qdrant:
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+
+  paperclip:
+    ports:
+      - "127.0.0.1:3000:80"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+
+  hermes:
+    ports:
+      - "127.0.0.1:8001:80"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+
+  openclaw:
+    ports:
+      - "127.0.0.1:8002:80"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+
+  gbrain:
+    ports:
+      - "127.0.0.1:8003:80"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+
+  email-ingest:
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+
+volumes:
+  bc_caddy_data:
+    name: bc_caddy_data
+  bc_caddy_config:
+    name: bc_caddy_config

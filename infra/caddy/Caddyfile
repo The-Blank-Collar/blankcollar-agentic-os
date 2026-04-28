@@ -1,0 +1,51 @@
+# =============================================================================
+# Blank Collar Agentic OS — Caddy v2 reverse proxy
+#
+# - DOMAIN comes from the env (set in .env or by docker-compose.prod.yml).
+# - ACME_EMAIL is the contact for Let's Encrypt rate-limit / expiry mail.
+# - Caddy auto-issues + auto-renews TLS for the bound domain. No certbot.
+# - Everything else (paperclip / hermes / openclaw / gbrain / qdrant) is
+#   internal-only on bc_net.
+# =============================================================================
+
+{
+	email {$ACME_EMAIL}
+	# Tighten in production. Uncomment to debug TLS:
+	# debug
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Trust X-Forwarded-* from Caddy itself only.
+	# Paperclip already handles auth + scope; Caddy just forwards.
+	header {
+		# basic security headers — adjust to your setup
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		# crossorigin-isolate the dashboard later if needed
+	}
+
+	# Stripe + future webhooks: forward as-is (raw body required for HMAC).
+	@webhooks path /api/webhooks/*
+	handle @webhooks {
+		reverse_proxy paperclip:80
+	}
+
+	# Everything else (UI + API + healthz)
+	handle {
+		reverse_proxy paperclip:80
+	}
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# Optional: redirect www<->apex if you bind both. Uncomment and edit:
+# blankcollar.ai {
+# 	redir https://www.blankcollar.ai{uri}
+# }

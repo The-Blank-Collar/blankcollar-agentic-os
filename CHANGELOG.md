@@ -4,6 +4,35 @@ All notable changes to Blank Collar Agentic OS land here. The format follows [Ke
 
 ## [Unreleased]
 
+### Hostinger production readiness
+
+- **Nexos.ai** (`apps/hermes/app/llm.py`): preferred LLM provider via the
+  OpenAI-compatible Chat Completions endpoint at `https://api.nexos.ai/v1`.
+  Anthropic stays as a fallback; FakeLLM keeps offline runs working.
+- **Oxylabs AI Studio** (`apps/openclaw/app/search.py`): new `web.search`
+  skill with provider-agnostic result normalisation. DuckDuckGo Instant
+  Answer fallback when no Oxylabs key.
+- **Email pipeline for `agent@blankcollar.ai`**:
+  - Outbound: `email.send` skill in OpenClaw via `aiosmtplib` (drafted-mode
+    when SMTP is unset).
+  - Inbound: new `apps/email-ingest/` Python service that polls IMAP
+    every minute and converts new mail into `conversation` memories +
+    draft goals.
+- **Supabase auth scaffolding**: HS256 JWT verification middleware in
+  Paperclip (`apps/paperclip/src/auth.ts`); verify-when-present today,
+  flip `PAPERCLIP_AUTH_ENFORCE=true` to require tokens.
+- **Stripe webhook receiver**: HMAC verification + idempotent
+  `billing.stripe_event` log + audit (`apps/paperclip/src/stripe.ts`,
+  `apps/paperclip/src/routes/webhooks.ts`).
+- **Hostinger deploy bundle**:
+  - `docker-compose.prod.yml` — production overlay; only Caddy is
+    publicly bound, all other services on `127.0.0.1` internal.
+  - `infra/caddy/Caddyfile` — reverse proxy + auto-TLS via Let's Encrypt.
+  - `infra/scripts/deploy.sh` — pull/build/up against `local` or `user@host`.
+  - `docs/HOSTINGER_DEPLOY.md` — end-to-end walkthrough from VPS provisioning
+    through DNS, hardening, env config, smoke test, Stripe + Supabase
+    activation, backups, and a production sanity checklist.
+
 ### Phase 3 — First Real Workforce (Hermes + OpenClaw v0.1.0; Paperclip 0.2.0)
 
 - **Hermes** (`apps/hermes/`) — Python 3.12 / FastAPI / `anthropic` SDK
