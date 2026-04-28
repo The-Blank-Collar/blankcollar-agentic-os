@@ -112,7 +112,7 @@ You manage **outcomes**, the OS manages **execution**.
 | Orchestration    | **Paperclip**     | Turns goals into agent runs, owns the dashboard, holds the queue     | placeholder    |
 | Workforce        | **Hermes Agent**  | General‑purpose agent (via official adapter)                         | placeholder    |
 | Workforce        | **OpenClaw**      | Tool‑heavy agent for browser/computer use                            | placeholder    |
-| Memory           | **gbrain**        | Advanced memory layer (semantic, episodic, factual; role‑scoped)     | placeholder    |
+| Memory           | **gbrain**        | Advanced memory layer (semantic, episodic, factual; role‑scoped)     | ✅ runs locally (v0.1.0) |
 | Vector store     | **Qdrant**        | Embeddings & similarity search                                       | ✅ runs locally |
 | Relational store | **PostgreSQL**    | Structured state (goals, runs, users, audit log)                     | ✅ runs locally |
 | Auth (future)    | **Supabase**      | Hosted auth + role management                                        | placeholder    |

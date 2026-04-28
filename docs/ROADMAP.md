@@ -14,16 +14,19 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] README, ARCHITECTURE, GOAL_FIRST, ROLES, COMPANY_BRAIN, LOCAL_SETUP, QA_CHECKLIST
 - [x] CI lint workflow
 
-## Phase 1 — Real Memory Layer
+## Phase 1 — Real Memory Layer ✅
 
 **Goal:** `gbrain` is no longer a placeholder; agents can `/remember` and `/recall`.
 
-- [ ] gbrain HTTP service (Node/TS or Python — TBD)
-- [ ] Embedding pipeline (default `text-embedding-3-small`, configurable)
-- [ ] Qdrant collection bootstrap (one collection per `(org, kind)`)
-- [ ] Role-scoped recall queries
-- [ ] Audit-log integration on remember/forget
-- [ ] CLI: `bc memory remember "fact" --dept=marketing`
+- [x] gbrain HTTP service (Python · FastAPI · pydantic v2 · asyncpg · qdrant-client)
+- [x] Embedding pipeline (default `text-embedding-3-small`; deterministic fake fallback when no API key)
+- [x] Qdrant collection bootstrap (one collection per `(org, kind)`, lazy-created)
+- [x] Role-scoped recall queries (owner/auditor read-all; team_member/agent gated by `visible_to`)
+- [x] Audit-log integration on remember/forget (writes to `core.audit_log`)
+- [x] Unit tests for the scope filter (16 tests, the security-critical pure function)
+- [x] Dockerfile + docker-compose integration; `doctor.sh` checks `/healthz`
+- [x] CI job: ruff lint + pytest + image build
+- [ ] CLI: `bc memory remember "fact" --dept=marketing` *(deferred to Phase 2 alongside Paperclip CLI)*
 
 ## Phase 2 — Paperclip Orchestrator
 

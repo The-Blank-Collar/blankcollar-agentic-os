@@ -4,6 +4,29 @@ All notable changes to Blank Collar Agentic OS land here. The format follows [Ke
 
 ## [Unreleased]
 
+### Phase 1 — Real Memory Layer (gbrain v0.1.0)
+
+- New service: `packages/gbrain/` — Python 3.12 + FastAPI + pydantic v2 + asyncpg + qdrant-client
+- Endpoints implemented per `docs/API.md`:
+  - `GET /healthz` — service status, version, embedding model, embed provider
+  - `POST /remember` — embed + store memory; metadata in Postgres, vector in Qdrant
+  - `POST /recall` — role-scoped semantic search across memory kinds
+  - `POST /forget` — delete memory + audit-log entry
+- Embedding strategy: OpenAI `text-embedding-3-small` (1536d) by default; deterministic hash-based fake fallback when `OPENAI_API_KEY` is unset (service stays runnable offline; loud `WARNING` logs)
+- Qdrant collections lazy-created on first write, named `{org_slug}__{kind}`, with payload indexes on `org_id`, `department_id`, `goal_id`, `visible_to`
+- Role-scope filter (`app/scope.py`):
+  - Always pins `org_id`
+  - Department-scoped recalls also see org-wide memories (department_id IS NULL)
+  - Goal-scoped recalls also see goal-less memories
+  - `owner` and `auditor` read all memories in their org
+  - `team_member` and `agent` are filtered by `visible_to`
+- Audit-log integration: every `remember`/`forget` writes to `core.audit_log` with action, target, scope metadata
+- 16 unit tests for the scope filter (the security-critical pure function)
+- `docker-compose.yml`: gbrain placeholder replaced with a real `build:` directive (image `blankcollar/gbrain:0.1.0`)
+- `infra/scripts/doctor.sh`: now hits `/healthz` and checks the gbrain container's healthcheck status
+- `infra/scripts/bootstrap.sh`: waits for `bc_gbrain` to become healthy
+- CI: new `gbrain` job runs `ruff check`, `pytest`, and `docker build`
+
 ### Phase 0 — Groundwork
 
 #### Stack & infra

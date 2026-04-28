@@ -51,12 +51,13 @@ ok "Docker daemon reachable"
 
 check_container_health bc_postgres
 check_container_health bc_qdrant
+check_container_health bc_gbrain
 
 check_http "Qdrant"     "http://localhost:${QD_PORT}/healthz"
 check_http "Paperclip"  "http://localhost:${PC_PORT}/"
 check_http "Hermes"     "http://localhost:${HM_PORT}/"
 check_http "OpenClaw"   "http://localhost:${OC_PORT}/"
-check_http "gbrain"     "http://localhost:${GB_PORT}/"
+check_http "gbrain"     "http://localhost:${GB_PORT}/healthz"
 
 # Postgres TCP probe (no psql dependency)
 if (echo > /dev/tcp/localhost/"$PG_PORT") >/dev/null 2>&1; then

@@ -152,18 +152,28 @@ services:
     networks: [bc_net]
 
   # =========================================================================
-  # gbrain — advanced memory layer (PLACEHOLDER)
-  #   Phase 1 will replace with the real gbrain service that wraps
-  #   Qdrant + Postgres into a unified, role-scoped memory API.
+  # gbrain — advanced memory layer (Phase 1, real)
+  #   FastAPI + asyncpg + qdrant-client. Wraps Qdrant + Postgres into a
+  #   unified, role-scoped memory API (see docs/COMPANY_BRAIN.md, docs/API.md).
   # =========================================================================
   gbrain:
     <<: [*restart-policy, *default-logging]
-    image: nginx:1.27-alpine
+    build:
+      context: ./packages/gbrain
+      dockerfile: Dockerfile
+    image: blankcollar/gbrain:0.1.0
     container_name: bc_gbrain
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/blankcollar}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      GBRAIN_EMBED_MODEL: ${GBRAIN_EMBED_MODEL:-text-embedding-3-small}
+      GBRAIN_EMBED_DIM: ${GBRAIN_EMBED_DIM:-1536}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${GBRAIN_PORT:-8003}:80"
-    volumes:
-      - ./packages/gbrain/public:/usr/share/nginx/html:ro
     depends_on:
       postgres:
         condition: service_healthy
