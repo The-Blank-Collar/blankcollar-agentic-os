@@ -22,6 +22,13 @@ ENV NPM_CONFIG_FUND=false \
 USER node
 WORKDIR /home/node
 
+# Create the .paperclip dir AS the node user BEFORE Docker mounts the volume
+# at this path. When Docker creates a volume on first run, it copies the
+# directory's existing ownership/permissions onto the volume — so creating
+# it here as node:node prevents the "EACCES: permission denied" loop the
+# container falls into otherwise.
+RUN mkdir -p /home/node/.paperclip
+
 # Pre-warm the npx cache so first-run is faster.
 RUN mkdir -p /home/node/.npm-cache \
  && NPM_CONFIG_CACHE=/home/node/.npm-cache npx --yes paperclipai@latest --version || true
