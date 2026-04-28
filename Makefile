@@ -69,3 +69,38 @@ dashboard: ## Open the Paperclip dashboard in your browser
 .PHONY: validate
 validate: ## Validate docker-compose.yml without starting anything
 	$(COMPOSE) config -q && echo "✅ docker-compose.yml valid"
+
+# -----------------------------------------------------------------------------
+# Supabase local-testing helpers — see docs/SUPABASE_LOCAL.md
+# -----------------------------------------------------------------------------
+.PHONY: user-add
+user-add: ## Provision a user. Usage: make user-add EMAIL=alice@example.com [ROLE=owner] [NAME="Alice"]
+	@EMAIL="$(EMAIL)" ROLE="$(ROLE)" NAME="$(NAME)" ./infra/scripts/user-add.sh
+
+.PHONY: users
+users: ## List provisioned users + roles
+	@docker exec -i bc_postgres psql -U postgres -d blankcollar -c \
+	  "SELECT u.email, u.display_name, string_agg(ra.role::text, ',' ORDER BY ra.role) AS roles, u.is_active \
+	     FROM core.user_account u LEFT JOIN core.role_assignment ra ON ra.user_id = u.id \
+	    GROUP BY u.id ORDER BY u.created_at DESC;"
+
+# -----------------------------------------------------------------------------
+# Stripe local-testing helpers — see docs/STRIPE_LOCAL.md
+# Requires the Stripe CLI:  brew install stripe/stripe-cli/stripe
+# -----------------------------------------------------------------------------
+.PHONY: stripe-listen
+stripe-listen: ## Forward Stripe test webhooks to local Paperclip (requires `stripe` CLI)
+	@command -v stripe >/dev/null || { echo "Install stripe CLI: brew install stripe/stripe-cli/stripe"; exit 1; }
+	@echo "Copy the displayed signing secret (whsec_…) into .env as STRIPE_WEBHOOK_SECRET, then restart paperclip."
+	stripe listen --forward-to localhost:3000/api/webhooks/stripe
+
+.PHONY: stripe-trigger
+stripe-trigger: ## Fire a Stripe test event. Usage: make stripe-trigger EVENT=customer.subscription.created
+	@command -v stripe >/dev/null || { echo "Install stripe CLI: brew install stripe/stripe-cli/stripe"; exit 1; }
+	@stripe trigger $${EVENT:-customer.created}
+
+.PHONY: stripe-events
+stripe-events: ## Show recently received Stripe events (idempotent log)
+	@docker exec -i bc_postgres psql -U postgres -d blankcollar -c \
+	  "SELECT id, type, processing_state, received_at FROM billing.stripe_event ORDER BY received_at DESC LIMIT 20;" \
+	  || echo "billing.stripe_event not yet present — fire a test event with: make stripe-trigger"

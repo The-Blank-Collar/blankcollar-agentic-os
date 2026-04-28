@@ -355,6 +355,8 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 - [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — Logs, metrics, traces, audit log, cost.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Self-host + future hosted shape.
 - [`docs/HOSTINGER_DEPLOY.md`](docs/HOSTINGER_DEPLOY.md) — End-to-end production deploy on a Hostinger KVM 8.
+- [`docs/SUPABASE_LOCAL.md`](docs/SUPABASE_LOCAL.md) — Test Supabase auth against your local stack.
+- [`docs/STRIPE_LOCAL.md`](docs/STRIPE_LOCAL.md) — Test Stripe webhooks against your local stack.
 - [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md) — Volume snapshots, dumps, restore.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — Phases 0 → 8.
 
