@@ -91,12 +91,11 @@ services:
       - "${QDRANT_GRPC_PORT:-6334}:6334"   # gRPC
     volumes:
       - bc_qdrant_data:/qdrant/storage
-    healthcheck:
-      # Qdrant exposes /healthz and /readyz on the REST port
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:6333/healthz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
+    # NOTE: the official qdrant/qdrant image is a minimal debian-slim with
+    # neither wget nor curl, so a HTTP-based healthcheck can't be expressed
+    # purely inside the container. We rely on Docker's "running" state +
+    # downstream apps' own retry logic (gbrain/httpx retries on connection
+    # refused, paperclip /api/health probes gbrain).
     networks: [bc_net]
 
   # =========================================================================
@@ -134,7 +133,7 @@ services:
       postgres:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
       gbrain:
         condition: service_healthy
       hermes:
@@ -272,7 +271,7 @@ services:
       postgres:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     networks: [bc_net]
 
   # =========================================================================
