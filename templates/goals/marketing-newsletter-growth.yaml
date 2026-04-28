@@ -1,0 +1,35 @@
+id: marketing-newsletter-growth
+version: 1
+title: "Grow the newsletter to a target subscriber count"
+department: marketing
+default_role: department_lead
+description: |
+  Steady, voice-faithful growth of an email newsletter. Combines
+  drafting + cross-posting + sponsorship outreach.
+
+inputs:
+  current_subscribers: { type: int, required: true, prompt: "How many subscribers do you have today?" }
+  target_subscribers:  { type: int, required: true, prompt: "What's the number you want to reach?" }
+  target_date:         { type: date, required: true, prompt: "By when?" }
+  voice_sample_url:    { type: url, required: false, prompt: "Link to a recent issue we should learn the voice from." }
+
+starter_plan:
+  - title: Learn the voice
+    description: Read the last 6 issues. Extract a voice guide. Save as a fact in the brain.
+  - title: Two issues per week
+    description: Draft two issues per week, send to human for sign-off, schedule on approval.
+  - title: Cross-post
+    description: Adapt each issue to LinkedIn / X / Threads platform-style. Schedule.
+  - title: Sponsorship outreach
+    description: Identify 5 fit-aligned sponsorship leads weekly, draft pitches, send.
+  - title: Weekly digest
+    description: Email a Friday summary of growth, opens, sponsor pipeline, and decisions needed.
+
+stays_human:
+  - "Sign-off on every newsletter draft."
+  - "No to bad sponsors."
+  - "Subscriber-facing relationships and personal replies."
+
+success:
+  metric: subscribers
+  target_field: target_subscribers

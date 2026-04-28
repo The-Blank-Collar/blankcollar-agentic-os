@@ -1,0 +1,36 @@
+id: content-weekly-engine
+version: 1
+title: "Ship one substantial piece of content per week"
+department: marketing
+default_role: department_lead
+description: |
+  Idea pipeline → outline → draft → review → publish → distribute.
+  One piece per week, voice-faithful, the human approves.
+
+inputs:
+  topic_areas:         { type: list,   required: true,  prompt: "List 3-5 topics you want to be known for." }
+  publishing_targets:  { type: list,   required: true,  prompt: "Where does the long-form live? (blog, Substack, etc.)" }
+  cross_post_targets:  { type: list,   required: false, prompt: "Where should excerpts/threads go?" }
+  voice_sample_url:    { type: url,    required: false }
+  publish_day:         { type: enum,   options: [mon,tue,wed,thu,fri,sat,sun], required: true, default: tue }
+
+starter_plan:
+  - title: Idea pipeline
+    description: Maintain a rolling list of 20 ideas in the brain, fed by topic-area research and recent comments.
+  - title: Outline by Friday
+    description: Pick next week's idea, draft a tight outline by end of Friday for human approval.
+  - title: Draft by Sunday
+    description: Voice-faithful first draft delivered Sunday evening for review.
+  - title: Publish on chosen day
+    description: After approval, publish to the long-form home and schedule cross-posts.
+  - title: Engage and learn
+    description: Read replies, save useful threads as memories for future ideas.
+
+stays_human:
+  - "Outline approval."
+  - "Final read-through and voice nudges before publish."
+  - "Replies that require the human's actual perspective."
+
+success:
+  metric: pieces_published_per_quarter
+  target: 12

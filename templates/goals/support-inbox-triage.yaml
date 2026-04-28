@@ -1,0 +1,35 @@
+id: support-inbox-triage
+version: 1
+title: "Keep the support inbox under control without me"
+department: support
+default_role: department_lead
+description: |
+  Triage inbound customer support email/ticket flow. Auto-reply to FAQs,
+  escalate the unusual, summarise the day for the human.
+
+inputs:
+  inbox_address:        { type: email, required: true,  prompt: "Which inbox should the agent watch?" }
+  faq_doc_url:          { type: url,   required: false, prompt: "Link to your existing FAQ / help doc, if any." }
+  brand_voice_url:      { type: url,   required: false, prompt: "Anywhere we can learn the tone you reply in?" }
+  daily_summary_email:  { type: email, required: true,  prompt: "Where should we send the daily summary?" }
+
+starter_plan:
+  - title: Bootstrap the FAQ
+    description: Embed the FAQ doc into the brain as documents.
+  - title: Learn the voice
+    description: Read the last 50 outgoing replies (if available). Save voice notes as facts.
+  - title: Auto-reply to FAQ matches
+    description: For incoming emails matching FAQ topics with high confidence, draft a reply and send (with brand-voice).
+  - title: Escalate the unusual
+    description: Anything outside FAQ or with negative sentiment — flag for human in the dashboard.
+  - title: Daily summary
+    description: Email a one-page summary by 18:00 — replied, escalated, decisions needed.
+
+stays_human:
+  - "Refunds, cancellations, anything legal."
+  - "Anyone clearly upset — hand off in tone, not just topic."
+  - "Brand tone deviations."
+
+success:
+  metric: response_time_hours_p50
+  target: 4

@@ -1,0 +1,35 @@
+id: finance-monthly-close
+version: 1
+title: "Run the monthly financial close on autopilot"
+department: finance
+default_role: department_lead
+description: |
+  Reconcile bank/Stripe activity, categorise expenses, generate a P&L,
+  flag anomalies for human review.
+
+inputs:
+  bank_export_method:    { type: enum, options: [csv_upload, plaid, manual], required: true }
+  accounting_system:     { type: enum, options: [xero, quickbooks, none], required: true }
+  monthly_summary_email: { type: email, required: true }
+  close_day_of_month:    { type: int,   required: true, default: 5, prompt: "What day of the next month should we close on?" }
+
+starter_plan:
+  - title: Pull the data
+    description: Import last month's bank + Stripe activity into the brain (as documents).
+  - title: Categorise transactions
+    description: Apply the chart of accounts. Anything ambiguous becomes an approval ask.
+  - title: Generate P&L
+    description: Produce a monthly P&L, balance summary, and cash position.
+  - title: Flag anomalies
+    description: Unusually large transactions, new merchants, duplicated charges — surface in the dashboard.
+  - title: Email the summary
+    description: Send a one-page summary with the three numbers that matter and the approvals needed.
+
+stays_human:
+  - "Approving every anomaly flag."
+  - "Tax decisions and categorisation of grey-area expenses."
+  - "Anything involving payroll."
+
+success:
+  metric: hours_saved_per_month
+  target: 4

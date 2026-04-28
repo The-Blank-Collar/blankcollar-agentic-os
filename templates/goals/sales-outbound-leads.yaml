@@ -1,0 +1,35 @@
+id: sales-outbound-leads
+version: 1
+title: "Generate qualified outbound leads"
+department: sales
+default_role: department_lead
+description: |
+  Find good-fit prospects, research them, draft personalised outreach,
+  and book demos. The human approves outreach before it sends.
+
+inputs:
+  ideal_customer:      { type: text,  required: true, prompt: "Describe your ideal customer in 2-3 sentences." }
+  outreach_channels:   { type: enum,  options: [email, linkedin, both], required: true }
+  weekly_target_leads: { type: int,   required: true, prompt: "How many qualified leads per week?" }
+  calendar_link:       { type: url,   required: true, prompt: "Booking link agents should include." }
+
+starter_plan:
+  - title: Build the ICP brain
+    description: Save the ideal customer description and any examples as facts.
+  - title: Lead research
+    description: Find 3× the weekly target each week, score against ICP, keep the top tier.
+  - title: Draft outreach
+    description: Personalise each touch using the prospect's content. Save drafts for human sign-off.
+  - title: Send on approval
+    description: Once a human approves, send via email.send (or LinkedIn skill, when available).
+  - title: Reply triage
+    description: Replies route into a separate sub-flow — booking or follow-up sequencing.
+
+stays_human:
+  - "Final word on every outbound message before send."
+  - "Tone calibration."
+  - "Anything sensitive (existing customer, partner, ex-employee)."
+
+success:
+  metric: qualified_leads_per_week
+  target_field: weekly_target_leads

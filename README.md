@@ -29,8 +29,9 @@
 9. [QA & Debugging Checklist](#-qa--debugging-checklist)
 10. [Roadmap](#-roadmap)
 11. [Future Placeholders](#-future-placeholders)
-12. [Contributing](#-contributing)
-13. [License](#-license)
+12. [Documentation Map](#-documentation-map)
+13. [Contributing](#-contributing)
+14. [License](#-license)
 
 ---
 
@@ -315,6 +316,46 @@ These are intentionally **not built yet**, but architected for from day one:
 - **Email ingestion** (`agent@blankcollar.ai`) — webhook placeholder in roadmap
 - **Skills marketplace / MCP registry** — `packages/` ready to host
 - **Multi‑department orgs** — schema in `infra/docker/postgres/init.sql`
+
+---
+
+## 📚 Documentation Map
+
+The full documentation set lives in [`docs/`](docs/). Use this map to find what you need:
+
+### Why & what
+
+- [`docs/VISION.md`](docs/VISION.md) — The standalone Blank Collar manifesto.
+- [`docs/GOAL_FIRST.md`](docs/GOAL_FIRST.md) — The single most important design constraint.
+- [`docs/BRAND.md`](docs/BRAND.md) — Voice, naming, copy, visual direction.
+- [`docs/MARKETING.md`](docs/MARKETING.md) — Positioning, copy bank, launch plan.
+- [`docs/USE_CASES.md`](docs/USE_CASES.md) — Five concrete personas the OS is built for.
+- [`docs/COMPARISON.md`](docs/COMPARISON.md) — Blank Collar vs CrewAI, AutoGen, n8n, ChatGPT.
+- [`docs/FAQ.md`](docs/FAQ.md) — Beginner-first Q&A.
+
+### How
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Layered model, contracts.
+- [`docs/ROLES.md`](docs/ROLES.md) — Role model + 3-layer enforcement.
+- [`docs/COMPANY_BRAIN.md`](docs/COMPANY_BRAIN.md) — gbrain + Qdrant + Postgres design.
+- [`docs/AGENTS.md`](docs/AGENTS.md) — Agent adapter contract & lifecycle.
+- [`docs/SKILLS.md`](docs/SKILLS.md) — L2 intelligence layer, MCP, policy engine.
+- [`docs/API.md`](docs/API.md) — Paperclip / agent / gbrain / skills HTTP contracts.
+- [`docs/SCHEMA.md`](docs/SCHEMA.md) — Full Postgres data model + Qdrant collections.
+- [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) — Anthropic, Qdrant, Supabase, Stripe, email.
+- [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — Every term defined once.
+- [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) — Every env var explained.
+
+### Run & operate
+
+- [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) — Long-form Mac walkthrough + troubleshooting.
+- [`docs/ONBOARDING.md`](docs/ONBOARDING.md) — User onboarding (developer vs operator paths).
+- [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md) — Before-merge gate.
+- [`docs/TESTING.md`](docs/TESTING.md) — Phased testing strategy.
+- [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — Logs, metrics, traces, audit log, cost.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Self-host + future hosted shape.
+- [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md) — Volume snapshots, dumps, restore.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — Phases 0 → 8.
 
 ---
 
