@@ -63,15 +63,27 @@ if [ "${#missing[@]}" -ne 0 ]; then
 fi
 ok "All local images present"
 
-# 5. Wait for healthy
+# 5. Wait for healthy. For services with no in-container healthcheck
+#    (e.g. qdrant — see docker-compose.yml note), accept "running" as
+#    good enough; downstream services have their own retries.
 say "Waiting for services to become healthy"
 for service in bc_postgres bc_qdrant bc_gbrain bc_hermes bc_openclaw bc_paperclip bc_email_ingest; do
   printf "   %s " "$service"
+  status=""
   for _ in $(seq 1 60); do
-    status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || echo "missing")
+    status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || true)
     if [ "$status" = "healthy" ]; then
       printf "\033[1;32mhealthy\033[0m\n"
       break
+    fi
+    # No healthcheck configured? Accept "running" as ready.
+    if [ -z "$status" ]; then
+      running=$(docker inspect --format='{{.State.Status}}' "$service" 2>/dev/null || echo "missing")
+      if [ "$running" = "running" ]; then
+        printf "\033[1;33mrunning (no healthcheck)\033[0m\n"
+        status="healthy"   # treat as ok for the next check
+        break
+      fi
     fi
     printf "."
     sleep 1
