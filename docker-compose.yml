@@ -136,7 +136,7 @@ services:
   # =========================================================================
   hermes:
     <<: [*restart-policy, *default-logging]
-    image: nginx:1.27-alpine
+    image: nginx:1.29-alpine
     container_name: bc_hermes
     ports:
       - "${HERMES_PORT:-8001}:80"
@@ -152,7 +152,7 @@ services:
   # =========================================================================
   openclaw:
     <<: [*restart-policy, *default-logging]
-    image: nginx:1.27-alpine
+    image: nginx:1.29-alpine
     container_name: bc_openclaw
     ports:
       - "${OPENCLAW_PORT:-8002}:80"
