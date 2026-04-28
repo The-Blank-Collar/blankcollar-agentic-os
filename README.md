@@ -109,7 +109,8 @@ You manage **outcomes**, the OS manages **execution**.
 
 | Layer            | Component         | Purpose                                                              | Status         |
 |------------------|-------------------|----------------------------------------------------------------------|----------------|
-| Orchestration    | **Paperclip**     | Turns goals into agent runs, owns the dashboard, holds the queue     | ✅ runs locally (v0.1.0) |
+| Command centre   | **Paperclip (real)** | Upstream `paperclipai` — Org chart, Heartbeats, Cost control, etc. | ✅ runs locally on :3100  |
+| Orchestration    | **Paperclip (legacy)** | Our custom Fastify orchestrator — Stripe webhook + Supabase auth + custom audit | ✅ runs locally on :3000  |
 | Workforce        | **Hermes Agent**  | General‑purpose reasoning agent (Anthropic Claude, fake fallback)    | ✅ runs locally (v0.1.0) |
 | Workforce        | **OpenClaw**      | Tool‑action agent — `web.fetch` skill                                 | ✅ runs locally (v0.1.0) |
 | Memory           | **gbrain**        | Advanced memory layer (semantic, episodic, factual; role‑scoped)     | ✅ runs locally (v0.1.0) |
@@ -354,6 +355,7 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 - [`docs/TESTING.md`](docs/TESTING.md) — Phased testing strategy.
 - [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — Logs, metrics, traces, audit log, cost.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Self-host + future hosted shape.
+- [`docs/PAPERCLIP_REAL.md`](docs/PAPERCLIP_REAL.md) — The upstream paperclipai command centre at :3100, alongside our custom orchestrator at :3000.
 - [`docs/HOSTINGER_DEPLOY.md`](docs/HOSTINGER_DEPLOY.md) — End-to-end production deploy on a Hostinger KVM 8.
 - [`docs/SUPABASE_LOCAL.md`](docs/SUPABASE_LOCAL.md) — Test Supabase auth against your local stack.
 - [`docs/STRIPE_LOCAL.md`](docs/STRIPE_LOCAL.md) — Test Stripe webhooks against your local stack.

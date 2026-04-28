@@ -30,6 +30,7 @@ fi
 PG_PORT=${POSTGRES_PORT:-5432}
 QD_PORT=${QDRANT_HTTP_PORT:-6333}
 PC_PORT=${PAPERCLIP_PORT:-3000}
+PR_PORT=${PAPERCLIP_REAL_PORT:-3100}
 HM_PORT=${HERMES_PORT:-8001}
 OC_PORT=${OPENCLAW_PORT:-8002}
 GB_PORT=${GBRAIN_PORT:-8003}
@@ -80,13 +81,15 @@ check_container_health bc_gbrain
 check_container_health bc_hermes
 check_container_health bc_openclaw
 check_container_health bc_paperclip
+check_container_health bc_paperclip_real
 check_container_health bc_email_ingest
 
-check_http "Qdrant"      "http://localhost:${QD_PORT}/healthz"
-check_http "Paperclip"   "http://localhost:${PC_PORT}/api/health"
-check_http "Hermes"      "http://localhost:${HM_PORT}/healthz"
-check_http "OpenClaw"    "http://localhost:${OC_PORT}/healthz"
-check_http "gbrain"      "http://localhost:${GB_PORT}/healthz"
+check_http "Qdrant"          "http://localhost:${QD_PORT}/healthz"
+check_http "Paperclip(legacy)" "http://localhost:${PC_PORT}/api/health"
+check_http "Paperclip(real)" "http://localhost:${PR_PORT}/api/health"
+check_http "Hermes"          "http://localhost:${HM_PORT}/healthz"
+check_http "OpenClaw"        "http://localhost:${OC_PORT}/healthz"
+check_http "gbrain"          "http://localhost:${GB_PORT}/healthz"
 
 # Postgres TCP probe (no psql dependency)
 if (echo > /dev/tcp/localhost/"$PG_PORT") >/dev/null 2>&1; then

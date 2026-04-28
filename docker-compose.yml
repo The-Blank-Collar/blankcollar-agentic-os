@@ -51,6 +51,8 @@ volumes:
     name: bc_qdrant_data
   bc_pgadmin_data:
     name: bc_pgadmin_data
+  bc_paperclip_real_data:
+    name: bc_paperclip_real_data
 
 services:
   # =========================================================================
@@ -99,9 +101,43 @@ services:
     networks: [bc_net]
 
   # =========================================================================
-  # Paperclip — orchestrator + dashboard (Phase 2, real)
-  #   Node 22 + Fastify + pg. Owns goals, runs, agents, audit log, and the
-  #   goal-first dashboard at /. See docs/API.md for the HTTP contract.
+  # Paperclip (real) — the upstream paperclipai package, our PRIMARY command
+  #   centre. See https://github.com/paperclipai/paperclip and
+  #   docs/PAPERCLIP_REAL.md for how to register Hermes + OpenClaw as agents.
+  #   Uses its own embedded Postgres (bc_paperclip_real_data volume) so it
+  #   doesn't fight our shared bc_postgres.
+  # =========================================================================
+  paperclip-real:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: ./apps/paperclip-real
+      dockerfile: Dockerfile
+    image: blankcollar/paperclip-real:0.1.0
+    container_name: bc_paperclip_real
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PAPERCLIP_BIND: "0.0.0.0"
+      PAPERCLIP_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${PAPERCLIP_REAL_PORT:-3100}:3100"
+    volumes:
+      - bc_paperclip_real_data:/home/node/.paperclip
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3100/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    networks: [bc_net]
+
+  # =========================================================================
+  # Paperclip (legacy / integrations) — our custom Fastify orchestrator.
+  #   KEPT alongside paperclip-real because it owns features the upstream
+  #   project doesn't ship: Stripe webhook + idempotent event log, Supabase
+  #   JWT verification, our custom audit log, gbrain-aware plan generator.
+  #   The real command-centre UI lives at :3100; this layer continues to
+  #   answer at :3000 for those integrations.
   # =========================================================================
   paperclip:
     <<: [*restart-policy, *default-logging]

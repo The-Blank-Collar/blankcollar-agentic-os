@@ -67,7 +67,7 @@ ok "All local images present"
 #    (e.g. qdrant — see docker-compose.yml note), accept "running" as
 #    good enough; downstream services have their own retries.
 say "Waiting for services to become healthy"
-for service in bc_postgres bc_qdrant bc_gbrain bc_hermes bc_openclaw bc_paperclip bc_email_ingest; do
+for service in bc_postgres bc_qdrant bc_gbrain bc_hermes bc_openclaw bc_paperclip bc_paperclip_real bc_email_ingest; do
   printf "   %s " "$service"
   status=""
   for _ in $(seq 1 60); do
@@ -99,12 +99,13 @@ done
 say "Stack is up. Endpoints:"
 cat <<EOF
 
-  📎 Paperclip   http://localhost:${PAPERCLIP_PORT:-3000}
-  🪽 Hermes      http://localhost:${HERMES_PORT:-8001}
-  🦾 OpenClaw    http://localhost:${OPENCLAW_PORT:-8002}
-  🧠 gbrain      http://localhost:${GBRAIN_PORT:-8003}
-  🐘 Postgres    postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
-  📦 Qdrant      http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
+  📎 Paperclip (real)    http://localhost:${PAPERCLIP_REAL_PORT:-3100}   ← primary command centre
+  🧷 Paperclip (legacy)  http://localhost:${PAPERCLIP_PORT:-3000}         (integrations: Stripe + Supabase + custom audit)
+  🪽 Hermes              http://localhost:${HERMES_PORT:-8001}
+  🦾 OpenClaw            http://localhost:${OPENCLAW_PORT:-8002}
+  🧠 gbrain              http://localhost:${GBRAIN_PORT:-8003}
+  🐘 Postgres            postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
+  📦 Qdrant              http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
 
 Next: ./infra/scripts/doctor.sh
 EOF
