@@ -177,7 +177,7 @@ services:
   # =========================================================================
   pgadmin:
     <<: [*restart-policy, *default-logging]
-    image: dpage/pgadmin4:8.13
+    image: dpage/pgadmin4:9.14
     container_name: bc_pgadmin
     profiles: ["tools"]
     environment:
