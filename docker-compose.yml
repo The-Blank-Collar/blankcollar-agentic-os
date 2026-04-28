@@ -51,6 +51,8 @@ volumes:
     name: bc_qdrant_data
   bc_pgadmin_data:
     name: bc_pgadmin_data
+  bc_paperclip_real_data:
+    name: bc_paperclip_real_data
 
 services:
   # =========================================================================
@@ -99,23 +101,38 @@ services:
     networks: [bc_net]
 
   # =========================================================================
-  # Paperclip (real) — REMOVED from the default compose stack.
+  # Paperclip (real) — upstream paperclipai, in Docker via HOST NETWORKING.
   #
-  # paperclipai's quickstart hard-locks loopback bind ("local_trusted" mode
-  # ignores PAPERCLIP_BIND, --bind flags via --yes, and config patches),
-  # which fights Docker's port-forward. After several attempts we accepted
-  # the upstream design choice: it's meant to run natively on the host.
+  # paperclipai's `local_trusted` mode hard-locks 127.0.0.1 binding. Instead
+  # of fighting it, we use `network_mode: host` so the container shares the
+  # Mac's network namespace — the container's 127.0.0.1:3100 IS the host's
+  # localhost:3100. No port-forward, no socat, no config patches.
   #
-  # → To use real Paperclip: run on your Mac directly:
-  #     npx paperclipai@latest onboard --yes
-  #     npx paperclipai@latest run
-  #   Then open http://localhost:3100. The agents in this compose stack
-  #   (hermes, openclaw, gbrain) are all reachable from native paperclipai
-  #   at http://localhost:8001 / 8002 / 8003.
-  #
-  # See docs/PAPERCLIP_REAL.md for the full walkthrough.
+  # Requires Docker Desktop 4.34+ (host networking on Mac). If your Docker
+  # Desktop is older, upgrade or run paperclipai natively (see PAPERCLIP_REAL.md).
   # =========================================================================
-  # (intentionally no `paperclip-real` service here)
+  paperclip-real:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: ./apps/paperclip-real
+      dockerfile: Dockerfile
+    image: blankcollar/paperclip-real:0.1.0
+    container_name: bc_paperclip_real
+    # Host networking — paperclipai's loopback bind becomes the host loopback.
+    network_mode: host
+    # NOTE: with network_mode: host, `ports:` is ignored and `networks:` is
+    # incompatible. The container reaches our other services via host ports
+    # (localhost:8001 hermes, :8002 openclaw, :8003 gbrain).
+    environment:
+      PAPERCLIP_TELEMETRY_DISABLED: "1"
+    volumes:
+      - bc_paperclip_real_data:/home/node/.paperclip
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3100/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
 
   # =========================================================================
   # Paperclip (legacy / integrations) — our custom Fastify orchestrator.

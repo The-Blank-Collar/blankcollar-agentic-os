@@ -1,18 +1,14 @@
 # =============================================================================
 # Paperclip (real) — wraps the upstream paperclipai package from npm.
 #
-# We let paperclipai bind to its preferred 127.0.0.1:3100 inside the
-# container (it refuses anything else without auth) and put a `socat`
-# TCP forwarder in front of it on 0.0.0.0:3100 so Docker's host
-# port-forward actually works. See entrypoint.sh.
+# Used with `network_mode: host` in docker-compose.yml so paperclipai's
+# loopback-only bind reaches the host's localhost directly.
 # =============================================================================
 
 FROM node:22-bookworm-slim
 
-# Tools paperclipai may need at install/runtime + socat for the forwarder
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ca-certificates curl git python3 socat \
+ && apt-get install -y --no-install-recommends ca-certificates curl git python3 \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NPM_CONFIG_FUND=false \
@@ -23,8 +19,8 @@ ENV NPM_CONFIG_FUND=false \
 USER node
 WORKDIR /home/node
 
-# Pre-create the .paperclip dir AS node BEFORE Docker mounts the volume here
-# (otherwise the volume comes up root-owned and paperclipai can't write).
+# Pre-create the .paperclip dir AS node BEFORE Docker mounts the volume here.
+# Otherwise the volume comes up root-owned and paperclipai can't write to it.
 RUN mkdir -p /home/node/.paperclip
 
 # Pre-warm the npx cache so first-run is faster.

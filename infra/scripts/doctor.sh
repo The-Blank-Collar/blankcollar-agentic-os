@@ -81,21 +81,15 @@ check_container_health bc_gbrain
 check_container_health bc_hermes
 check_container_health bc_openclaw
 check_container_health bc_paperclip
+check_container_health bc_paperclip_real
 check_container_health bc_email_ingest
 
-check_http "Qdrant"      "http://localhost:${QD_PORT}/healthz"
-check_http "Paperclip"   "http://localhost:${PC_PORT}/api/health"
-check_http "Hermes"      "http://localhost:${HM_PORT}/healthz"
-check_http "OpenClaw"    "http://localhost:${OC_PORT}/healthz"
-check_http "gbrain"      "http://localhost:${GB_PORT}/healthz"
-
-# Optional: if real paperclipai is running natively on the Mac (port 3100),
-# note it. Don't fail when it's not — paperclipai is a manual tool.
-if curl -fsS --max-time 2 "http://localhost:${PR_PORT}/api/health" >/dev/null 2>&1; then
-  ok "Paperclip(real, native) responding on :${PR_PORT}"
-else
-  printf "\033[1;33m✓\033[0m Paperclip(real, native) not running on :${PR_PORT} (optional — start with: npx paperclipai@latest run)\n"
-fi
+check_http "Qdrant"          "http://localhost:${QD_PORT}/healthz"
+check_http "Paperclip(legacy)" "http://localhost:${PC_PORT}/api/health"
+check_http "Paperclip(real)" "http://localhost:${PR_PORT}/api/health"
+check_http "Hermes"          "http://localhost:${HM_PORT}/healthz"
+check_http "OpenClaw"        "http://localhost:${OC_PORT}/healthz"
+check_http "gbrain"          "http://localhost:${GB_PORT}/healthz"
 
 # Postgres TCP probe (no psql dependency)
 if (echo > /dev/tcp/localhost/"$PG_PORT") >/dev/null 2>&1; then

@@ -71,7 +71,8 @@ ok "All local images present"
 # because its first-boot `npx paperclipai@latest` fetch is slow.
 say "Waiting for services to become healthy"
 for entry in bc_postgres:60 bc_qdrant:60 bc_gbrain:60 bc_hermes:60 \
-             bc_openclaw:60 bc_paperclip:90 bc_email_ingest:60; do
+             bc_openclaw:60 bc_paperclip:90 bc_paperclip_real:300 \
+             bc_email_ingest:60; do
   service=${entry%:*}
   max_wait=${entry##*:}
   printf "   %s " "$service"
@@ -107,16 +108,13 @@ done
 say "Stack is up. Endpoints:"
 cat <<EOF
 
-  📎 Paperclip   http://localhost:${PAPERCLIP_PORT:-3000}      (orchestrator + Stripe + Supabase + custom audit)
-  🪽 Hermes      http://localhost:${HERMES_PORT:-8001}
-  🦾 OpenClaw    http://localhost:${OPENCLAW_PORT:-8002}
-  🧠 gbrain      http://localhost:${GBRAIN_PORT:-8003}
-  🐘 Postgres    postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
-  📦 Qdrant      http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
-
-For the upstream paperclipai command centre at :3100, run NATIVELY on your Mac:
-  npx paperclipai@latest onboard --yes && npx paperclipai@latest run
-(see docs/PAPERCLIP_REAL.md)
+  📎 Paperclip (real)    http://localhost:${PAPERCLIP_REAL_PORT:-3100}   ← primary command centre (Docker, host networking)
+  🧷 Paperclip (legacy)  http://localhost:${PAPERCLIP_PORT:-3000}         (integrations: Stripe + Supabase + custom audit)
+  🪽 Hermes              http://localhost:${HERMES_PORT:-8001}
+  🦾 OpenClaw            http://localhost:${OPENCLAW_PORT:-8002}
+  🧠 gbrain              http://localhost:${GBRAIN_PORT:-8003}
+  🐘 Postgres            postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
+  📦 Qdrant              http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
 
 Next: ./infra/scripts/doctor.sh
 EOF
