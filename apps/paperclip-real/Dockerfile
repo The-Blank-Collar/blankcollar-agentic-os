@@ -1,17 +1,18 @@
 # =============================================================================
 # Paperclip (real) — wraps the upstream paperclipai package from npm.
 #
-# Provides:
-#   - First-run `paperclipai onboard --yes` if no config exists yet
-#   - `paperclipai run` afterwards
-#   - Persistent state via a volume mounted at /home/node/.paperclip
+# We let paperclipai bind to its preferred 127.0.0.1:3100 inside the
+# container (it refuses anything else without auth) and put a `socat`
+# TCP forwarder in front of it on 0.0.0.0:3100 so Docker's host
+# port-forward actually works. See entrypoint.sh.
 # =============================================================================
 
 FROM node:22-bookworm-slim
 
-# Tools paperclipai may need at install/runtime
+# Tools paperclipai may need at install/runtime + socat for the forwarder
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git python3 \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl git python3 socat \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NPM_CONFIG_FUND=false \
@@ -22,11 +23,8 @@ ENV NPM_CONFIG_FUND=false \
 USER node
 WORKDIR /home/node
 
-# Create the .paperclip dir AS the node user BEFORE Docker mounts the volume
-# at this path. When Docker creates a volume on first run, it copies the
-# directory's existing ownership/permissions onto the volume — so creating
-# it here as node:node prevents the "EACCES: permission denied" loop the
-# container falls into otherwise.
+# Pre-create the .paperclip dir AS node BEFORE Docker mounts the volume here
+# (otherwise the volume comes up root-owned and paperclipai can't write).
 RUN mkdir -p /home/node/.paperclip
 
 # Pre-warm the npx cache so first-run is faster.

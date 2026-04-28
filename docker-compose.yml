@@ -127,8 +127,8 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:3100/api/health || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 8
-      start_period: 60s
+      retries: 12
+      start_period: 180s
     networks: [bc_net]
 
   # =========================================================================
