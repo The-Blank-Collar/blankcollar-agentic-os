@@ -1,0 +1,194 @@
+# =============================================================================
+# Blank Collar — Agentic OS · docker-compose.yml
+# -----------------------------------------------------------------------------
+# Local-first, Mac-friendly. One command to bring up the entire groundwork:
+#
+#     docker compose up -d
+#
+# Phase 0 (Groundwork):
+#   - postgres   : real, persistent
+#   - qdrant     : real, persistent
+#   - paperclip  : nginx placeholder (real service lands in Phase 2)
+#   - hermes     : nginx placeholder (real adapter lands in Phase 3)
+#   - openclaw   : nginx placeholder (real agent lands in Phase 3)
+#   - gbrain     : nginx placeholder (real memory layer lands in Phase 1)
+#   - pgadmin    : optional, enable with `--profile tools`
+#
+# All variables are loaded from `.env` (see `.env.example` for the schema).
+# Volumes are prefixed with `bc_` so they don't collide with other projects.
+# =============================================================================
+
+name: blankcollar
+
+# ---------------------------------------------------------------------------
+# Reusable bits
+# ---------------------------------------------------------------------------
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  bc_net:
+    name: bc_net
+    driver: bridge
+
+# ---------------------------------------------------------------------------
+# Persistent volumes
+# ---------------------------------------------------------------------------
+volumes:
+  bc_postgres_data:
+    name: bc_postgres_data
+  bc_qdrant_data:
+    name: bc_qdrant_data
+  bc_pgadmin_data:
+    name: bc_pgadmin_data
+
+services:
+  # =========================================================================
+  # PostgreSQL — relational state (goals, runs, users, audit log)
+  # =========================================================================
+  postgres:
+    <<: [*restart-policy, *default-logging]
+    image: postgres:16-alpine
+    container_name: bc_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-blankcollar}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - bc_postgres_data:/var/lib/postgresql/data
+      # Init scripts run on first boot only (when data dir is empty)
+      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-blankcollar}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [bc_net]
+
+  # =========================================================================
+  # Qdrant — vector store for embeddings (Company Brain backbone)
+  # =========================================================================
+  qdrant:
+    <<: [*restart-policy, *default-logging]
+    image: qdrant/qdrant:v1.12.4
+    container_name: bc_qdrant
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"   # REST
+      - "${QDRANT_GRPC_PORT:-6334}:6334"   # gRPC
+    volumes:
+      - bc_qdrant_data:/qdrant/storage
+    healthcheck:
+      # Qdrant exposes /healthz and /readyz on the REST port
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [bc_net]
+
+  # =========================================================================
+  # Paperclip — orchestrator + dashboard (PLACEHOLDER)
+  #   Phase 2 will replace this with a real Node/TS service.
+  #   For now, nginx serves apps/paperclip/public/index.html.
+  # =========================================================================
+  paperclip:
+    <<: [*restart-policy, *default-logging]
+    image: nginx:1.27-alpine
+    container_name: bc_paperclip
+    ports:
+      - "${PAPERCLIP_PORT:-3000}:80"
+    volumes:
+      - ./apps/paperclip/public:/usr/share/nginx/html:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks: [bc_net]
+
+  # =========================================================================
+  # Hermes Agent — general-purpose workforce agent (PLACEHOLDER)
+  #   Phase 3 will replace with the official Hermes adapter image.
+  # =========================================================================
+  hermes:
+    <<: [*restart-policy, *default-logging]
+    image: nginx:1.27-alpine
+    container_name: bc_hermes
+    ports:
+      - "${HERMES_PORT:-8001}:80"
+    volumes:
+      - ./apps/hermes/public:/usr/share/nginx/html:ro
+    depends_on:
+      - paperclip
+    networks: [bc_net]
+
+  # =========================================================================
+  # OpenClaw — tool-heavy / browser agent (PLACEHOLDER)
+  #   Phase 3 will replace with the real OpenClaw image.
+  # =========================================================================
+  openclaw:
+    <<: [*restart-policy, *default-logging]
+    image: nginx:1.27-alpine
+    container_name: bc_openclaw
+    ports:
+      - "${OPENCLAW_PORT:-8002}:80"
+    volumes:
+      - ./apps/openclaw/public:/usr/share/nginx/html:ro
+    depends_on:
+      - paperclip
+    networks: [bc_net]
+
+  # =========================================================================
+  # gbrain — advanced memory layer (PLACEHOLDER)
+  #   Phase 1 will replace with the real gbrain service that wraps
+  #   Qdrant + Postgres into a unified, role-scoped memory API.
+  # =========================================================================
+  gbrain:
+    <<: [*restart-policy, *default-logging]
+    image: nginx:1.27-alpine
+    container_name: bc_gbrain
+    ports:
+      - "${GBRAIN_PORT:-8003}:80"
+    volumes:
+      - ./packages/gbrain/public:/usr/share/nginx/html:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks: [bc_net]
+
+  # =========================================================================
+  # pgAdmin — optional Postgres GUI (enable with: --profile tools)
+  #   docker compose --profile tools up -d
+  # =========================================================================
+  pgadmin:
+    <<: [*restart-policy, *default-logging]
+    image: dpage/pgadmin4:8.13
+    container_name: bc_pgadmin
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@blankcollar.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - bc_pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [bc_net]

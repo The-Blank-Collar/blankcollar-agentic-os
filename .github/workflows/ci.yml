@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint & validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose -f docker-compose.yml config -q
+
+      - name: Lint shell scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: infra/scripts
+
+      - name: Check .env.example covers compose vars
+        run: |
+          set -e
+          missing=0
+          # Extract ${VAR} references from compose
+          grep -oE '\$\{[A-Z_]+' docker-compose.yml \
+            | sed 's/\${//' | sort -u > /tmp/compose_vars.txt
+          # Vars defined in .env.example
+          grep -oE '^[A-Z_]+=' .env.example | sed 's/=//' | sort -u > /tmp/env_vars.txt
+          while read -r v; do
+            if ! grep -qx "$v" /tmp/env_vars.txt; then
+              echo "::error::Variable '$v' is used in docker-compose.yml but missing from .env.example"
+              missing=1
+            fi
+          done < /tmp/compose_vars.txt
+          exit $missing
+
+  schema:
+    name: Postgres init.sql smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot Postgres + run init.sql
+        run: |
+          docker run --rm -d --name pg \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=blankcollar \
+            -v "$PWD/infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro" \
+            -p 5432:5432 \
+            postgres:16-alpine
+          for i in $(seq 1 30); do
+            if docker exec pg pg_isready -U postgres -d blankcollar >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec pg psql -U postgres -d blankcollar -c "\dn"
+          docker exec pg psql -U postgres -d blankcollar -c "\dt core.*"
+          docker exec pg psql -U postgres -d blankcollar -c "\dt ops.*"
+          docker exec pg psql -U postgres -d blankcollar -c "\dt brain.*"
+          docker exec pg psql -U postgres -d blankcollar -c \
+            "SELECT count(*) AS departments FROM core.department;"
+          docker stop pg
