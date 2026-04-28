@@ -5,10 +5,26 @@
 # -----------------------------------------------------------------------------
 set -uo pipefail
 
-# Allow port overrides from .env if present
+# Allow port overrides from .env if present.
+# Use a shell-safe parser: only key=value lines, ignore everything else.
+# This stops a single bad line in .env from breaking the whole script.
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [ -f "$ROOT/.env" ]; then
-  set -a; . "$ROOT/.env"; set +a
+  while IFS='=' read -r key val; do
+    # skip blanks and comments
+    case "$key" in ''|\#*) continue ;; esac
+    # accept only valid env var names
+    case "$key" in
+      [A-Za-z_][A-Za-z_0-9]*) ;;
+      *) continue ;;
+    esac
+    # strip optional surrounding quotes from val
+    case "$val" in
+      \"*\") val=${val#\"}; val=${val%\"} ;;
+      \'*\') val=${val#\'}; val=${val%\'} ;;
+    esac
+    export "$key=$val"
+  done < "$ROOT/.env"
 fi
 
 PG_PORT=${POSTGRES_PORT:-5432}

@@ -192,7 +192,7 @@ services:
       GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
       OPENCLAW_FETCH_TIMEOUT_S: ${OPENCLAW_FETCH_TIMEOUT_S:-10}
       OPENCLAW_FETCH_MAX_BYTES: ${OPENCLAW_FETCH_MAX_BYTES:-1500000}
-      OPENCLAW_USER_AGENT: ${OPENCLAW_USER_AGENT:-BlankCollar-OpenClaw/0.1 (+https://www.blankcollar.ai)}
+      OPENCLAW_USER_AGENT: "${OPENCLAW_USER_AGENT:-BlankCollar-OpenClaw/0.1 (+https://www.blankcollar.ai)}"
       OPENCLAW_TEXT_EXCERPT_CHARS: ${OPENCLAW_TEXT_EXCERPT_CHARS:-8000}
       OXYLABS_API_KEY: ${OXYLABS_API_KEY:-}
       OXYLABS_BASE_URL: ${OXYLABS_BASE_URL:-https://api.aistudio.oxylabs.io}
