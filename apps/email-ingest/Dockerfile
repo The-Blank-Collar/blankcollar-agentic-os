@@ -18,12 +18,12 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
 WORKDIR /app
 
-RUN groupadd --system mail && useradd --system --gid mail --home /app mail
+RUN groupadd --system mailagent && useradd --system --gid mailagent --home /app mailagent
 
 COPY --from=builder /install /usr/local
 COPY app /app/app
 
-USER mail
+USER mailagent
 
 # This is a long-running poller; it has no HTTP surface, so we use a
 # heartbeat file written by the loop as the healthcheck.
