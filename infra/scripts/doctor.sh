@@ -60,13 +60,34 @@ check_container_health() {
     bad "$name is $running"
     return
   fi
-  health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$name" 2>/dev/null || true)
-  case "$health" in
-    healthy) ok "$name healthy" ;;
-    starting) bad "$name still starting (try again in a moment)" ;;
-    "") ok "$name running (no healthcheck)" ;;
-    *) bad "$name is $health" ;;
-  esac
+  # If healthcheck is "starting", wait up to 3 minutes for it to finalize
+  # before declaring failure. paperclipai's first-boot npx fetch + onboard
+  # legitimately takes 90-180s.
+  local waited=0
+  while true; do
+    health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$name" 2>/dev/null || true)
+    case "$health" in
+      healthy)
+        ok "$name healthy${waited:+ (after ${waited}s)}"
+        return ;;
+      starting)
+        if [ "$waited" -ge 180 ]; then
+          bad "$name still starting after 180s — check: docker logs $name"
+          return
+        fi
+        if [ "$waited" -eq 0 ]; then printf "   (waiting for $name healthcheck to finalize) "; fi
+        printf "."
+        sleep 5
+        waited=$((waited + 5))
+        ;;
+      "")
+        ok "$name running (no healthcheck)"
+        return ;;
+      *)
+        bad "$name is $health"
+        return ;;
+    esac
+  done
 }
 
 if ! docker info >/dev/null 2>&1; then
