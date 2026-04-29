@@ -70,8 +70,9 @@ ok "All local images present"
 # Format: "container_name:max_wait_seconds". paperclip-real needs longer
 # because its first-boot `npx paperclipai@latest` fetch is slow.
 say "Waiting for services to become healthy"
-for entry in bc_postgres:60 bc_qdrant:60 bc_gbrain:60 bc_hermes:60 \
-             bc_openclaw:60 bc_paperclip:90 bc_email_ingest:60; do
+for entry in bc_postgres:60 bc_qdrant:60 bc_neo4j:90 bc_graphiti:60 \
+             bc_gbrain:60 bc_hermes:60 bc_openclaw:60 bc_paperclip:90 \
+             bc_email_ingest:60; do
   service=${entry%:*}
   max_wait=${entry##*:}
   printf "   %s " "$service"
@@ -111,8 +112,10 @@ cat <<EOF
   🪽 Hermes      http://localhost:${HERMES_PORT:-8001}
   🦾 OpenClaw    http://localhost:${OPENCLAW_PORT:-8002}
   🧠 gbrain      http://localhost:${GBRAIN_PORT:-8003}
+  🕸  Graphiti   http://localhost:${GRAPHITI_PORT:-8004}/healthz   (temporal knowledge graph)
   🐘 Postgres    postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
   📦 Qdrant      http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
+  🔗 Neo4j       http://localhost:${NEO4J_HTTP_PORT:-7474}        (graphiti backend)
 
 To launch the upstream paperclipai command centre at :3100 (runs natively on your Mac):
   make paperclip

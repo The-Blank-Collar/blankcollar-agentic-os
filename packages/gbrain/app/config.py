@@ -27,5 +27,10 @@ class Settings(BaseSettings):
     embed_dim: int = Field(default=1536, alias="GBRAIN_EMBED_DIM")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
+    # --- Graphiti bridge ----------------------------------------------------
+    # When set, gbrain best-effort POSTs every /remember to graphiti's /add
+    # so the temporal graph stays in sync. Empty value disables the bridge.
+    graphiti_url: str = Field(default="", alias="GRAPHITI_URL")
+
 
 settings = Settings()

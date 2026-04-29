@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import UUID, uuid4
 
@@ -9,6 +10,7 @@ from fastapi import HTTPException
 
 from app.db import db
 from app.embeddings import Embedder
+from app.graphiti_bridge import push_to_graphiti
 from app.models import (
     ForgetRequest,
     ForgetResponse,
@@ -77,6 +79,20 @@ async def remember(req: RememberRequest, embedder: Embedder) -> RememberResponse
             "department_id": str(req.scope.department_id) if req.scope.department_id else None,
             "goal_id": str(req.scope.goal_id) if req.scope.goal_id else None,
         },
+    )
+
+    # Best-effort fan-out to graphiti (temporal knowledge graph). Fire-and-
+    # forget; never blocks /remember and never raises.
+    asyncio.create_task(
+        push_to_graphiti(
+            title=req.title,
+            content=req.content,
+            org_id=req.scope.org_id,
+            department_id=req.scope.department_id,
+            goal_id=req.scope.goal_id,
+            role=req.scope.role.value,
+            metadata={**req.metadata, "memory_id": str(memory_id), "kind": req.kind.value},
+        )
     )
 
     return RememberResponse(memory_id=memory_id)

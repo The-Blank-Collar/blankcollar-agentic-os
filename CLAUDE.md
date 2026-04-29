@@ -12,6 +12,7 @@ Source of truth for everything is in `docs/`:
 - `docs/GOAL_FIRST.md` — the philosophy: users manage goals, not agents
 - `docs/ROLES.md` — Owner / Department Lead / Team Member / Auditor / Agent
 - `docs/COMPANY_BRAIN.md` — gbrain + Qdrant + Postgres memory model
+- `docs/GRAPHITI.md` — temporal knowledge graph (Neo4j-backed) + gbrain bridge
 - `docs/LOCAL_SETUP.md` — Mac + Docker Desktop walkthrough
 - `docs/QA_CHECKLIST.md` — gates before merging
 - `docs/ROADMAP.md` — phases 0 → 8
@@ -65,7 +66,7 @@ If any of these fails, the task is **not** done.
 
 ## Phase you're (probably) in
 
-Check `docs/ROADMAP.md`. As of writing: **Phase 0 — Groundwork** is complete, **Phase 1 — Real memory layer (gbrain)** is the next target unless told otherwise.
+Check `docs/ROADMAP.md`. Phases 0–3 are complete (groundwork → gbrain → paperclip → real workforce). Current focus is integrating upstream OSS components — first one in is **Graphiti** (temporal knowledge graph). LangGraph, Playwright, Nango, E2B, design.md are queued in that order.
 
 ## When stuck
 
