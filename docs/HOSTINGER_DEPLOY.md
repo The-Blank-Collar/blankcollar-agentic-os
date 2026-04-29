@@ -26,13 +26,19 @@ and the dedicated `agent@blankcollar.ai` mailbox all wired in.
 
 In Hostinger's *Domains → blankcollar.ai → DNS Zone Editor*:
 
-| Type | Name | Value | TTL |
-|---|---|---|---|
-| A    | `@`  | `<vps-ip>` | 300 |
-| A    | `www`| `<vps-ip>` | 300 |
-| MX   | `@`  | (managed by Hostinger AI mail — leave default) | — |
+| Type | Name      | Value | TTL | What it serves |
+|---|---|---|---|---|
+| A    | `@`       | `<vps-ip>` | 300 | apex (optional redirect to www) |
+| A    | `www`     | `<vps-ip>` | 300 | dashboard + agent API + Stripe webhooks (Caddy → paperclip) |
+| A    | `nango`   | `<vps-ip>` | 300 | Nango API — OAuth callbacks land here (Caddy → nango:3003) |
+| A    | `nango-ui`| `<vps-ip>` | 300 | Nango Connect UI — admin only (Caddy → nango:3009) |
+| MX   | `@`       | (managed by Hostinger AI mail — leave default) | — | inbound mail for `agent@blankcollar.ai` |
 
-DNS usually propagates in 5–30 min. Confirm with `dig +short www.blankcollar.ai`.
+DNS usually propagates in 5–30 min. Confirm all four resolve:
+
+```bash
+for n in www nango nango-ui; do dig +short ${n}.blankcollar.ai; done
+```
 
 ## 3. SSH in and harden a little
 
@@ -130,7 +136,29 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 mailboxes from `smtp.titan.email` or similar; the panel page for the mailbox
 shows the right values.
 
-## 6. First deploy
+## 6. Preflight (gate before first deploy)
+
+```bash
+make preflight
+```
+
+Or directly: `./infra/scripts/preflight.sh`. This refuses to pass if your
+`.env` still carries any of the local-only defaults that would be
+disastrous in prod:
+
+- `NANGO_ENCRYPTION_KEY` placeholder (rotate with `openssl rand -base64 32`)
+- `PAPERCLIP_AUTH_SECRET` placeholder (rotate with `openssl rand -hex 32`)
+- `NANGO_DASHBOARD_PASSWORD=admin`
+- Missing `PUBLIC_DOMAIN`, `NANGO_PUBLIC_DOMAIN`, `NANGO_UI_DOMAIN`, `ACME_EMAIL`
+- Missing `brand/<BRAND_NAME>.md`
+- `docker compose config -q` failing on the merged base + prod files
+
+It surfaces the rest as warnings (e.g. `STRIPE_WEBHOOK_SECRET` empty —
+fine if you haven't wired Stripe yet, but webhook calls will return 503).
+
+Fix every `✗` line; warnings are judgement calls.
+
+## 7. First deploy
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -148,7 +176,7 @@ docker compose logs -f caddy
 
 Wait for `certificate obtained successfully`.
 
-## 7. Smoke test
+## 8. Smoke test
 
 ```bash
 ./infra/scripts/doctor.sh
@@ -174,7 +202,7 @@ docker exec bc_postgres psql -U postgres -d blankcollar \
 You should see a `document` (HN page) and an `episode` (Hermes summary,
 written via Nexos.ai using your credits).
 
-## 8. Configure Stripe / Supabase (optional, when ready)
+## 9. Configure Stripe / Supabase (optional, when ready)
 
 ### Stripe webhook
 
@@ -196,7 +224,7 @@ In Stripe Dashboard → *Developers → Webhooks → Add endpoint*:
 5. Once you can sign in (Phase 6 will land the UI), flip
    `PAPERCLIP_AUTH_ENFORCE=true` and restart.
 
-## 9. Subsequent deploys
+## 10. Subsequent deploys
 
 From your laptop:
 
@@ -210,7 +238,7 @@ Or from the VPS:
 cd ~/code/blankcollar-agentic-os && ./infra/scripts/deploy.sh local
 ```
 
-## 10. Backups
+## 11. Backups
 
 The KVM 8 ships with weekly backups in Hostinger's panel. On top of that,
 take a Postgres dump nightly to your home machine:
@@ -222,7 +250,7 @@ ssh bc@<vps-ip> 'docker exec bc_postgres pg_dump -U postgres -Fc blankcollar' \
 
 Restore is in [`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 ### "no certificate available" on Caddy
 
@@ -268,13 +296,15 @@ The `probes.postgres.ok` field tells you if the DB connection works.
 
 ## Production sanity checklist
 
-- [ ] DNS for `www.blankcollar.ai` points at the VPS
+- [ ] `make preflight` exits 0 (no hard errors; warnings reviewed)
+- [ ] DNS for `www`, `nango`, `nango-ui` all resolve to the VPS IP
 - [ ] `https://www.blankcollar.ai/api/health` returns `{ ok: true }`
+- [ ] `https://nango.blankcollar.ai/health` returns `{ status: "ok" }`
 - [ ] `./infra/scripts/doctor.sh` exits 0 on the VPS
-- [ ] `POSTGRES_PASSWORD`, `PAPERCLIP_AUTH_SECRET`, `QDRANT_API_KEY` are NOT defaults
-- [ ] No service except `bc_caddy` is reachable on the public internet (`nmap -p 80,443,5432,6333,3000,8001-8003 <vps-ip>` from outside the network → only 80/443 open)
-- [ ] Hermes shows `provider: "nexos"` on `/healthz`
-- [ ] OpenClaw shows the `web.search` skill with `OXYLABS_API_KEY` populated
+- [ ] `POSTGRES_PASSWORD`, `PAPERCLIP_AUTH_SECRET`, `NANGO_ENCRYPTION_KEY`, `NANGO_DASHBOARD_PASSWORD` are NOT defaults
+- [ ] No service except `bc_caddy` is reachable on the public internet (`nmap -p 80,443,5432,6333,3000,3003,3009,7474,7687,8001-8005 <vps-ip>` from outside the network → only 80/443 open)
+- [ ] Hermes shows `provider: "nexos"` on `/healthz` and prepends `[Brand Foundation]` to its prompts
+- [ ] OpenClaw shows the `web.search` skill with `OXYLABS_API_KEY` populated and `nango.invoke` available
 - [ ] A test email to `agent@blankcollar.ai` lands as a `conversation` memory + a `draft` goal
 - [ ] Stripe test event lands a row in `billing.stripe_event`
 - [ ] Daily backup is running (cron or local pull)

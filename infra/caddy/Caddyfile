@@ -1,30 +1,38 @@
 # =============================================================================
 # Blank Collar Agentic OS — Caddy v2 reverse proxy
 #
-# - DOMAIN comes from the env (set in .env or by docker-compose.prod.yml).
-# - ACME_EMAIL is the contact for Let's Encrypt rate-limit / expiry mail.
-# - Caddy auto-issues + auto-renews TLS for the bound domain. No certbot.
-# - Everything else (paperclip / hermes / openclaw / gbrain / qdrant) is
-#   internal-only on bc_net.
+# Three public TLS endpoints, all auto-issued + renewed via Let's Encrypt.
+# Caddy is the only public-facing process; everything else is internal on
+# bc_net.
+#
+#   {$PUBLIC_DOMAIN}        → paperclip:80   (dashboard + API + webhooks)
+#   {$NANGO_PUBLIC_DOMAIN}  → nango:3003     (Nango API; OAuth callbacks land here)
+#   {$NANGO_UI_DOMAIN}      → nango:3009     (Nango Connect UI; admin only)
+#
+# DNS: point all three names at the VPS IP. Caddy does the TLS dance on
+# first request, then renews on a 60-day cycle.
+#
+# To debug TLS or routing, uncomment `debug` in the global block and
+# `docker compose logs -f caddy`.
 # =============================================================================
 
 {
 	email {$ACME_EMAIL}
-	# Tighten in production. Uncomment to debug TLS:
 	# debug
 }
 
-{$DOMAIN} {
+# -----------------------------------------------------------------------------
+# Main app domain — the dashboard, the agent API, and Stripe webhooks.
+# -----------------------------------------------------------------------------
+{$PUBLIC_DOMAIN} {
 	encode zstd gzip
 
-	# Trust X-Forwarded-* from Caddy itself only.
-	# Paperclip already handles auth + scope; Caddy just forwards.
 	header {
-		# basic security headers — adjust to your setup
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options    "nosniff"
 		Referrer-Policy           "strict-origin-when-cross-origin"
-		# crossorigin-isolate the dashboard later if needed
+		# Frame-busting for the dashboard. Loosen if you embed elsewhere.
+		X-Frame-Options           "DENY"
 	}
 
 	# Stripe + future webhooks: forward as-is (raw body required for HMAC).
@@ -45,7 +53,54 @@
 	}
 }
 
-# Optional: redirect www<->apex if you bind both. Uncomment and edit:
+# -----------------------------------------------------------------------------
+# Nango API — OAuth callbacks from Slack, Notion, GitHub etc. land here.
+# Must be public TLS. Nango itself enforces its own auth on the dashboard
+# routes; the /proxy and /oauth routes are intentionally callable.
+# -----------------------------------------------------------------------------
+{$NANGO_PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+	}
+
+	reverse_proxy nango:3003
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# -----------------------------------------------------------------------------
+# Nango Connect UI — wires up integrations interactively. Admin only.
+# Set NANGO_FLAG_AUTH_ENABLED=true and a strong dashboard password before
+# pointing real DNS here (the prod compose overlay defaults to true).
+# -----------------------------------------------------------------------------
+{$NANGO_UI_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+	}
+
+	reverse_proxy nango:3009
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# -----------------------------------------------------------------------------
+# Optional: redirect apex → www. Uncomment + edit when you bind both.
+# -----------------------------------------------------------------------------
 # blankcollar.ai {
 # 	redir https://www.blankcollar.ai{uri}
 # }

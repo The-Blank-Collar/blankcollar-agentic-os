@@ -70,6 +70,19 @@ dashboard: ## Open the Paperclip dashboard in your browser
 validate: ## Validate docker-compose.yml without starting anything
 	$(COMPOSE) config -q && echo "✅ docker-compose.yml valid"
 
+.PHONY: validate-prod
+validate-prod: ## Validate base + prod compose files together
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml config -q && echo "✅ base + prod compose valid"
+
+.PHONY: preflight
+preflight: ## Pre-deploy gate: rejects default secrets, missing public-facing vars, broken prod compose
+	./infra/scripts/preflight.sh
+
+.PHONY: deploy
+deploy: ## Deploy to a remote VPS (usage: make deploy TARGET=user@host) or `local` from on-VPS
+	@if [ -z "$(TARGET)" ]; then echo "usage: make deploy TARGET=user@host  (or TARGET=local)"; exit 2; fi
+	./infra/scripts/deploy.sh $(TARGET)
+
 # -----------------------------------------------------------------------------
 # Native paperclipai runner — see docs/PAPERCLIP_REAL.md for the rationale.
 # Runs from $HOME so it doesn't pick up our project's .env (which has Docker-

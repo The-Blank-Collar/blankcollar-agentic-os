@@ -7,10 +7,14 @@
 #
 # What this file changes vs. local:
 #   - No service except Caddy binds a public host port. Everything else
-#     stays on the internal `bc_net` and is reached via the reverse proxy.
-#   - Caddy fronts paperclip with auto-TLS via Let's Encrypt.
-#   - Stricter restart policy + small CPU/memory caps.
-#   - Logging tuned a bit lower (warn) — the audit log + DB stay verbose.
+#     binds 127.0.0.1 only — reachable via the reverse proxy or via SSH
+#     tunnel for ops, never directly from the public internet.
+#   - Caddy fronts paperclip + nango with auto-TLS via Let's Encrypt.
+#   - Per-service CPU + memory caps sized for KVM 8 (8 vCPU, 32GB RAM).
+#   - ENV=production on every app so logs/log-level/error reporting can
+#     branch on it.
+#   - Json logging stays at info; bump to warn here only after we have
+#     remote log shipping.
 # =============================================================================
 
 services:
@@ -30,24 +34,68 @@ services:
       - bc_caddy_data:/data
       - bc_caddy_config:/config
     environment:
-      DOMAIN: ${PUBLIC_DOMAIN:-www.blankcollar.ai}
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-www.blankcollar.ai}
+      NANGO_PUBLIC_DOMAIN: ${NANGO_PUBLIC_DOMAIN:-nango.blankcollar.ai}
+      NANGO_UI_DOMAIN: ${NANGO_UI_DOMAIN:-nango-ui.blankcollar.ai}
       ACME_EMAIL: ${ACME_EMAIL:-agent@blankcollar.ai}
     depends_on:
       paperclip:
         condition: service_healthy
+      nango:
+        condition: service_started
     networks: [bc_net]
+    mem_limit: 256m
+    cpus: 0.5
 
   # ---- Internal-only services -------------------------------------------
   # Override port mappings to bind only on localhost so they aren't reachable
-  # from the public internet. Local SSH tunnels still work for debugging.
+  # from the public internet. SSH tunnels still work for operator debugging:
+  #   ssh -L 5432:127.0.0.1:5432 user@vps
   postgres:
     ports:
       - "127.0.0.1:5432:5432"
+    mem_limit: 2g
+    cpus: 1.0
 
   qdrant:
     ports:
       - "127.0.0.1:6333:6333"
       - "127.0.0.1:6334:6334"
+    mem_limit: 2g
+    cpus: 1.0
+
+  neo4j:
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    mem_limit: 4g
+    cpus: 2.0
+
+  nango-db:
+    # No public port at all — only nango itself talks to it on bc_net.
+    mem_limit: 1g
+    cpus: 0.5
+
+  nango-redis:
+    # Same — internal-only.
+    mem_limit: 256m
+    cpus: 0.25
+
+  nango:
+    # Caddy fronts nango on its own subdomain (see Caddyfile).
+    ports:
+      - "127.0.0.1:3003:${NANGO_SERVER_PORT:-3003}"
+      - "127.0.0.1:3009:${NANGO_CONNECT_UI_PORT:-3009}"
+    environment:
+      # Override the in-cluster URLs to point at the public TLS endpoint —
+      # OAuth callbacks from Slack/Notion/etc. land here and need the
+      # public origin, not the internal one.
+      NANGO_SERVER_URL: https://${NANGO_PUBLIC_DOMAIN:-nango.blankcollar.ai}
+      NANGO_PUBLIC_SERVER_URL: https://${NANGO_PUBLIC_DOMAIN:-nango.blankcollar.ai}
+      # Lock down the dashboard once exposed.
+      FLAG_AUTH_ENABLED: ${NANGO_FLAG_AUTH_ENABLED:-true}
+    mem_limit: 2g
+    cpus: 1.0
 
   paperclip:
     ports:
@@ -55,6 +103,10 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
+      # Enforce JWT in prod once SUPABASE_JWT_SECRET is wired.
+      PAPERCLIP_AUTH_ENFORCE: ${PAPERCLIP_AUTH_ENFORCE:-true}
+    mem_limit: 1g
+    cpus: 0.5
 
   hermes:
     ports:
@@ -62,6 +114,8 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
+    mem_limit: 1g
+    cpus: 0.5
 
   openclaw:
     ports:
@@ -69,6 +123,27 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
+    # Playwright + Chromium needs more memory than the others.
+    mem_limit: 2g
+    cpus: 1.0
+
+  langgraph:
+    ports:
+      - "127.0.0.1:8005:80"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+    mem_limit: 1g
+    cpus: 0.5
+
+  graphiti:
+    ports:
+      - "127.0.0.1:8004:80"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENV: production
+    mem_limit: 1g
+    cpus: 0.5
 
   gbrain:
     ports:
@@ -76,11 +151,15 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
+    mem_limit: 1g
+    cpus: 0.5
 
   email-ingest:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
+    mem_limit: 512m
+    cpus: 0.25
 
 volumes:
   bc_caddy_data:
