@@ -64,7 +64,7 @@ services:
   # =========================================================================
   postgres:
     <<: [*restart-policy, *default-logging]
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: bc_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -304,7 +304,7 @@ services:
   # =========================================================================
   nango-db:
     <<: [*restart-policy, *default-logging]
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: bc_nango_db
     environment:
       POSTGRES_USER: ${NANGO_DB_USER:-nango}
