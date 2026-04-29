@@ -83,6 +83,15 @@ deploy: ## Deploy to a remote VPS (usage: make deploy TARGET=user@host) or `loca
 	@if [ -z "$(TARGET)" ]; then echo "usage: make deploy TARGET=user@host  (or TARGET=local)"; exit 2; fi
 	./infra/scripts/deploy.sh $(TARGET)
 
+.PHONY: backup
+backup: ## Snapshot all stateful volumes + databases to ./backups/blankcollar-<TS>.tar.gz
+	./infra/scripts/backup.sh
+
+.PHONY: restore
+restore: ## Restore from a backup tarball (usage: make restore TARBALL=./backups/<file>.tar.gz)
+	@if [ -z "$(TARBALL)" ]; then echo "usage: make restore TARBALL=./backups/blankcollar-<TS>.tar.gz"; exit 2; fi
+	./infra/scripts/restore.sh $(TARBALL)
+
 # -----------------------------------------------------------------------------
 # Native paperclipai runner — see docs/PAPERCLIP_REAL.md for the rationale.
 # Runs from $HOME so it doesn't pick up our project's .env (which has Docker-

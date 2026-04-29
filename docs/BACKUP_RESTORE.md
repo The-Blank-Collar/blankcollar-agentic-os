@@ -2,14 +2,43 @@
 
 How to keep your Company Brain alive across machine moves, accidents, and Docker tantrums.
 
+## TL;DR — the script
+
+```bash
+make backup                                          # produces ./backups/blankcollar-<TS>.tar.gz
+make restore TARBALL=./backups/blankcollar-<TS>.tar.gz   # destructive; prompts you to type RESTORE
+```
+
+`make backup` runs `./infra/scripts/backup.sh`, which captures everything
+that can't be rebuilt from git in one tarball:
+
+- `bc_postgres` → `pg_dump -Fc` (online, no downtime)
+- `bc_nango_db` → `pg_dump -Fc` (online; OAuth tokens live here)
+- `bc_qdrant_data` → volume tar (briefly stops `bc_qdrant`, ~5s)
+- `bc_neo4j_data` → volume tar (briefly stops `bc_neo4j`, ~10s)
+- `brand/` → copy (in case the file was edited live on the VPS)
+
+A `MANIFEST.txt` at the top of the tarball records timestamp + git SHA +
+component sizes.
+
+`make restore TARBALL=…` requires you to literally type `RESTORE` to
+proceed (or set `FORCE=1`), then drops + recreates each Postgres
+database, untars the Qdrant + Neo4j volumes, and runs each restore step
+independently — a missing component logs a warning instead of aborting.
+
+After restore: `make doctor` should still exit 0.
+
 ## What's worth backing up?
 
 | Volume                  | What's in it                                | Replaceable?                       |
 |-------------------------|---------------------------------------------|------------------------------------|
 | `bc_postgres_data`      | All structured state (goals, runs, memory metadata, audit log) | **No.** Back up. |
+| `bc_nango_db_data`      | OAuth tokens + Nango integration config     | **No.** Back up. Re-doing every OAuth dance is the worst. |
 | `bc_qdrant_data`        | All vectors & their payloads                | Re-embeddable from Postgres if you saved `content`. Slow & costly. **Back up.** |
+| `bc_neo4j_data`         | Graphiti's temporal graph                   | Rebuildable from gbrain memories via the bridge. Back up to skip the rebuild. |
 | `bc_pgadmin_data`       | pgAdmin UI config                           | Yes. Don't bother.                  |
 | `.env`                  | Secrets, ports                              | Yes — but back it up if you set strong passwords. |
+| `brand/`                | Brand Foundation file(s)                    | Yes (in git), but a live edit on the VPS would be lost. The script captures it.|
 
 ## Simple offline snapshot (Phase 0–1)
 
