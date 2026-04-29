@@ -55,7 +55,7 @@ echo
 # -----------------------------------------------------------------------------
 echo "[1/5] no-default-secrets"
 
-if [ "$(get NANGO_ENCRYPTION_KEY)" = "RZwOryJRG/8AvoR6yeqrh4QkgZUQOK+2" ]; then
+if [ "$(get NANGO_ENCRYPTION_KEY)" = "Lktpnnl7UNIPVQgJBL3EE9U4VQCwswksinu1HLxbfxg=" ] || [ "$(get NANGO_ENCRYPTION_KEY)" = "RZwOryJRG/8AvoR6yeqrh4QkgZUQOK+2" ]; then
     fail "NANGO_ENCRYPTION_KEY is the placeholder. Generate a new one: openssl rand -base64 32"
 else
     ok "NANGO_ENCRYPTION_KEY rotated"

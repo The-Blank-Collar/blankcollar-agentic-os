@@ -333,7 +333,7 @@ services:
     # Rosetta — slower first-run but works.
     platform: linux/amd64
     environment:
-      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:-RZwOryJRG/8AvoR6yeqrh4QkgZUQOK+2}
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:-Lktpnnl7UNIPVQgJBL3EE9U4VQCwswksinu1HLxbfxg=}
       NANGO_DB_USER: ${NANGO_DB_USER:-nango}
       NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:-nango}
       NANGO_DB_HOST: ${NANGO_DB_HOST:-nango-db}
