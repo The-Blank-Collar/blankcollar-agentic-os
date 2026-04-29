@@ -33,8 +33,8 @@ fi
 # 3. Pre-pull every registry-only service (postgres, qdrant, neo4j, …).
 #    We name them explicitly so we never try to pull a locally-built
 #    blankcollar/* image (Docker would 401 those).
-say "Pulling registry images (postgres, qdrant, neo4j)"
-docker compose pull postgres qdrant neo4j
+say "Pulling registry images (postgres, qdrant, neo4j, nango stack)"
+docker compose pull postgres qdrant neo4j nango-db nango-redis nango
 
 # 4. Build local images.
 say "Building local images (first run takes 5–10 minutes; subsequent runs are seconds)"
@@ -83,6 +83,7 @@ ok "All local images present"
 # because its first-boot `npx paperclipai@latest` fetch is slow.
 say "Waiting for services to become healthy"
 for entry in bc_postgres:60 bc_qdrant:60 bc_neo4j:90 bc_graphiti:60 \
+             bc_nango_db:60 bc_nango_redis:30 bc_nango:120 \
              bc_gbrain:60 bc_hermes:60 bc_openclaw:60 bc_langgraph:60 \
              bc_paperclip:90 bc_email_ingest:60; do
   service=${entry%:*}
@@ -126,6 +127,8 @@ cat <<EOF
   🧠 gbrain      http://localhost:${GBRAIN_PORT:-8003}
   🕸  Graphiti   http://localhost:${GRAPHITI_PORT:-8004}/healthz   (temporal knowledge graph)
   🧭 LangGraph  http://localhost:${LANGGRAPH_PORT:-8005}/healthz   (multi-agent dispatcher)
+  🔌 Nango      http://localhost:${NANGO_SERVER_PORT:-3003}        (OAuth + tool integrations gateway)
+  🎛  Nango UI  http://localhost:${NANGO_CONNECT_UI_PORT:-3009}   (connect external services here)
   🐘 Postgres    postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
   📦 Qdrant      http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
   🔗 Neo4j       http://localhost:${NEO4J_HTTP_PORT:-7474}        (graphiti backend)

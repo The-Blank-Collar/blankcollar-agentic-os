@@ -11,6 +11,7 @@ from app.browser import BrowseError, web_browse
 from app.email import EmailSendError, email_send
 from app.fetch import FetchError, web_fetch
 from app.models import RunRequest
+from app.nango import NangoError, nango_invoke
 from app.search import SearchError, web_search
 from app.state import RunState, RunStatus, runs
 
@@ -21,6 +22,7 @@ SUPPORTED_SKILLS: tuple[str, ...] = (
     "web.search",
     "email.send",
     "web.browse",
+    "nango.invoke",
 )
 
 
@@ -289,6 +291,69 @@ async def run(req: RunRequest) -> None:
                     "screenshot_png_b64": result.get("screenshot_png_b64"),
                     "memory_id": memory_id,
                     "excerpt_chars": len(result.get("excerpt") or ""),
+                }
+            )
+            return
+
+        # ---- nango.invoke (proxy through Nango to a registered integration) ----
+        if skill == "nango.invoke":
+            provider = sub_input.get("provider_config_key") or sub_input.get("provider")
+            connection = sub_input.get("connection_id") or sub_input.get("connection")
+            endpoint = sub_input.get("endpoint")
+            method = sub_input.get("method") or "GET"
+            params = sub_input.get("params") or None
+            headers = sub_input.get("headers") or None
+            payload = sub_input.get("body")
+
+            try:
+                outcome = await asyncio.wait_for(
+                    nango_invoke(
+                        provider_config_key=str(provider) if provider else "",
+                        connection_id=str(connection) if connection else "",
+                        endpoint=str(endpoint) if endpoint else "",
+                        method=str(method),
+                        params=params if isinstance(params, dict) else None,
+                        headers=headers if isinstance(headers, dict) else None,
+                        body=payload,
+                    ),
+                    timeout=60.0,
+                )
+            except NangoError as ne:
+                state.mark_failed(str(ne))
+                return
+
+            if state.cancel_event.is_set():
+                state.mark_cancelled()
+                return
+
+            # Persist as a `conversation` memory — proxy calls are agent-to-system
+            # interactions, not page-style content.
+            preview = str(outcome.get("body"))[:2_000]
+            memory_id = await brain.remember(
+                kind="conversation",
+                title=f"nango.{outcome['provider_config_key']} {outcome['method']} {outcome['endpoint']}"[:200],
+                content=f"status: {outcome['status']}\n\n{preview}",
+                scope=req.scope,
+                metadata={
+                    "run_id": rid,
+                    "goal_id": str(req.goal_id),
+                    "skill": "nango.invoke",
+                    "provider_config_key": outcome["provider_config_key"],
+                    "connection_id": outcome["connection_id"],
+                    "endpoint": outcome["endpoint"],
+                    "method": outcome["method"],
+                    "status": outcome["status"],
+                    "ok": outcome["ok"],
+                    "source": "openclaw",
+                },
+            )
+
+            state.mark_succeeded(
+                {
+                    "agent_kind": "openclaw",
+                    "skill": "nango.invoke",
+                    **outcome,
+                    "memory_id": memory_id,
                 }
             )
             return

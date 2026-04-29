@@ -53,5 +53,10 @@ class Settings(BaseSettings):
         default=2_000_000, alias="OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES"
     )
 
+    # ----- nango.invoke (proxy through self-hosted Nango to 400+ APIs) -----
+    nango_url: str = Field(default="http://nango:3003", alias="NANGO_URL")
+    nango_secret_key: str | None = Field(default=None, alias="NANGO_SECRET_KEY")
+    nango_request_timeout_s: float = Field(default=30.0, alias="NANGO_REQUEST_TIMEOUT_S")
+
 
 settings = Settings()

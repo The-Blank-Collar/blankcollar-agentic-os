@@ -55,6 +55,8 @@ volumes:
     name: bc_neo4j_data
   bc_neo4j_logs:
     name: bc_neo4j_logs
+  bc_nango_db_data:
+    name: bc_nango_db_data
 
 services:
   # =========================================================================
@@ -231,6 +233,8 @@ services:
       OPENCLAW_BROWSER_VIEWPORT_W: ${OPENCLAW_BROWSER_VIEWPORT_W:-1280}
       OPENCLAW_BROWSER_VIEWPORT_H: ${OPENCLAW_BROWSER_VIEWPORT_H:-800}
       OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES: ${OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES:-2000000}
+      NANGO_URL: ${NANGO_URL:-http://nango:3003}
+      NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
     ports:
       - "${OPENCLAW_PORT:-8002}:80"
     depends_on:
@@ -275,6 +279,78 @@ services:
         condition: service_healthy
       openclaw:
         condition: service_healthy
+    networks: [bc_net]
+
+  # =========================================================================
+  # Nango — self-hosted OAuth + tool-integration gateway. Lets agents call
+  # 400+ external APIs (Slack, Notion, GitHub, HubSpot, Google Workspace, …)
+  # through a single proxy without bespoke per-service auth code.
+  #
+  # Three services:
+  #   - bc_nango_db    : dedicated Postgres for Nango state (separate from
+  #                      our shared bc_postgres so schemas don't fight)
+  #   - bc_nango_redis : queue + cache
+  #   - bc_nango       : Nango server (REST API on 3003 + Connect UI on 3009)
+  #
+  # See docs/NANGO.md for first-run setup.
+  # =========================================================================
+  nango-db:
+    <<: [*restart-policy, *default-logging]
+    image: postgres:16-alpine
+    container_name: bc_nango_db
+    environment:
+      POSTGRES_USER: ${NANGO_DB_USER:-nango}
+      POSTGRES_PASSWORD: ${NANGO_DB_PASSWORD:-nango}
+      POSTGRES_DB: ${NANGO_DB_NAME:-nango}
+    volumes:
+      - bc_nango_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NANGO_DB_USER:-nango} -d ${NANGO_DB_NAME:-nango}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [bc_net]
+
+  nango-redis:
+    <<: [*restart-policy, *default-logging]
+    image: redis:7.2.4
+    container_name: bc_nango_redis
+    networks: [bc_net]
+
+  nango:
+    <<: [*restart-policy, *default-logging]
+    image: nangohq/nango-server:hosted
+    container_name: bc_nango
+    # Nango ships amd64 only. On Apple Silicon, Docker Desktop emulates via
+    # Rosetta — slower first-run but works.
+    platform: linux/amd64
+    environment:
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:-RZwOryJRG/8AvoR6yeqrh4QkgZUQOK+2}
+      NANGO_DB_USER: ${NANGO_DB_USER:-nango}
+      NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:-nango}
+      NANGO_DB_HOST: ${NANGO_DB_HOST:-nango-db}
+      NANGO_DB_PORT: ${NANGO_DB_INTERNAL_PORT:-5432}
+      NANGO_DB_NAME: ${NANGO_DB_NAME:-nango}
+      NANGO_DB_SSL: "false"
+      RECORDS_DATABASE_URL: postgresql://${NANGO_DB_USER:-nango}:${NANGO_DB_PASSWORD:-nango}@nango-db:5432/${NANGO_DB_NAME:-nango}
+      SERVER_PORT: ${NANGO_SERVER_PORT:-3003}
+      NANGO_SERVER_URL: ${NANGO_SERVER_URL:-http://localhost:3003}
+      NANGO_PUBLIC_SERVER_URL: ${NANGO_PUBLIC_SERVER_URL:-http://localhost:3003}
+      CSP_REPORT_ONLY: "true"
+      FLAG_AUTH_ENABLED: ${NANGO_FLAG_AUTH_ENABLED:-false}
+      NANGO_DASHBOARD_USERNAME: ${NANGO_DASHBOARD_USERNAME:-admin}
+      NANGO_DASHBOARD_PASSWORD: ${NANGO_DASHBOARD_PASSWORD:-admin}
+      LOG_LEVEL: ${NANGO_LOG_LEVEL:-info}
+      NANGO_LOGS_ENABLED: "false"
+      FLAG_SERVE_CONNECT_UI: "true"
+    ports:
+      - "${NANGO_SERVER_PORT:-3003}:${NANGO_SERVER_PORT:-3003}"
+      - "${NANGO_CONNECT_UI_PORT:-3009}:${NANGO_CONNECT_UI_PORT:-3009}"
+    depends_on:
+      nango-db:
+        condition: service_healthy
+      nango-redis:
+        condition: service_started
     networks: [bc_net]
 
   # =========================================================================

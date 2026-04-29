@@ -15,6 +15,7 @@ Source of truth for everything is in `docs/`:
 - `docs/GRAPHITI.md` — temporal knowledge graph (Neo4j-backed) + gbrain bridge
 - `docs/LANGGRAPH.md` — multi-agent dispatcher (classifier → hermes/openclaw)
 - `docs/PLAYWRIGHT.md` — web.browse skill on OpenClaw (headless Chromium)
+- `docs/NANGO.md` — OAuth + tool integrations gateway (400+ APIs)
 - `docs/LOCAL_SETUP.md` — Mac + Docker Desktop walkthrough
 - `docs/QA_CHECKLIST.md` — gates before merging
 - `docs/ROADMAP.md` — phases 0 → 8
