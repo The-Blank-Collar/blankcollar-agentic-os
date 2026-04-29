@@ -46,7 +46,17 @@ docker compose build
 #    `--remove-orphans` cleans up containers from services that have been
 #    removed from the compose file (e.g. paperclip-real after we yanked it).
 say "Starting stack"
-docker compose up -d --pull missing --remove-orphans
+if ! docker compose up -d --pull missing --remove-orphans 2>&1 | tee /tmp/bc-up.log; then
+  if grep -q "already in use" /tmp/bc-up.log; then
+    warn "container-name conflict detected — cleaning up and retrying"
+    docker compose down --remove-orphans 2>/dev/null || true
+    docker compose up -d --pull missing --remove-orphans
+  else
+    err "docker compose up failed — see /tmp/bc-up.log"
+    exit 1
+  fi
+fi
+rm -f /tmp/bc-up.log
 
 # Verify the build actually produced the tagged images.
 say "Verifying built images are present"
