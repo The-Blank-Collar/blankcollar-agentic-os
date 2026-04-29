@@ -12,6 +12,10 @@ const ENV = process.env;
 const URLS: Record<string, string> = {
   hermes: ENV.HERMES_URL ?? "http://hermes:80",
   openclaw: ENV.OPENCLAW_URL ?? "http://openclaw:80",
+  // LangGraph dispatcher — speaks the same adapter contract; routes
+  // internally to hermes / openclaw. Use kind="langgraph" on a subtask
+  // when you want the multi-agent dispatcher to decide.
+  langgraph: ENV.LANGGRAPH_URL ?? "http://langgraph:80",
 };
 
 const cache = new Map<string, AdapterClient>();

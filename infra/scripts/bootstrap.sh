@@ -83,8 +83,8 @@ ok "All local images present"
 # because its first-boot `npx paperclipai@latest` fetch is slow.
 say "Waiting for services to become healthy"
 for entry in bc_postgres:60 bc_qdrant:60 bc_neo4j:90 bc_graphiti:60 \
-             bc_gbrain:60 bc_hermes:60 bc_openclaw:60 bc_paperclip:90 \
-             bc_email_ingest:60; do
+             bc_gbrain:60 bc_hermes:60 bc_openclaw:60 bc_langgraph:60 \
+             bc_paperclip:90 bc_email_ingest:60; do
   service=${entry%:*}
   max_wait=${entry##*:}
   printf "   %s " "$service"
@@ -125,6 +125,7 @@ cat <<EOF
   🦾 OpenClaw    http://localhost:${OPENCLAW_PORT:-8002}
   🧠 gbrain      http://localhost:${GBRAIN_PORT:-8003}
   🕸  Graphiti   http://localhost:${GRAPHITI_PORT:-8004}/healthz   (temporal knowledge graph)
+  🧭 LangGraph  http://localhost:${LANGGRAPH_PORT:-8005}/healthz   (multi-agent dispatcher)
   🐘 Postgres    postgresql://${POSTGRES_USER:-postgres}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-blankcollar}
   📦 Qdrant      http://localhost:${QDRANT_HTTP_PORT:-6333}/dashboard
   🔗 Neo4j       http://localhost:${NEO4J_HTTP_PORT:-7474}        (graphiti backend)

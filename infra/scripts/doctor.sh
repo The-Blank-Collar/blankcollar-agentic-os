@@ -35,6 +35,7 @@ HM_PORT=${HERMES_PORT:-8001}
 OC_PORT=${OPENCLAW_PORT:-8002}
 GB_PORT=${GBRAIN_PORT:-8003}
 GR_PORT=${GRAPHITI_PORT:-8004}
+LG_PORT=${LANGGRAPH_PORT:-8005}
 N4_PORT=${NEO4J_HTTP_PORT:-7474}
 
 PASS=0; FAIL=0
@@ -105,12 +106,14 @@ check_container_health bc_graphiti
 check_container_health bc_gbrain
 check_container_health bc_hermes
 check_container_health bc_openclaw
+check_container_health bc_langgraph
 check_container_health bc_paperclip
 check_container_health bc_email_ingest
 
 check_http "Qdrant"      "http://localhost:${QD_PORT}/healthz"
 check_http "Neo4j"       "http://localhost:${N4_PORT}"
 check_http "Graphiti"    "http://localhost:${GR_PORT}/healthz"
+check_http "LangGraph"   "http://localhost:${LG_PORT}/healthz"
 check_http "Paperclip"   "http://localhost:${PC_PORT}/api/health"
 check_http "Hermes"      "http://localhost:${HM_PORT}/healthz"
 check_http "OpenClaw"    "http://localhost:${OC_PORT}/healthz"

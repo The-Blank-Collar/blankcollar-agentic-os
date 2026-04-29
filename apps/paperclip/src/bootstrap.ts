@@ -18,6 +18,11 @@ const DEFAULT_AGENTS: Array<{ kind: string; name: string; description: string }>
     name: "OpenClaw — Web Actions",
     description: "Tool-action agent. Fetches URLs and stores them as documents.",
   },
+  {
+    kind: "langgraph",
+    name: "LangGraph — Multi-Agent Dispatcher",
+    description: "Orchestrator that classifies subtasks and routes to Hermes or OpenClaw.",
+  },
 ];
 
 export async function ensureDefaultAgents(

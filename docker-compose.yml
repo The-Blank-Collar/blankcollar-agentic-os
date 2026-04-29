@@ -235,6 +235,45 @@ services:
     networks: [bc_net]
 
   # =========================================================================
+  # LangGraph Dispatcher — multi-agent orchestrator on top of Hermes + OpenClaw.
+  #   Speaks the same agent adapter contract (/run, /run/{id}, cancel,
+  #   /healthz). Paperclip can dispatch subtasks to it as kind=langgraph;
+  #   internally it classifies + routes to hermes or openclaw.
+  #   See apps/langgraph/ and docs/LANGGRAPH.md.
+  # =========================================================================
+  langgraph:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: ./apps/langgraph
+      dockerfile: Dockerfile
+    image: blankcollar/langgraph:0.1.0
+    container_name: bc_langgraph
+    environment:
+      ENV: ${ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HERMES_URL: ${HERMES_URL:-http://hermes:80}
+      OPENCLAW_URL: ${OPENCLAW_URL:-http://openclaw:80}
+      GBRAIN_URL: ${GBRAIN_URL:-http://gbrain:80}
+      NEXOS_API_KEY: ${NEXOS_API_KEY:-}
+      NEXOS_BASE_URL: ${NEXOS_BASE_URL:-https://api.nexos.ai/v1}
+      NEXOS_MODEL: ${NEXOS_MODEL:-claude-sonnet}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LANGGRAPH_CLASSIFIER_MODEL: ${LANGGRAPH_CLASSIFIER_MODEL:-claude-sonnet-4-6}
+      LANGGRAPH_CLASSIFIER_MAX_TOKENS: ${LANGGRAPH_CLASSIFIER_MAX_TOKENS:-200}
+      LANGGRAPH_MAX_CYCLES: ${LANGGRAPH_MAX_CYCLES:-4}
+      LANGGRAPH_POLL_INTERVAL_S: ${LANGGRAPH_POLL_INTERVAL_S:-0.5}
+      LANGGRAPH_POLL_TIMEOUT_S: ${LANGGRAPH_POLL_TIMEOUT_S:-180}
+    ports:
+      - "${LANGGRAPH_PORT:-8005}:80"
+    depends_on:
+      hermes:
+        condition: service_healthy
+      openclaw:
+        condition: service_healthy
+    networks: [bc_net]
+
+  # =========================================================================
   # email-ingest — IMAP-poll service for agent@blankcollar.ai
   #   Idle/heartbeat-only mode unless IMAP_HOST + IMAP_USER are set.
   # =========================================================================

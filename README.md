@@ -340,6 +340,7 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 - [`docs/ROLES.md`](docs/ROLES.md) — Role model + 3-layer enforcement.
 - [`docs/COMPANY_BRAIN.md`](docs/COMPANY_BRAIN.md) — gbrain + Qdrant + Postgres design.
 - [`docs/GRAPHITI.md`](docs/GRAPHITI.md) — Temporal knowledge graph (Neo4j) bridged from gbrain.
+- [`docs/LANGGRAPH.md`](docs/LANGGRAPH.md) — Multi-agent dispatcher routing to Hermes + OpenClaw.
 - [`docs/AGENTS.md`](docs/AGENTS.md) — Agent adapter contract & lifecycle.
 - [`docs/SKILLS.md`](docs/SKILLS.md) — L2 intelligence layer, MCP, policy engine.
 - [`docs/API.md`](docs/API.md) — Paperclip / agent / gbrain / skills HTTP contracts.
