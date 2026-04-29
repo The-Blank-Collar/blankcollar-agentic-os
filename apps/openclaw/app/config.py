@@ -45,5 +45,13 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = Field(default=False, alias="SMTP_USE_TLS")
     smtp_timeout_s: float = Field(default=20.0, alias="SMTP_TIMEOUT_S")
 
+    # ----- web.browse (Playwright + headless Chromium) -----
+    browser_timeout_s: float = Field(default=30.0, alias="OPENCLAW_BROWSER_TIMEOUT_S")
+    browser_viewport_w: int = Field(default=1280, alias="OPENCLAW_BROWSER_VIEWPORT_W")
+    browser_viewport_h: int = Field(default=800, alias="OPENCLAW_BROWSER_VIEWPORT_H")
+    browser_max_screenshot_bytes: int = Field(
+        default=2_000_000, alias="OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES"
+    )
+
 
 settings = Settings()

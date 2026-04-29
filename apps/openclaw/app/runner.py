@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from app.brain import brain
+from app.browser import BrowseError, web_browse
 from app.email import EmailSendError, email_send
 from app.fetch import FetchError, web_fetch
 from app.models import RunRequest
@@ -15,7 +16,12 @@ from app.state import RunState, RunStatus, runs
 
 log = logging.getLogger("openclaw.runner")
 
-SUPPORTED_SKILLS: tuple[str, ...] = ("web.fetch", "web.search", "email.send")
+SUPPORTED_SKILLS: tuple[str, ...] = (
+    "web.fetch",
+    "web.search",
+    "email.send",
+    "web.browse",
+)
 
 
 async def run(req: RunRequest) -> None:
@@ -226,6 +232,63 @@ async def run(req: RunRequest) -> None:
                     "skill": "email.send",
                     **outcome,
                     "memory_id": memory_id,
+                }
+            )
+            return
+
+        # ---- web.browse (Playwright + headless Chromium) ----
+        if skill == "web.browse":
+            url = sub_input.get("url")
+            wait_until = sub_input.get("wait_until") or "networkidle"
+            screenshot = bool(sub_input.get("screenshot", False))
+            if not isinstance(url, str) or not url:
+                state.mark_failed("web.browse requires `input.url`")
+                return
+            try:
+                result = await asyncio.wait_for(
+                    web_browse(url, wait_until=wait_until, screenshot=screenshot),
+                    timeout=60.0,
+                )
+            except BrowseError as be:
+                state.mark_failed(str(be))
+                return
+
+            if state.cancel_event.is_set():
+                state.mark_cancelled()
+                return
+
+            # Persist as a `document` memory (excerpt only — screenshot stays
+            # in the run output, not the brain, to keep gbrain payloads sane).
+            memory_id = await brain.remember(
+                kind="document",
+                title=result.get("title") or url,
+                content=result.get("excerpt") or "",
+                scope=req.scope,
+                metadata={
+                    "run_id": rid,
+                    "goal_id": str(req.goal_id),
+                    "skill": "web.browse",
+                    "url": url,
+                    "final_url": result.get("final_url"),
+                    "status": result.get("status"),
+                    "viewport": result.get("viewport"),
+                    "had_screenshot": result.get("screenshot_png_b64") is not None,
+                    "source": "openclaw",
+                },
+            )
+
+            state.mark_succeeded(
+                {
+                    "agent_kind": "openclaw",
+                    "skill": "web.browse",
+                    "url": url,
+                    "final_url": result.get("final_url"),
+                    "status": result.get("status"),
+                    "title": result.get("title"),
+                    "viewport": result.get("viewport"),
+                    "screenshot_png_b64": result.get("screenshot_png_b64"),
+                    "memory_id": memory_id,
+                    "excerpt_chars": len(result.get("excerpt") or ""),
                 }
             )
             return

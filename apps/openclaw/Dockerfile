@@ -1,5 +1,11 @@
 # =============================================================================
 # OpenClaw — Blank Collar workforce agent (tool / web actions)
+#
+# Skills shipped:
+#   - web.fetch    (httpx + selectolax)
+#   - web.search   (Oxylabs AI Studio + DuckDuckGo fallback)
+#   - email.send   (aiosmtplib)
+#   - web.browse   (playwright + chromium — adds ~400MB to the image)
 # =============================================================================
 
 FROM python:3.12-slim AS builder
@@ -18,12 +24,25 @@ RUN pip install --prefix=/install .
 
 FROM python:3.12-slim AS runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+
 WORKDIR /app
 
 RUN groupadd --system openclaw && useradd --system --gid openclaw --home /app openclaw
 
 COPY --from=builder /install /usr/local
+
+# Install Chromium + the apt deps Playwright needs at runtime. The browser
+# binary lands in $PLAYWRIGHT_BROWSERS_PATH; we then hand ownership over to
+# the openclaw user so the runtime can read it.
+RUN mkdir -p /opt/playwright \
+ && playwright install --with-deps chromium \
+ && chown -R openclaw:openclaw /opt/playwright \
+ && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 COPY app /app/app
 
 USER openclaw

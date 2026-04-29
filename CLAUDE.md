@@ -14,6 +14,7 @@ Source of truth for everything is in `docs/`:
 - `docs/COMPANY_BRAIN.md` — gbrain + Qdrant + Postgres memory model
 - `docs/GRAPHITI.md` — temporal knowledge graph (Neo4j-backed) + gbrain bridge
 - `docs/LANGGRAPH.md` — multi-agent dispatcher (classifier → hermes/openclaw)
+- `docs/PLAYWRIGHT.md` — web.browse skill on OpenClaw (headless Chromium)
 - `docs/LOCAL_SETUP.md` — Mac + Docker Desktop walkthrough
 - `docs/QA_CHECKLIST.md` — gates before merging
 - `docs/ROADMAP.md` — phases 0 → 8

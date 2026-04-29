@@ -14,6 +14,8 @@ Endpoints (per `docs/API.md`):
 |---------------|---------------------------------|--------------------------------------------------------------------------------------------------------|
 | `web.fetch`   | `url`                           | Politely fetches a URL, extracts visible text, writes a `document` memory to gbrain.                   |
 | `web.search`  | `query`, `max_results?`         | Searches the web (Oxylabs AI Studio if `OXYLABS_API_KEY` set; DuckDuckGo otherwise) and stores results. |
+| `web.browse`  | `url`, `wait_until?`, `screenshot?` | Headless Chromium (Playwright) — runs JS, waits for the page, returns rendered text. See [`docs/PLAYWRIGHT.md`](../../docs/PLAYWRIGHT.md). |
+| `email.send`  | `to`, `subject`, `body`, `cc?`, `reply_to?` | Sends via SMTP (or returns drafted if no SMTP creds). |
 
 The skill is selected by `subtask.input.skill`. If a `url` is present, `web.fetch`
 is the default. If a `query` is present, `web.search` is the default.

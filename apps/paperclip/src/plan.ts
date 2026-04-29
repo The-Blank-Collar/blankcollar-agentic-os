@@ -18,8 +18,9 @@ export type Subtask = {
 
 const URL_RE = /\bhttps?:\/\/[^\s)>\]"]+/i;
 const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/i;
-const SEARCH_TRIGGERS_RE = /\b(search|google|find|look\s+up|research|investigate|browse)\b/i;
+const SEARCH_TRIGGERS_RE = /\b(search|google|find|look\s+up|research|investigate)\b/i;
 const EMAIL_TRIGGERS_RE = /\b(email|mail|send.*to|reply\s+to|write\s+to)\b/i;
+const BROWSE_TRIGGERS_RE = /\b(browse|render|click|interact|spa|javascript|js-heavy|dashboard)\b/i;
 
 export function generatePlan(input: {
   title: string;
@@ -33,12 +34,18 @@ export function generatePlan(input: {
 
   if (urlMatch) {
     const url = urlMatch[0];
+    // If the goal also mentions JS-heavy / interactive cues, use the
+    // Playwright-backed web.browse skill instead of the static web.fetch.
+    const useBrowser = BROWSE_TRIGGERS_RE.test(haystack);
+    const fetchSkill = useBrowser ? "web.browse" : "web.fetch";
     return numbered([
       {
-        title: `Fetch ${shortenUrl(url)}`,
-        description: "Politely fetch the page and store it as a document memory.",
+        title: `${useBrowser ? "Browse" : "Fetch"} ${shortenUrl(url)}`,
+        description: useBrowser
+          ? "Render the page in headless Chromium and store the result as a document memory."
+          : "Politely fetch the page and store it as a document memory.",
         agent_kind: "openclaw",
-        input: { skill: "web.fetch", url },
+        input: { skill: fetchSkill, url },
       },
       {
         title: "Summarise the page",

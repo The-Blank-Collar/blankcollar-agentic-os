@@ -63,6 +63,28 @@ describe("generatePlan — URL-aware", () => {
     const plan = generatePlan({ title: "See https://example.com/path now" });
     expect(String(plan[0]!.input.url)).toBe("https://example.com/path");
   });
+
+  it("uses web.browse when a browse-trigger word is present", () => {
+    const plan = generatePlan({
+      title: "Render and analyse https://app.example.com/dashboard",
+    });
+    expect(plan[0]!.input.skill).toBe("web.browse");
+    expect(plan[0]!.input.url).toBe("https://app.example.com/dashboard");
+  });
+
+  it("'browse' word triggers web.browse skill", () => {
+    const plan = generatePlan({
+      title: "Browse https://example.com and tell me about it",
+    });
+    expect(plan[0]!.input.skill).toBe("web.browse");
+  });
+
+  it("plain URL without browse-triggers stays on web.fetch", () => {
+    const plan = generatePlan({
+      title: "Summarise https://news.ycombinator.com/",
+    });
+    expect(plan[0]!.input.skill).toBe("web.fetch");
+  });
 });
 
 describe("generatePlan — search-aware", () => {
