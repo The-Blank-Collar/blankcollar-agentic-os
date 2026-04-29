@@ -30,21 +30,23 @@ else
   ok ".env already exists"
 fi
 
-# 3. Pre-pull just the registry-only services (postgres, qdrant) so we
-#    don't fight with compose's auto-pull logic.
-say "Pulling postgres + qdrant (registry images only)"
-docker compose pull postgres qdrant
+# 3. Pre-pull every registry-only service (postgres, qdrant, neo4j, …).
+#    We name them explicitly so we never try to pull a locally-built
+#    blankcollar/* image (Docker would 401 those).
+say "Pulling registry images (postgres, qdrant, neo4j)"
+docker compose pull postgres qdrant neo4j
 
-# 4. Build local images first, explicitly. Don't combine with `up` — keep
-#    the steps separate so a build failure is unambiguous.
+# 4. Build local images.
 say "Building local images (first run takes 5–10 minutes; subsequent runs are seconds)"
 docker compose build
 
-# 5. Start. `--pull never` forbids any registry pull attempts (postgres +
-#    qdrant were already pulled above, locally-built images now exist
-#    after the build, so nothing else needs fetching).
+# 5. Start. `--pull missing` lets Docker fetch any registry image it
+#    doesn't have yet (catches new compose additions). Locally-built
+#    images already exist after step 4 so this never tries to fetch them.
+#    `--remove-orphans` cleans up containers from services that have been
+#    removed from the compose file (e.g. paperclip-real after we yanked it).
 say "Starting stack"
-docker compose up -d --pull never
+docker compose up -d --pull missing --remove-orphans
 
 # Verify the build actually produced the tagged images.
 say "Verifying built images are present"
