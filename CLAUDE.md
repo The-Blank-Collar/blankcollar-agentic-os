@@ -16,6 +16,7 @@ Source of truth for everything is in `docs/`:
 - `docs/LANGGRAPH.md` — multi-agent dispatcher (classifier → hermes/openclaw)
 - `docs/PLAYWRIGHT.md` — web.browse skill on OpenClaw (headless Chromium)
 - `docs/NANGO.md` — OAuth + tool integrations gateway (400+ APIs)
+- `docs/DESIGN_MD.md` — Brand Foundation runtime layer (Hermes voice + email lint)
 - `docs/LOCAL_SETUP.md` — Mac + Docker Desktop walkthrough
 - `docs/QA_CHECKLIST.md` — gates before merging
 - `docs/ROADMAP.md` — phases 0 → 8
@@ -69,7 +70,7 @@ If any of these fails, the task is **not** done.
 
 ## Phase you're (probably) in
 
-Check `docs/ROADMAP.md`. Phases 0–3 are complete (groundwork → gbrain → paperclip → real workforce). Current focus is integrating upstream OSS components — first one in is **Graphiti** (temporal knowledge graph). LangGraph, Playwright, Nango, E2B, design.md are queued in that order.
+Check `docs/ROADMAP.md`. Phases 0–3 are complete (groundwork → gbrain → paperclip → real workforce). Upstream OSS integrations landed in this order: **Graphiti** → **LangGraph** → **Playwright** → **Nango** → **design.md (Brand Foundation)**. Only **E2B** (secure sandboxes via Firecracker) is left — deferred until the Hostinger VPS deploy because it needs `/dev/kvm`.
 
 ## When stuck
 

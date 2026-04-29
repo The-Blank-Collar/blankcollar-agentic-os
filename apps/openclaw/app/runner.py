@@ -6,8 +6,10 @@ import asyncio
 import logging
 from typing import Any
 
+from app import brand as brand_loader
 from app.brain import brain
 from app.browser import BrowseError, web_browse
+from app.config import settings
 from app.email import EmailSendError, email_send
 from app.fetch import FetchError, web_fetch
 from app.models import RunRequest
@@ -16,6 +18,9 @@ from app.search import SearchError, web_search
 from app.state import RunState, RunStatus, runs
 
 log = logging.getLogger("openclaw.runner")
+
+_BRAND = brand_loader.load(settings.brand_dir, settings.brand_name)
+_BRAND_BANNED: list[str] = list(_BRAND.get("banned") or [])  # type: ignore[arg-type]
 
 SUPPORTED_SKILLS: tuple[str, ...] = (
     "web.fetch",
@@ -193,6 +198,10 @@ async def run(req: RunRequest) -> None:
             if not isinstance(body, str):
                 body = str(body)
 
+            brand_hits = brand_loader.find_banned(f"{subject}\n{body}", _BRAND_BANNED)
+            if brand_hits:
+                log.info("email.send brand-lint flagged banned terms: %s", brand_hits)
+
             try:
                 outcome = await email_send(
                     to=to,
@@ -224,6 +233,7 @@ async def run(req: RunRequest) -> None:
                     "status": outcome.get("status"),
                     "to": to,
                     "cc": cc,
+                    "brand_lint": brand_hits,
                     "source": "openclaw",
                 },
             )
@@ -233,6 +243,7 @@ async def run(req: RunRequest) -> None:
                     "agent_kind": "openclaw",
                     "skill": "email.send",
                     **outcome,
+                    "brand_lint": brand_hits,
                     "memory_id": memory_id,
                 }
             )

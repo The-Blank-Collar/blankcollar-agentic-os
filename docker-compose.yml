@@ -191,8 +191,12 @@ services:
       HERMES_MODEL: ${HERMES_MODEL:-claude-sonnet-4-6}
       HERMES_MAX_TOKENS: ${HERMES_MAX_TOKENS:-1024}
       HERMES_MAX_RECALL: ${HERMES_MAX_RECALL:-8}
+      BRAND_DIR: ${BRAND_DIR:-/app/brand}
+      BRAND_NAME: ${BRAND_NAME:-blankcollar}
     ports:
       - "${HERMES_PORT:-8001}:80"
+    volumes:
+      - ./brand:/app/brand:ro
     depends_on:
       gbrain:
         condition: service_healthy
@@ -235,8 +239,12 @@ services:
       OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES: ${OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES:-2000000}
       NANGO_URL: ${NANGO_URL:-http://nango:3003}
       NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
+      BRAND_DIR: ${BRAND_DIR:-/app/brand}
+      BRAND_NAME: ${BRAND_NAME:-blankcollar}
     ports:
       - "${OPENCLAW_PORT:-8002}:80"
+    volumes:
+      - ./brand:/app/brand:ro
     depends_on:
       gbrain:
         condition: service_healthy

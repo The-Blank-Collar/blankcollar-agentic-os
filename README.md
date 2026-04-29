@@ -343,6 +343,7 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 - [`docs/LANGGRAPH.md`](docs/LANGGRAPH.md) — Multi-agent dispatcher routing to Hermes + OpenClaw.
 - [`docs/PLAYWRIGHT.md`](docs/PLAYWRIGHT.md) — `web.browse` skill (headless Chromium for JS-rendered pages).
 - [`docs/NANGO.md`](docs/NANGO.md) — OAuth + tool integrations gateway (Slack, Notion, GitHub, etc).
+- [`docs/DESIGN_MD.md`](docs/DESIGN_MD.md) — Brand Foundation file format; voice + banned words injected into every Hermes response.
 - [`docs/AGENTS.md`](docs/AGENTS.md) — Agent adapter contract & lifecycle.
 - [`docs/SKILLS.md`](docs/SKILLS.md) — L2 intelligence layer, MCP, policy engine.
 - [`docs/API.md`](docs/API.md) — Paperclip / agent / gbrain / skills HTTP contracts.

@@ -25,5 +25,9 @@ class Settings(BaseSettings):
     # Budget per run (soft cap; hard cap applied when set above 0)
     max_recall_results: int = Field(default=8, alias="HERMES_MAX_RECALL")
 
+    # Brand Foundation (design.md). Falls back to no block if file missing.
+    brand_dir: str = Field(default="/app/brand", alias="BRAND_DIR")
+    brand_name: str = Field(default="blankcollar", alias="BRAND_NAME")
+
 
 settings = Settings()

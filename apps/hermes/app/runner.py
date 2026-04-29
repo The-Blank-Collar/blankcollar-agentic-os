@@ -6,14 +6,16 @@ import asyncio
 import logging
 from typing import Any
 
+from app import brand as brand_loader
 from app.brain import brain
+from app.config import settings
 from app.llm import LLM
 from app.models import RunRequest
 from app.state import RunState, RunStatus, runs
 
 log = logging.getLogger("hermes.runner")
 
-SYSTEM_PROMPT = """You are Hermes, the general-purpose workforce agent of the Blank Collar Agentic OS.
+_BASE_SYSTEM_PROMPT = """You are Hermes, the general-purpose workforce agent of the Blank Collar Agentic OS.
 
 You are calm, specific, and short. You produce concrete output that another agent
 or a human can act on. Never use phrases like "let's", "exciting", or "as an AI".
@@ -25,6 +27,13 @@ to draft a message, draft the message itself — not a meta-description.
 
 Always end with one line:  "Decision needed:" — followed by the single most
 important question for the human, or "none" if there is none."""
+
+
+_BRAND = brand_loader.load(settings.brand_dir, settings.brand_name)
+_BRAND_BLOCK = brand_loader.system_prompt_block(_BRAND)
+SYSTEM_PROMPT = (
+    f"{_BRAND_BLOCK}\n\n{_BASE_SYSTEM_PROMPT}" if _BRAND_BLOCK else _BASE_SYSTEM_PROMPT
+)
 
 
 async def run(req: RunRequest, llm: LLM) -> None:

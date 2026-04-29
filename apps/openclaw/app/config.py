@@ -58,5 +58,9 @@ class Settings(BaseSettings):
     nango_secret_key: str | None = Field(default=None, alias="NANGO_SECRET_KEY")
     nango_request_timeout_s: float = Field(default=30.0, alias="NANGO_REQUEST_TIMEOUT_S")
 
+    # ----- Brand Foundation (design.md) — used to lint outbound email drafts. -----
+    brand_dir: str = Field(default="/app/brand", alias="BRAND_DIR")
+    brand_name: str = Field(default="blankcollar", alias="BRAND_NAME")
+
 
 settings = Settings()
