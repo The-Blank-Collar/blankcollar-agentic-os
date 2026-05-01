@@ -8,11 +8,21 @@
  * Selection rule: a subtask may carry `subtask.agent_kind`. If unset, fall
  * back to "hermes". A row in ops.agent of that kind (active) becomes
  * `agent_id` on the run.
+ *
+ * RLS / scope:
+ *   The initial claim has to scan ops.run across orgs (we don't know which
+ *   org has work until we find it). That step uses `tx()` directly. Once
+ *   the run + its parent goal are claimed, every subsequent DB touch
+ *   (agent lookup, succeed/fail/cancel, audit) uses
+ *   `withOrgScope(goal.org_id, ...)` so each run's lifecycle is properly
+ *   scope-bound. The strict-RLS flip in Phase B will need a privileged
+ *   path for the initial cross-org claim (SECURITY DEFINER function or a
+ *   BYPASSRLS role); the rest of this worker is already ready.
  */
 
 import { audit } from "../audit.js";
 import { config } from "../config.js";
-import { query, tx } from "../db.js";
+import { tx, withOrgScope } from "../db.js";
 import type { Scope } from "../schemas.js";
 import type { AdapterClient } from "./adapter-client.js";
 import { getAdapter, knownKinds } from "./registry.js";
@@ -121,19 +131,20 @@ export class Worker {
     }
 
     // Pick (or null) an active agent of this kind for the audit trail.
-    let agentId: string | null = null;
-    {
-      const { rows } = await query<{ id: string }>(
+    // Both the lookup and the subsequent agent_id stamp run inside the
+    // goal's org scope so they stay correct under strict RLS.
+    await withOrgScope(goal.org_id, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
         `SELECT id FROM ops.agent
          WHERE org_id = $1 AND kind = $2 AND is_active = true
          ORDER BY created_at LIMIT 1`,
         [goal.org_id, kind],
       );
-      if (rows.length > 0) agentId = rows[0]!.id;
-    }
-    if (agentId !== null) {
-      await query("UPDATE ops.run SET agent_id = $2 WHERE id = $1", [run.id, agentId]);
-    }
+      const found = rows[0]?.id ?? null;
+      if (found !== null) {
+        await client.query("UPDATE ops.run SET agent_id = $2 WHERE id = $1", [run.id, found]);
+      }
+    });
 
     const scope: Scope = {
       org_id: goal.org_id,
@@ -177,10 +188,13 @@ export class Worker {
         await new Promise((r) => setTimeout(r, POLL_MS));
 
         // Has paperclip-side cancel happened?
-        const { rows: localRows } = await query<{ status: string }>(
-          "SELECT status FROM ops.run WHERE id = $1",
-          [runId],
-        );
+        const localRows = await withOrgScope(goal.org_id, async (client) => {
+          const { rows } = await client.query<{ status: string }>(
+            "SELECT status FROM ops.run WHERE id = $1",
+            [runId],
+          );
+          return rows;
+        });
         const local = localRows[0]?.status;
         if (local === "cancelled") {
           await adapter.cancel(runId);
@@ -222,7 +236,7 @@ export class Worker {
     goal: { id: string; org_id: string; department_id: string | null },
     output: Record<string, unknown>,
   ): Promise<void> {
-    await tx(async (client) => {
+    await withOrgScope(goal.org_id, async (client) => {
       await client.query(
         `UPDATE ops.run
          SET status = 'succeeded', output = $2::jsonb, finished_at = now()
@@ -247,7 +261,7 @@ export class Worker {
     goal: { id: string; org_id: string; department_id: string | null },
     error: string,
   ): Promise<void> {
-    await tx(async (client) => {
+    await withOrgScope(goal.org_id, async (client) => {
       await client.query(
         `UPDATE ops.run
          SET status = 'failed', error = $2, finished_at = now()
@@ -271,7 +285,7 @@ export class Worker {
     runId: string,
     goal: { id: string; org_id: string; department_id: string | null },
   ): Promise<void> {
-    await tx(async (client) => {
+    await withOrgScope(goal.org_id, async (client) => {
       const { rowCount } = await client.query(
         `UPDATE ops.run
          SET status = 'cancelled', finished_at = now()

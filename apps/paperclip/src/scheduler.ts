@@ -6,6 +6,14 @@
  * tick, and dispatches a fresh run for each. The original routine row stays
  * alive so the next tick fires it again on schedule.
  *
+ * RLS / scope: the cross-org scans (routines, audit events, orgs needing
+ * briefings) use plain `query()` without scope binding — they have to span
+ * orgs to find work. Once we know which org a piece of work belongs to,
+ * every subsequent DB write happens inside `withOrgScope(org_id, ...)` so
+ * the lifecycle is properly bound. Phase B's strict-RLS flip will need a
+ * privileged path for the cross-org scans (BYPASSRLS role or
+ * SECURITY DEFINER fn); the per-iteration writes are already ready.
+ *
  * v0 supports a constrained cron grammar (matches what the capture
  * classifier produces): `M H D MON DOW` where:
  *   - M  : exact minute (0–59) or *
@@ -27,7 +35,7 @@
 import { audit } from "./audit.js";
 import { composeBriefing } from "./briefing.js";
 import { config } from "./config.js";
-import { query, tx } from "./db.js";
+import { query, withOrgScope } from "./db.js";
 import { generatePlan } from "./plan.js";
 import { fireRoutineFromTrigger, matchesEvent, type TriggerRow } from "./routines/triggers.js";
 import type { Scope } from "./schemas.js";
@@ -205,6 +213,16 @@ export class Scheduler {
       }
     }
 
+    // Per-user briefing fan-out — every user whose onboarding profile set
+    // a `briefing_hour_utc` gets their own briefing at that hour. v0
+    // shares the org's briefing content; future work can per-user-scope
+    // the period (e.g. just this user's runs/decisions).
+    try {
+      await this.generatePerUserBriefings(since, now, log);
+    } catch (err) {
+      log.error(err, "scheduler: per-user briefing pass failed");
+    }
+
     // Event-triggered routines — scan audit_log entries created since the
     // last tick, match against enabled event triggers, fire matching ones.
     try {
@@ -259,7 +277,7 @@ export class Scheduler {
         if (!matchesEvent(tr.trigger_spec, ev)) continue;
 
         try {
-          await tx(async (client) => {
+          await withOrgScope(tr.goal_org_id, async (client) => {
             const r = await fireRoutineFromTrigger(client, tr, {
               cause_event_id: ev.id,
               cause_action: ev.action,
@@ -297,7 +315,7 @@ export class Scheduler {
     for (const o of rows) {
       try {
         const composed = await composeBriefing(o.id, "daily");
-        await tx(async (client) => {
+        await withOrgScope(o.id, async (client) => {
           const { rows: brRows } = await client.query<{ id: string }>(
             `INSERT INTO ops.briefing (org_id, kind, period_start, period_end, summary_md, sources)
              VALUES ($1, 'daily'::ops.briefing_kind, $2, $3, $4, $5::jsonb)
@@ -324,11 +342,93 @@ export class Scheduler {
     }
   }
 
+  /**
+   * Per-user briefing fan-out. Reads every onboarding profile's
+   * `derived.briefing_hour_utc`; when that hour is reached this tick AND
+   * the user doesn't have today's per-user briefing yet, generate one.
+   *
+   * v0 reuses composeBriefing(orgId, "daily") so the content is the org-
+   * level digest. The user_id is stamped on the row so the API can
+   * surface "your briefing" vs "the org briefing." Phase-next: per-user
+   * scoping of the audit query (only this user's actions / decisions).
+   */
+  private async generatePerUserBriefings(since: Date, now: Date, log: Logger): Promise<void> {
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    const { rows: profiles } = await query<{
+      org_id: string;
+      user_id: string;
+      briefing_hour_utc: number;
+    }>(
+      `SELECT org_id, user_id, (derived->>'briefing_hour_utc')::int AS briefing_hour_utc
+         FROM ops.onboarding_profile
+        WHERE user_id IS NOT NULL
+          AND completed_at IS NOT NULL
+          AND derived ? 'briefing_hour_utc'
+          AND (derived->>'briefing_hour_utc') ~ '^[0-9]+$'`,
+    );
+
+    let fired = 0;
+    for (const p of profiles) {
+      const hour = p.briefing_hour_utc;
+      if (typeof hour !== "number" || hour < 0 || hour > 23) continue;
+      // Skip if the org-level scheduler already fires this exact hour —
+      // composeBriefing would produce the same content for both, so we'd
+      // just be doubling up.
+      if (hour === config.briefingHourUtc) continue;
+      if (!briefingHourReached(since, now, hour)) continue;
+
+      try {
+        await withOrgScope(p.org_id, async (client) => {
+          // Already fired today?
+          const { rows } = await client.query<{ id: string }>(
+            `SELECT id FROM ops.briefing
+              WHERE org_id = $1 AND user_id = $2 AND kind = 'daily'
+                AND generated_at >= $3 LIMIT 1`,
+            [p.org_id, p.user_id, todayStart.toISOString()],
+          );
+          if (rows.length > 0) return;
+
+          const composed = await composeBriefing(p.org_id, "daily");
+          const { rows: brRows } = await client.query<{ id: string }>(
+            `INSERT INTO ops.briefing (org_id, user_id, kind, period_start, period_end, summary_md, sources)
+             VALUES ($1, $2, 'daily'::ops.briefing_kind, $3, $4, $5, $6::jsonb)
+             RETURNING id`,
+            [
+              p.org_id,
+              p.user_id,
+              composed.period_start,
+              composed.period_end,
+              composed.summary_md,
+              JSON.stringify({ ...composed.sources, scope: "user", user_id: p.user_id }),
+            ],
+          );
+          const briefingId = brRows[0]!.id;
+          await audit(
+            {
+              scope: { org_id: p.org_id, role: "owner" },
+              action: "briefing.generate",
+              target_type: "briefing",
+              target_id: briefingId,
+              metadata: { kind: "daily", source: "scheduler", user_id: p.user_id, hour_utc: hour },
+            },
+            client,
+          );
+          fired++;
+        });
+      } catch (err) {
+        log.error(err, `scheduler: per-user briefing failed for user ${p.user_id}`);
+      }
+    }
+    if (fired > 0) log.info(`scheduler: generated ${fired} per-user briefing(s)`);
+  }
+
   private async fireRoutine(r: RoutineRow, log: Logger): Promise<void> {
     const subtasks = generatePlan({ title: r.title, description: r.description });
     const scope: Scope = { org_id: r.org_id, role: "owner" };
 
-    await tx(async (client) => {
+    await withOrgScope(r.org_id, async (client) => {
       // Bump original routine to active on first fire.
       await client.query(
         `UPDATE ops.goal

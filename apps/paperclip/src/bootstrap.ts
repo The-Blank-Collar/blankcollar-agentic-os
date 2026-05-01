@@ -4,7 +4,7 @@
  */
 
 import { audit } from "./audit.js";
-import { query, tx } from "./db.js";
+import { query, withOrgScope } from "./db.js";
 import { resolveCallerScope } from "./scope.js";
 
 /**
@@ -74,6 +74,14 @@ const ADDITIVE_MIGRATIONS = [
    );`,
   `CREATE INDEX IF NOT EXISTS briefing_org_kind_idx
      ON ops.briefing (org_id, kind, generated_at DESC);`,
+
+  // Per-user briefings — when the onboarding interview captured a personal
+  // briefing hour, the scheduler fires a user-scoped briefing alongside
+  // the org-level one. NULL user_id = the org-level briefing.
+  `ALTER TABLE ops.briefing
+     ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES core.user_account(id) ON DELETE SET NULL;`,
+  `CREATE INDEX IF NOT EXISTS briefing_user_kind_idx
+     ON ops.briefing (user_id, kind, generated_at DESC) WHERE user_id IS NOT NULL;`,
 
   // ops.capture
   `DO $$ BEGIN
@@ -549,7 +557,7 @@ export async function ensureDefaultAgents(
   const scope = await resolveCallerScope();
 
   for (const def of DEFAULT_AGENTS) {
-    const created = await tx(async (client) => {
+    const created = await withOrgScope(scope.org_id, async (client) => {
       const { rows: existing } = await client.query<{ id: string }>(
         "SELECT id FROM ops.agent WHERE org_id = $1 AND kind = $2 LIMIT 1",
         [scope.org_id, def.kind],

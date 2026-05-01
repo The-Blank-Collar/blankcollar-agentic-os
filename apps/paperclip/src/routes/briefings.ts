@@ -20,6 +20,7 @@ import { BriefingGenerate, BriefingListQuery, type Scope } from "../schemas.js";
 type BriefingRow = {
   id: string;
   org_id: string;
+  user_id: string | null;
   kind: string;
   generated_at: string;
   period_start: string | null;
@@ -29,7 +30,8 @@ type BriefingRow = {
   audio_url: string | null;
 };
 
-const BRIEFING_COLUMNS = "id, org_id, kind, generated_at, period_start, period_end, summary_md, sources, audio_url";
+const BRIEFING_COLUMNS =
+  "id, org_id, user_id, kind, generated_at, period_start, period_end, summary_md, sources, audio_url";
 
 async function persist(scope: Scope, b: Briefing): Promise<BriefingRow> {
   return withOrgScope(scope.org_id, async (client) => {

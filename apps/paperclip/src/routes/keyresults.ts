@@ -8,6 +8,7 @@ import { audit } from "../audit.js";
 import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { KeyResultCreate, KeyResultPatch } from "../schemas.js";
+import { computeKrStatus, rollupProgress } from "../skills/kr_progress.js";
 
 type KrRow = {
   id: string;
@@ -121,13 +122,48 @@ export async function keyResultRoutes(app: FastifyInstance): Promise<void> {
       const { rows } = await client.query<KrRow>(sql, params);
       if (rows.length === 0) return undefined;
       const kr = rows[0]!;
+      const krStatus = computeKrStatus(kr.current_value, kr.target_value);
+
+      // Recompute the parent goal's progress from all sibling KRs so the
+      // dashboard sparkline + briefing surfaces stay accurate.
+      const { rows: siblings } = await client.query<{
+        current_value: string | null;
+        target_value: string | null;
+        weight: string;
+      }>(
+        `SELECT current_value, target_value, weight
+           FROM ops.key_result WHERE goal_id = $1`,
+        [kr.goal_id],
+      );
+      const progress = rollupProgress(siblings);
+      await client.query(
+        `UPDATE ops.goal SET progress = $2, updated_at = now() WHERE id = $1`,
+        [kr.goal_id, progress],
+      );
+
+      // When every KR on a standing goal is achieved, surface a decision.
+      // We don't auto-archive — the user gets the editorial moment via the
+      // inbox ("Goal achieved — archive?"). For v0 we just stamp the
+      // delta_label so the briefing notices.
+      if (krStatus === "achieved" && progress >= 100) {
+        await client.query(
+          `UPDATE ops.goal SET delta_label = $2 WHERE id = $1
+            AND (delta_label IS NULL OR delta_label NOT LIKE 'achieved%')`,
+          [kr.goal_id, "achieved"],
+        );
+      }
+
       await audit(
         {
           scope,
           action: "key_result.update",
           target_type: "key_result",
           target_id: kr.id,
-          metadata: { goal_id: kr.goal_id },
+          metadata: {
+            goal_id: kr.goal_id,
+            kr_status: krStatus,
+            goal_progress: progress,
+          },
         },
         client,
       );

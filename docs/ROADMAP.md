@@ -90,7 +90,10 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] **`bc` CLI** — `packages/cli/`: terminal-side wrapper for every endpoint, editorial output for humans + JSON for pipes (`make cli`)
 - [x] **withOrgScope route migration (Phase A)** — every route handler now binds `app.org_id` for the duration of its DB access. No behaviour change yet (policies still permissive); foundation for Phase B.
 - [x] **OpenClaw Google Workspace connectors** — `apps/openclaw/app/google_workspace.py` + runner dispatch for `google.gmail.search` / `google.calendar.create_event` / `google.drive.search` / `google.docs.append` / `google.sheets.append_row`. Skills declared in Phase 3.5 now actually execute end-to-end through Nango.
-- [ ] **withOrgScope Phase B** — flip RLS unset branch to strict; migrate worker + scheduler to per-iteration `withOrgScope(goal.org_id, ...)`
+- [x] **withOrgScope Phase B foundation** — worker + scheduler + bootstrap migrated to per-iteration `withOrgScope(goal.org_id, ...)`. The lifecycle of every run, routine fire, and briefing now binds the right scope. Cross-org scans (worker claim, audit-event scan, org list) intentionally stay outside scope; the strict-RLS policy flip needs a privileged path (BYPASSRLS role or SECURITY DEFINER fn) for those scans.
+- [x] **KR completion auto-detection** — `skills/kr_progress.ts` parses free-form numeric values ($1.2M, 10k, 85%); KR PATCH recomputes goal.progress and stamps `delta_label='achieved'` when the rollup hits 100%.
+- [x] **Per-user briefing timezones** — `ops.briefing.user_id` column + scheduler reads `onboarding_profile.derived.briefing_hour_utc` per user and fires personal briefings at each user's preferred hour, alongside the org-level one.
+- [ ] **withOrgScope Phase B flip** — privileged-role / SECURITY DEFINER for cross-org scans, then flip RLS unset branch to strict. Bounded follow-up.
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
 
