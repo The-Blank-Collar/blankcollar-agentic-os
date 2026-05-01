@@ -139,3 +139,91 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [ ] Skill marketplace
 - [ ] Templates ("Solo Creator OS", "Two-Person SaaS OS", "Agency OS")
 - [ ] First 100 users
+
+## Phase 9 — Agent Payments (Outbound Spend Layer)
+
+**Goal:** agents can safely spend money on the user's behalf — book flights, pay vendors, buy tools — with hard guardrails the agents themselves cannot bypass. Distinct from Phase 7's inbound Stripe billing (user → us); this is outbound spend (us → vendors).
+
+**Build order (strict, mirrors the design brief):**
+
+1. README update — Stripe Payments integration overview + safety design philosophy
+2. Data models — `PaymentSettings`, `PaymentRequest`, `AgentSpendingLimit`, `Approval` (extension), `TransactionLog`, `Vendor`, `Category`, `KillSwitchEvent`
+3. **Payment Settings backend** — enable/disable, limits, rules, per-agent controls, kill switch
+4. **Policy Engine** with hard enforcement (no agent or skill can override)
+5. **Stripe connector service** — Link Wallets + Issuing + MPP + SPT + Stripe Projects (May 2026 product set)
+6. **Finance Agent** (LangGraph) — only handles payments, strictly follows policies
+7. **Approval workflow** — multi-channel notify, wait, execute, log
+8. **Graphiti integration** — scoped logging of every payment + decision
+9. **Skills + Cadence integration** — payment skills routed through the engine; weekly spending summary as a routine
+10. **Comprehensive testing plan** — overspending protection, edge cases, multi-user, security, integration
+
+### Components
+
+**Payment Settings (mode-aware):**
+- Global on/off toggle (account-level for single user, company-level for multi-user)
+- Daily / weekly / monthly hard caps (cannot be bypassed by any agent or skill)
+- Approval rules: auto-approve under $X, manual approve above $Y, per-category overrides
+- Per-agent permissions: enable/disable, individual limits, allowed categories/vendors
+- Emergency kill switch — instant pause + revoke all active tokens/cards
+- Audit + transparency: filterable transaction history, daily/weekly/monthly reports, export
+
+**Safety Guardrails (defense in depth):**
+- Hard spending caps enforced at the DB layer, not just the policy layer
+- Confirmation gate on high-risk transactions even when auto-approve would otherwise apply
+- Velocity checks — block unusual rapid-fire spending patterns
+- Vendor + category whitelist / blacklist
+- Short-lived tokens and virtual cards (issued per-task, expire fast)
+- Real-time balance check before every payment attempt
+- Multi-user safeguards: department budgets, role-based approval thresholds, company-wide visibility for owners/auditors
+
+**Stripe products (May 2026):**
+- Link Wallets for agents (one-time-use cards + Shared Payment Tokens)
+- Stripe Issuing for agents (virtual cards with controls)
+- Machine Payments Protocol (MPP)
+- Shared Payment Tokens (SPT)
+- Stripe Projects for scoped credentials per agent / department
+
+**Approval flow:**
+1. Agent creates `PaymentRequest`
+2. Policy Engine evaluates against settings, caps, vendor lists, velocity
+3. If approval needed: notify via multi-channel + create approval record (reuses Phase 3.5 `ops.approval` infrastructure)
+4. Wait for user decision OR apply auto-approve rules
+5. Execute via Stripe connector only after approval clears
+6. Log to Graphiti (with correct scoping) + `core.audit_log` + `TransactionLog`
+
+### Testing requirements (non-negotiable)
+
+**Overspending protection:**
+- Hard daily/weekly/monthly caps cannot be exceeded under any condition
+- Per-agent limits enforced independently
+- Global kill switch instantly stops all spending across the org
+
+**Edge cases:**
+- Agent attempts payment when feature is globally disabled
+- Multiple rapid payment requests (velocity protection)
+- Payment fails after approval (retry logic + user notification path)
+- User revokes approval at the last moment (race condition handling)
+- High-risk transaction (large amount, unknown vendor) → confirmation gate
+
+**Multi-user scenarios:**
+- Department budget enforcement
+- Role-based approval workflows ("Manager must approve >$500")
+- Personal vs company-wide spending visibility per role
+
+**Security:**
+- Token / card leakage prevention
+- Proper scoping in multi-user mode (RLS + Policy Engine in agreement)
+- Audit log integrity (no gaps, no edits)
+
+**Integration:**
+- End-to-end with LangGraph Finance Agent
+- Skills system integration (payment-capable skills route through the engine)
+- Cadence integration (weekly spending summary routine)
+- Graphiti logging accuracy and scope correctness
+
+### Mode-awareness
+
+- **Single-user:** all settings live on the personal org. Owner approves their own high-amount transactions. Personal kill switch.
+- **Multi-user:** settings tier into account-level (caps + kill switch + global toggle), department-level (budgets + category rules), and per-agent (individual limits). Role-based approvals — Owner / Department Lead / Team Member each see + decide what their role permits.
+
+> Constraint: this phase is purely backend work. No UI design — Paperclip's API + the future React console handle surface. Every new feature must respect the existing scope model and the Phase 3.5 RLS architecture.
