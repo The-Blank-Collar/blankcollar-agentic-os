@@ -45,6 +45,10 @@ reset: ## Interactive reset (asks for confirmation before wiping)
 doctor: ## Health-check every service
 	./infra/scripts/doctor.sh
 
+.PHONY: smoke
+smoke: ## End-to-end exercise of the live API (capture, inbox, briefing, self-audit, knowledge, …)
+	./infra/scripts/smoke.sh
+
 .PHONY: ps
 ps: ## Show running containers
 	$(COMPOSE) ps

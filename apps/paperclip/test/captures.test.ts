@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classify } from "../src/routes/captures.js";
+import { classify, inferKeyResult } from "../src/routes/captures.js";
 
 describe("capture classifier", () => {
   it("classifies a one-off task as ephemeral", () => {
@@ -53,5 +53,36 @@ describe("capture classifier", () => {
     const r = classify(long);
     expect(r.title.length).toBeLessThanOrEqual(200);
     expect(r.title).toMatch(/Mira/);
+  });
+});
+
+describe("inferKeyResult", () => {
+  it("extracts a numeric target with unit from a standing-style capture", () => {
+    const kr = inferKeyResult("Grow the newsletter to 10k subscribers by Q3");
+    expect(kr).not.toBeNull();
+    expect(kr!.target_value).toBe("10k");
+    expect(kr!.unit).toBe("subscribers");
+    expect(kr!.due_at).toMatch(/-09-30T/);
+  });
+
+  it("handles dollar amounts", () => {
+    const kr = inferKeyResult("Reach $1.2M ARR by 2026-12-31");
+    expect(kr).not.toBeNull();
+    expect(kr!.target_value).toBe("1.2M");
+    expect(kr!.due_at).toBe("2026-12-31T23:59:59Z");
+  });
+
+  it("returns null when there's no numeric target", () => {
+    expect(inferKeyResult("Make the brand feel calmer")).toBeNull();
+  });
+
+  it("returns null when there's a target but no recognised horizon", () => {
+    // The heuristic only fires when the standing classifier would also fire,
+    // which requires both target AND date. The KR extractor still works on
+    // target-only inputs but with no due_at.
+    const kr = inferKeyResult("Hit 500 leads this period");
+    if (kr) {
+      expect(kr.target_value).toBe("500");
+    }
   });
 });

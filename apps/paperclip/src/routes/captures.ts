@@ -124,6 +124,62 @@ export async function classifyWithHermes(raw: string): Promise<Intent | null> {
   return null;
 }
 
+/**
+ * Extract a starter key result from a standing capture.
+ *
+ * "Grow the newsletter to 10k subscribers by Q3" →
+ *   { label: "Grow the newsletter to 10k subscribers", target_value: "10k", unit: "subscribers", due_at: end-of-Q3 }
+ *
+ * Heuristic; safe to be wrong. The user can edit/delete before any agent
+ * acts on it. Returns null when nothing useful surfaces.
+ */
+const QUARTER_RE = /\bQ([1-4])\b/i;
+const ISO_DATE_RE = /\b(\d{4}-\d{2}-\d{2})\b/;
+const NUMERIC_TARGET_RE = /\b(?:to|reach|hit)\s+\$?([\d.,kKmMbB%]+)(?:\s+([a-zA-Z][a-zA-Z\s-]{0,40}?))?(?=\s+by|\s+for|\s+in|\.|,|$)/i;
+
+export function inferKeyResult(raw: string): {
+  label: string;
+  target_value?: string;
+  unit?: string;
+  due_at?: string;
+} | null {
+  const text = raw.trim();
+  const numMatch = text.match(NUMERIC_TARGET_RE);
+  if (!numMatch) return null;
+
+  const targetValue = numMatch[1]!;
+  const unit = numMatch[2]?.trim().toLowerCase().replace(/^\s+|\s+$/g, "") || undefined;
+
+  // Due date: ISO first, then Quarter heuristic.
+  let due_at: string | undefined;
+  const isoMatch = text.match(ISO_DATE_RE);
+  if (isoMatch) {
+    due_at = `${isoMatch[1]!}T23:59:59Z`;
+  } else {
+    const qMatch = text.match(QUARTER_RE);
+    if (qMatch) {
+      const q = Number(qMatch[1]!);
+      const now = new Date();
+      const year = now.getUTCMonth() + 1 > q * 3 ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
+      // End of Q1 = Mar 31, Q2 = Jun 30, Q3 = Sep 30, Q4 = Dec 31.
+      const lastDays = ["", "03-31", "06-30", "09-30", "12-31"];
+      due_at = `${year}-${lastDays[q]!}T23:59:59Z`;
+    }
+  }
+
+  // Truncate label to a reasonable size and strip trailing phrasing.
+  const label = text
+    .replace(/^\s*(grow|reach|increase|hit|drive|book|land)\s+/i, (m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())
+    .slice(0, 200);
+
+  return {
+    label,
+    target_value: targetValue,
+    unit,
+    due_at,
+  };
+}
+
 function inferCron(text: string): string {
   const t = text.toLowerCase();
   const dayMap: Record<string, number> = {
@@ -210,18 +266,46 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
       );
       const cap = capRows[0]!;
 
+      // Auto-populate a KR for standing goals when the input contains a
+      // numeric target. Heuristic, safe to be wrong — user can edit/delete
+      // before any agent acts.
+      let kr_id: string | null = null;
+      if (intent.kind === "standing") {
+        const kr = inferKeyResult(parsed.data.raw_content);
+        if (kr) {
+          const { rows: krRows } = await client.query<{ id: string }>(
+            `INSERT INTO ops.key_result (goal_id, label, target_value, unit, due_at)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id`,
+            [goalId, kr.label, kr.target_value ?? null, kr.unit ?? null, kr.due_at ?? null],
+          );
+          kr_id = krRows[0]!.id;
+        }
+      }
+
       await audit(
         {
           scope,
           action: "capture.create",
           target_type: "capture",
           target_id: cap.id,
-          metadata: { goal_id: goalId, kind: intent.kind, source: parsed.data.source },
+          metadata: {
+            goal_id: goalId,
+            kind: intent.kind,
+            source: parsed.data.source,
+            ...(kr_id ? { kr_id } : {}),
+          },
         },
         client,
       );
 
-      return { capture_id: cap.id, goal_id: goalId, intent, created_at: cap.created_at };
+      return {
+        capture_id: cap.id,
+        goal_id: goalId,
+        intent,
+        created_at: cap.created_at,
+        ...(kr_id ? { kr_id } : {}),
+      };
     });
 
     return reply.code(201).send(result);
