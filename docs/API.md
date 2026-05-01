@@ -338,9 +338,27 @@ GET /audit?actor_id=&action=&limit=100
 
 Auditors get read-only access to this endpoint org-wide.
 
-### Live telemetry
+### Live telemetry — Server-Sent Events
 
-WebSocket `GET /runs/{id}/stream` — emits `{ type: "log" | "tool_call" | "status", payload, ts }`.
+```http
+GET /runs/{id}/stream
+Accept: text/event-stream
+```
+
+Emits SSE frames each time the run's status / output / error changes:
+
+```
+event: snapshot
+data: {"status":"running","output":null,"error":null,"started_at":"…","finished_at":null}
+
+event: snapshot
+data: {"status":"succeeded","output":{…},"error":null,"started_at":"…","finished_at":"…"}
+
+event: done
+data: {"status":"succeeded"}
+```
+
+Hard timeout: 10 minutes. Terminal statuses (`succeeded` / `failed` / `cancelled`) emit a final `done` event and close the stream. The CLI's `bc run <id> --watch` uses this endpoint.
 
 ## Agent Adapter Contract (L3)
 

@@ -21,6 +21,7 @@ import { runHelp } from "./commands/help.js";
 import { runInboxAck, runInboxList } from "./commands/inbox.js";
 import { runKnowledgeGet, runKnowledgeList } from "./commands/knowledge.js";
 import { runOnboard } from "./commands/onboard.js";
+import { runRunGet, runRunsList } from "./commands/runs.js";
 import { runSkillInvoke, runSkills } from "./commands/skills.js";
 import { emitError } from "./format.js";
 
@@ -111,6 +112,11 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
 
       case "channels":
         return await runChannels(args, client);
+
+      case "runs":
+        return await runRunsList(args, client);
+      case "run":
+        return await runRunGet(args, client);
 
       case "onboard":
         return await runOnboard(args, client);

@@ -23,6 +23,8 @@ COMMANDS
   knowledge get <slug>     show one doc + backlinks
   channels                 connected providers + sentinel rows
   brain                    print the constellation graph (json only)
+  runs --goal=<id>         list runs on a goal
+  run <id> [--watch]       single run; --watch streams live status via SSE
   onboard --mode=<m>       start the interview (single_user | multi_user)
 
 GLOBAL FLAGS

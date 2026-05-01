@@ -93,6 +93,9 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] **withOrgScope Phase B foundation** — worker + scheduler + bootstrap migrated to per-iteration `withOrgScope(goal.org_id, ...)`. The lifecycle of every run, routine fire, and briefing now binds the right scope. Cross-org scans (worker claim, audit-event scan, org list) intentionally stay outside scope; the strict-RLS policy flip needs a privileged path (BYPASSRLS role or SECURITY DEFINER fn) for those scans.
 - [x] **KR completion auto-detection** — `skills/kr_progress.ts` parses free-form numeric values ($1.2M, 10k, 85%); KR PATCH recomputes goal.progress and stamps `delta_label='achieved'` when the rollup hits 100%.
 - [x] **Per-user briefing timezones** — `ops.briefing.user_id` column + scheduler reads `onboarding_profile.derived.briefing_hour_utc` per user and fires personal briefings at each user's preferred hour, alongside the org-level one.
+- [x] **SSE run telemetry** — `GET /api/runs/:id/stream` emits Server-Sent Events on every status / output / error change, plus a final `done` event. Hard 10-minute timeout. CLI exposes via `bc run <id> --watch`.
+- [x] **`bc runs` + `bc run` CLI commands** — list runs by goal, view single run, stream live status with `--watch`.
+- [x] **Auto-weekly self-audit routine** — `make personal` seeds a `kind=routine` goal "Weekly self-audit" with cron `0 9 * * 1`. Closes the self-improvement loop without operator wiring.
 - [ ] **withOrgScope Phase B flip** — privileged-role / SECURITY DEFINER for cross-org scans, then flip RLS unset branch to strict. Bounded follow-up.
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)

@@ -105,6 +105,40 @@ docker exec -i bc_postgres psql \
   -v "slug=$PERSONAL_ORG_SLUG" \
   -c "$SQL_AGENTS" >/dev/null
 
+# 4b. Seed the weekly self-audit + level-up routine. Fires Monday 9am UTC.
+#     Closes the self-improvement loop without the operator having to wire it.
+read -r -d '' SQL_SELF_AUDIT <<'SQL_EOF' || true
+WITH personal AS (
+  SELECT id FROM core.organization WHERE slug = :'slug'
+),
+audit_goal AS (
+  INSERT INTO ops.goal (org_id, title, description, kind, cron_expr, status, metadata)
+  SELECT id,
+         'Weekly self-audit',
+         'Every Monday at 09:00 UTC: run the self.audit skill on the last 7 days,'
+         || E'\n' || 'then propose changes via self.level_up.',
+         'routine'::ops.goal_kind,
+         '0 9 * * 1',
+         'active'::ops.goal_status,
+         jsonb_build_object('source', 'personal-bootstrap', 'invokes_skill', 'self.audit')
+    FROM personal
+   WHERE NOT EXISTS (
+     SELECT 1 FROM ops.goal
+      WHERE org_id = (SELECT id FROM personal)
+        AND title = 'Weekly self-audit'
+        AND kind = 'routine'
+   )
+   RETURNING id
+)
+SELECT id AS audit_goal_id FROM audit_goal;
+SQL_EOF
+
+docker exec -i bc_postgres psql \
+  -U postgres -d blankcollar \
+  -v ON_ERROR_STOP=1 \
+  -v "slug=$PERSONAL_ORG_SLUG" \
+  -c "$SQL_SELF_AUDIT" >/dev/null
+
 # 5. Tell Paperclip which org to default to. Restarts paperclip with the new
 #    PAPERCLIP_DEFAULT_ORG_SLUG so resolveCallerScope() returns this org.
 echo "▶ pointing Paperclip at $PERSONAL_ORG_SLUG…"
@@ -119,6 +153,7 @@ cat <<EOF
    org    : $PERSONAL_ORG_SLUG
    you    : $NAME <$EMAIL>
    agents : Hermes, OpenClaw, LangGraph (idle, waiting on you)
+   routine: Weekly self-audit (Mon 09:00 UTC)
 
 Next:
    open http://localhost:\${PAPERCLIP_PORT:-3000}/
