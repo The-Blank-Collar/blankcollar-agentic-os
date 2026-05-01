@@ -26,6 +26,7 @@ import { runRunGet, runRunsList } from "./commands/runs.js";
 import { runSearch } from "./commands/search.js";
 import { runSkillInvoke, runSkills } from "./commands/skills.js";
 import { runTail } from "./commands/tail.js";
+import { runWhoami } from "./commands/whoami.js";
 import { emitError } from "./format.js";
 
 export async function main(argv: string[], clientOverride?: Client): Promise<number> {
@@ -132,6 +133,8 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runSearch(args, client);
       case "tail":
         return await runTail(args, client);
+      case "whoami":
+        return await runWhoami(args, client);
 
       case "onboard":
         return await runOnboard(args, client);

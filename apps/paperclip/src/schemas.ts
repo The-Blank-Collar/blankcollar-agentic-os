@@ -81,6 +81,10 @@ export const GoalListQuery = z
     status: GoalStatus.optional(),
     kind: GoalKind.optional(),
     department_id: z.string().uuid().optional(),
+    // Filter to active/draft goals whose most-recent run is older than N days
+    // (or have no runs at all and were created > N days ago). Backs the
+    // "stalled" report — what isn't moving?
+    stalled_for_days: z.coerce.number().int().min(1).max(365).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(50),
   })
   .strict();

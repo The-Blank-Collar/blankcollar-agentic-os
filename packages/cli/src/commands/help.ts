@@ -10,6 +10,7 @@ COMMANDS
   inbox --summary          counts per kind + urgent count (no items)
   inbox ack <goal_id>      mark a draft / routine output as seen
   goals                    list active goals
+  goals --stalled[=N]      list goals with no run activity in N days (default 7)
   goal <id>                show one goal with KRs + contributors
   goal <id> --stats        + run rollup (totals, avg duration, last run)
   briefing                 today's editorial briefing
@@ -32,6 +33,7 @@ COMMANDS
   fire <trigger_id>        manually fire a trigger (api triggers need --token)
   search <query>           cross-corpus search across goals/captures/knowledge/agents
   tail [--limit=N]         most recent runs across the org (default 20)
+  whoami                   show your resolved scope (org, role, department)
   onboard --mode=<m>       start the interview (single_user | multi_user)
 
 GLOBAL FLAGS

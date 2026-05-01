@@ -65,6 +65,13 @@ describe("GoalListQuery", () => {
     const def = GoalListQuery.parse({});
     expect(def.limit).toBe(50);
   });
+  it("coerces stalled_for_days from string", () => {
+    const r = GoalListQuery.parse({ stalled_for_days: "7" });
+    expect(r.stalled_for_days).toBe(7);
+  });
+  it("rejects stalled_for_days < 1", () => {
+    expect(GoalListQuery.safeParse({ stalled_for_days: 0 }).success).toBe(false);
+  });
 });
 
 describe("RunDispatch", () => {

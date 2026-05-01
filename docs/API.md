@@ -44,9 +44,11 @@ POST /goals
 ```
 
 ```http
-GET /goals?status=active&kind=standing&department_id=<uuid>
+GET /goals?status=active&kind=standing&department_id=<uuid>&stalled_for_days=7
 → 200 [{ ...goal }]
 ```
+
+`stalled_for_days=N` filters to active/draft goals whose newest run is older than `N` days (or that have no runs and were created `> N` days ago) — backs the "stalled" report.
 
 ```http
 GET /goals/{id}
@@ -276,6 +278,20 @@ GET /inbox/summary
 ```
 
 Featherweight version of `/inbox` for the briefing rail and the mobile companion: just the integers needed to render badges. `urgent` is the sum of urgent approvals + decisions due within 48 h.
+
+### Whoami
+
+Resolved caller scope — org, role, department — for the status-bar rail and `bc whoami`.
+
+```http
+GET /whoami
+→ 200 {
+  "org":        { "id": "<uuid>", "slug": "blankcollar-personal", "name": "Personal" },
+  "role":       "owner" | "department_lead" | "team_member" | "auditor",
+  "department": { "id": "<uuid>", "name": "Marketing" } | null,
+  "goal_id":    "<uuid>" | null
+}
+```
 
 ### Search
 

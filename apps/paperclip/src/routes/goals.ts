@@ -55,6 +55,19 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       params.push(parsed.data.department_id);
       where.push(`department_id = $${params.length}`);
     }
+    if (parsed.data.stalled_for_days !== undefined) {
+      params.push(parsed.data.stalled_for_days);
+      where.push(`status IN ('active','draft')`);
+      // A goal is "stalled" when its newest run is older than N days, OR it
+      // has no runs and was itself created more than N days ago. The
+      // subquery sentinel handles both cases without an outer-join shuffle.
+      where.push(`(
+          COALESCE(
+            (SELECT MAX(created_at) FROM ops.run WHERE goal_id = ops.goal.id),
+            ops.goal.created_at
+          )
+        ) < now() - ($${params.length} || ' days')::interval`);
+    }
     params.push(parsed.data.limit);
     const sql = `
       SELECT ${GOAL_COLUMNS}

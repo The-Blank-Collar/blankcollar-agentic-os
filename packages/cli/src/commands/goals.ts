@@ -1,6 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
-import { flagBool, flagString } from "../argv.js";
+import { flagBool, flagInt, flagString } from "../argv.js";
 import { detectMode, emit, relative, trunc } from "../format.js";
 
 type Goal = {
@@ -37,9 +37,11 @@ type GoalStats = {
 export async function runGoalsList(args: ParsedArgs, client: Client): Promise<number> {
   const status = flagString(args.flags, "status", "active");
   const kind = args.flags.kind;
+  const stalled = flagBool(args.flags, "stalled") ? flagInt(args.flags, "stalled", 7) : null;
   const goals = await client.get<Goal[]>("/api/goals", {
     status: status === "all" ? undefined : status,
     kind: typeof kind === "string" ? kind : undefined,
+    stalled_for_days: stalled ?? undefined,
     limit: 50,
   });
   const mode = detectMode(args.flags);
@@ -48,10 +50,16 @@ export async function runGoalsList(args: ParsedArgs, client: Client): Promise<nu
     return 0;
   }
   if (goals.length === 0) {
-    emit("pretty", `no goals (status=${status})`);
+    const empty = stalled
+      ? `nothing stalled for ≥ ${stalled} day${stalled === 1 ? "" : "s"}.`
+      : `no goals (status=${status})`;
+    emit("pretty", empty);
     return 0;
   }
-  const lines = [`goals · ${goals.length} (status=${status})`];
+  const heading = stalled
+    ? `goals · ${goals.length} stalled ≥ ${stalled} day${stalled === 1 ? "" : "s"}`
+    : `goals · ${goals.length} (status=${status})`;
+  const lines = [heading];
   for (const g of goals) {
     const tag =
       g.kind === "routine" && g.cron_expr
