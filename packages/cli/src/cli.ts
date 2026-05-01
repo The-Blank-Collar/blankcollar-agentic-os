@@ -25,6 +25,7 @@ import { runRoutinesList, runTriggerFire, runTriggersList } from "./commands/rou
 import { runRunGet, runRunsList } from "./commands/runs.js";
 import { runSearch } from "./commands/search.js";
 import { runSkillInvoke, runSkills } from "./commands/skills.js";
+import { runTail } from "./commands/tail.js";
 import { emitError } from "./format.js";
 
 export async function main(argv: string[], clientOverride?: Client): Promise<number> {
@@ -129,6 +130,8 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
 
       case "search":
         return await runSearch(args, client);
+      case "tail":
+        return await runTail(args, client);
 
       case "onboard":
         return await runOnboard(args, client);

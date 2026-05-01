@@ -296,6 +296,45 @@ GET /search?q=lark&kind=all&limit=20
 
 `kind=all` (default) interleaves all four corpora ordered by score then recency. Filter to one corpus with `kind=goal|capture|knowledge|agent`. `q` must be ≥ 2 chars (returns 400 otherwise). v0 is ILIKE-based; tsvector-rank arrives when any corpus crosses 10k rows per org.
 
+### Stats / Activity
+
+Per-goal run rollup and an org-wide chronological activity feed. Both are derived views over `ops.run` — no new tables.
+
+```http
+GET /goals/{id}/stats
+→ 200 {
+  "goal_id":         "<uuid>",
+  "runs_total":      14,
+  "runs_succeeded":  11,
+  "runs_failed":     1,
+  "runs_running":    1,
+  "runs_queued":     1,
+  "avg_duration_ms": 4280,
+  "last_run_at":     "...",
+  "last_run_status": "succeeded"
+}
+→ 404 { "error": "not_found" }
+```
+
+```http
+GET /activity?limit=20
+→ 200 [{
+  "run_id":         "<uuid>",
+  "goal_id":        "<uuid>",
+  "goal_title":     "Close the Lark proposal",
+  "goal_kind":      "ephemeral",
+  "agent_id":       "<uuid>" | null,
+  "status":         "succeeded" | "failed" | "running" | ...,
+  "started_at":     "...",
+  "finished_at":    "...",
+  "created_at":     "...",
+  "duration_ms":    4280,
+  "subtask_title":  "Draft the milestone clause" | null
+}]
+```
+
+`limit` is capped at 100. Most recent first. Backs the activity rail on the dashboard and `bc tail` in the CLI.
+
 ### Heartbeat
 
 14-day system pulse for the design's sparkline rail and the Goal Detail timeline. v0 reports what we have data for; richer business KPIs (ARR, pipeline, margin) land when Stripe / CRM data is connected.

@@ -1,6 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
-import { flagString } from "../argv.js";
+import { flagBool, flagString } from "../argv.js";
 import { detectMode, emit, relative, trunc } from "../format.js";
 
 type Goal = {
@@ -20,6 +20,18 @@ type GoalDetail = Goal & {
   actual_value: string | null;
   key_results?: Array<{ id: string; label: string; target_value: string | null; current_value: string | null }>;
   contributors?: Array<{ agent_id: string | null; user_id: string | null }>;
+};
+
+type GoalStats = {
+  goal_id: string;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  runs_running: number;
+  runs_queued: number;
+  avg_duration_ms: number | null;
+  last_run_at: string | null;
+  last_run_status: string | null;
 };
 
 export async function runGoalsList(args: ParsedArgs, client: Client): Promise<number> {
@@ -61,13 +73,19 @@ export async function runGoalsList(args: ParsedArgs, client: Client): Promise<nu
 export async function runGoalGet(args: ParsedArgs, client: Client): Promise<number> {
   const id = args.positional[0];
   if (!id) {
-    process.stderr.write("usage: bc goal <id>\n");
+    process.stderr.write("usage: bc goal <id> [--stats]\n");
     return 2;
   }
-  const g = await client.get<GoalDetail>(`/api/goals/${encodeURIComponent(id)}`);
+  const wantStats = flagBool(args.flags, "stats");
+  const [g, stats] = await Promise.all([
+    client.get<GoalDetail>(`/api/goals/${encodeURIComponent(id)}`),
+    wantStats
+      ? client.get<GoalStats>(`/api/goals/${encodeURIComponent(id)}/stats`)
+      : Promise.resolve(null),
+  ]);
   const mode = detectMode(args.flags);
   if (mode === "json") {
-    emit("json", g);
+    emit("json", stats ? { ...g, stats } : g);
     return 0;
   }
   const lines = [
@@ -88,6 +106,19 @@ export async function runGoalGet(args: ParsedArgs, client: Client): Promise<numb
       .map((c) => (c.agent_id ?? c.user_id ?? "—").slice(0, 8))
       .join(", ");
     lines.push("", `contributors: ${ids}`);
+  }
+  if (stats) {
+    const dur = stats.avg_duration_ms != null ? `${(stats.avg_duration_ms / 1000).toFixed(1)}s` : "—";
+    const last = stats.last_run_at
+      ? `${stats.last_run_status ?? "?"} ${relative(stats.last_run_at)}`
+      : "never";
+    lines.push("", "stats:");
+    lines.push(`  runs:    ${stats.runs_total} total · ${stats.runs_succeeded} succeeded · ${stats.runs_failed} failed`);
+    if (stats.runs_running > 0 || stats.runs_queued > 0) {
+      lines.push(`  active:  ${stats.runs_running} running · ${stats.runs_queued} queued`);
+    }
+    lines.push(`  avg:     ${dur}`);
+    lines.push(`  last:    ${last}`);
   }
   emit("pretty", lines.join("\n"));
   return 0;

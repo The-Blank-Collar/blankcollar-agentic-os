@@ -29,6 +29,7 @@ import { runRoutes } from "./routes/runs.js";
 import { searchRoutes } from "./routes/search.js";
 import { selfImprovementRoutes } from "./routes/self_improvement.js";
 import { skillRoutes } from "./routes/skills.js";
+import { statsRoutes } from "./routes/stats.js";
 import { uiRoutes } from "./routes/ui.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { syncSkillRegistry } from "./skills/registry.js";
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
   await app.register(channelRoutes);
   await app.register(runRoutes);
   await app.register(searchRoutes);
+  await app.register(statsRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
   await app.register(uiRoutes);

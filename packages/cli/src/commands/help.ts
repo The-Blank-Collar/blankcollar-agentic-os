@@ -11,6 +11,7 @@ COMMANDS
   inbox ack <goal_id>      mark a draft / routine output as seen
   goals                    list active goals
   goal <id>                show one goal with KRs + contributors
+  goal <id> --stats        + run rollup (totals, avg duration, last run)
   briefing                 today's editorial briefing
   agents                   list active agents
   agent <id>               show one agent's live state + recent runs
@@ -30,6 +31,7 @@ COMMANDS
   triggers <goal_id>       list schedule/event/api triggers on a goal
   fire <trigger_id>        manually fire a trigger (api triggers need --token)
   search <query>           cross-corpus search across goals/captures/knowledge/agents
+  tail [--limit=N]         most recent runs across the org (default 20)
   onboard --mode=<m>       start the interview (single_user | multi_user)
 
 GLOBAL FLAGS
