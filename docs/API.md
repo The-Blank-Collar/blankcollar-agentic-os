@@ -260,6 +260,23 @@ POST /inbox/acknowledge/{goal_id}
 
 Sets `acknowledged_at = now()` on every unacknowledged succeeded run for the goal, so the inbox stops surfacing it. Idempotent.
 
+```http
+GET /inbox/summary
+→ 200 {
+  "total":  <int>,
+  "urgent": <int>,
+  "by_kind": {
+    "approval":       <int>,
+    "decision":       <int>,
+    "routine_output": <int>,
+    "draft":          <int>,
+    "blocked":        <int>
+  }
+}
+```
+
+Featherweight version of `/inbox` for the briefing rail and the mobile companion: just the integers needed to render badges. `urgent` is the sum of urgent approvals + decisions due within 48 h.
+
 ### Heartbeat
 
 14-day system pulse for the design's sparkline rail and the Goal Detail timeline. v0 reports what we have data for; richer business KPIs (ARR, pipeline, margin) land when Stripe / CRM data is connected.

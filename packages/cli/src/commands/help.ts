@@ -7,6 +7,7 @@ COMMANDS
   health                   probe / surface every backend service
   capture <text>           toss natural language at the assistant
   inbox                    show what wants you (decisions, drafts, blocked, ...)
+  inbox --summary          counts per kind + urgent count (no items)
   inbox ack <goal_id>      mark a draft / routine output as seen
   goals                    list active goals
   goal <id>                show one goal with KRs + contributors

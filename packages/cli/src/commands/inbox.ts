@@ -1,6 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
-import { flagInt } from "../argv.js";
+import { flagBool, flagInt } from "../argv.js";
 import { detectMode, emit, relative, trunc } from "../format.js";
 
 type InboxItem = {
@@ -12,6 +12,12 @@ type InboxItem = {
   metadata: Record<string, unknown>;
 };
 
+type InboxSummary = {
+  total: number;
+  urgent: number;
+  by_kind: Record<InboxItem["item_kind"], number>;
+};
+
 const KIND_LABEL: Record<InboxItem["item_kind"], string> = {
   approval: "approval ",
   decision: "decision ",
@@ -21,9 +27,29 @@ const KIND_LABEL: Record<InboxItem["item_kind"], string> = {
 };
 
 export async function runInboxList(args: ParsedArgs, client: Client): Promise<number> {
+  const mode = detectMode(args.flags);
+
+  if (flagBool(args.flags, "summary")) {
+    const sum = await client.get<InboxSummary>("/api/inbox/summary");
+    if (mode === "json") {
+      emit("json", sum);
+      return 0;
+    }
+    const urgent = sum.urgent > 0 ? `  · ${sum.urgent} urgent` : "";
+    const lines = [
+      `inbox · ${sum.total} item${sum.total === 1 ? "" : "s"}${urgent}`,
+      `  approval        ${sum.by_kind.approval}`,
+      `  decision        ${sum.by_kind.decision}`,
+      `  routine output  ${sum.by_kind.routine_output}`,
+      `  draft           ${sum.by_kind.draft}`,
+      `  blocked         ${sum.by_kind.blocked}`,
+    ];
+    emit("pretty", lines.join("\n"));
+    return 0;
+  }
+
   const limit = flagInt(args.flags, "limit", 20);
   const items = await client.get<InboxItem[]>("/api/inbox", { limit });
-  const mode = detectMode(args.flags);
   if (mode === "json") {
     emit("json", items);
     return 0;

@@ -187,6 +187,80 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     return items.slice(0, limit);
   });
 
+  // -- summary: counts per kind + urgent count ---------------------------
+  // A featherweight version of /api/inbox for the briefing rail and the
+  // mobile companion: just the integers we need to render badges.
+  app.get("/api/inbox/summary", async (req) => {
+    const scope = await resolveCallerScope(req);
+    return withOrgScope(scope.org_id, async (client) => {
+      const [{ rows: ap }, { rows: dc }, { rows: bl }, { rows: dr }] = await Promise.all([
+        client.query<{ total: string; urgent: string }>(
+          `SELECT
+              COUNT(*)::text                                                 AS total,
+              COUNT(*) FILTER (WHERE urgency = 'urgent')::text               AS urgent
+             FROM ops.approval
+            WHERE org_id = $1
+              AND resolution IS NULL
+              AND (expires_at IS NULL OR expires_at > now())`,
+          [scope.org_id],
+        ),
+        client.query<{ total: string; urgent: string }>(
+          `SELECT
+              COUNT(*)::text                                                          AS total,
+              COUNT(*) FILTER (WHERE due_at IS NOT NULL
+                                 AND due_at < now() + interval '48 hours')::text       AS urgent
+             FROM ops.goal
+            WHERE org_id = $1 AND kind = 'decision' AND status IN ('draft','active')`,
+          [scope.org_id],
+        ),
+        client.query<{ total: string }>(
+          `SELECT COUNT(*)::text AS total
+             FROM ops.goal
+            WHERE org_id = $1 AND status = 'paused'`,
+          [scope.org_id],
+        ),
+        client.query<{ kind: string; total: string }>(
+          // Drafts vs routine_output: same shape as /api/inbox — split by goal kind.
+          `SELECT g.kind AS kind, COUNT(DISTINCT g.id)::text AS total
+             FROM ops.goal g
+             JOIN ops.run  r ON r.goal_id = g.id
+            WHERE g.org_id = $1
+              AND r.status = 'succeeded'
+              AND r.acknowledged_at IS NULL
+              AND g.status IN ('active','draft')
+            GROUP BY g.kind`,
+          [scope.org_id],
+        ),
+      ]);
+
+      const approval = Number(ap[0]?.total ?? "0");
+      const approvalUrgent = Number(ap[0]?.urgent ?? "0");
+      const decision = Number(dc[0]?.total ?? "0");
+      const decisionUrgent = Number(dc[0]?.urgent ?? "0");
+      const blocked = Number(bl[0]?.total ?? "0");
+      let routineOutput = 0;
+      let draft = 0;
+      for (const row of dr) {
+        const n = Number(row.total ?? "0");
+        if (row.kind === "routine") routineOutput += n;
+        else draft += n;
+      }
+      const total = approval + decision + blocked + routineOutput + draft;
+      const urgent = approvalUrgent + decisionUrgent;
+      return {
+        total,
+        urgent,
+        by_kind: {
+          approval,
+          decision,
+          blocked,
+          routine_output: routineOutput,
+          draft,
+        },
+      };
+    });
+  });
+
   // -- acknowledge an inbox item -----------------------------------------
   // Marks every unacknowledged succeeded run for the given goal as seen,
   // removing it from the inbox's draft / routine_output stream. Decision
