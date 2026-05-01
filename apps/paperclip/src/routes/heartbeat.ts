@@ -59,10 +59,10 @@ export async function heartbeatRoutes(app: FastifyInstance): Promise<void> {
     const periodStart = `${dates[0]!}T00:00:00Z`;
     const periodEnd = new Date().toISOString();
 
-    const { captures, runs, goals, audits } = await withOrgScope(
+    const { captures, runs, runsFailed, goals, audits } = await withOrgScope(
       scope.org_id,
       async (client) => {
-        const [c, r, g, a] = await Promise.all([
+        const [c, r, rf, g, a] = await Promise.all([
           client.query<{ day: string; ct: string }>(
             `SELECT to_char(date_trunc('day', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
                     count(*)::text AS ct
@@ -78,6 +78,17 @@ export async function heartbeatRoutes(app: FastifyInstance): Promise<void> {
                JOIN ops.goal g ON g.id = r.goal_id
               WHERE g.org_id = $1
                 AND r.status = 'succeeded'
+                AND r.finished_at >= $2
+              GROUP BY 1`,
+            [scope.org_id, periodStart],
+          ),
+          client.query<{ day: string; ct: string }>(
+            `SELECT to_char(date_trunc('day', r.finished_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+                    count(*)::text AS ct
+               FROM ops.run r
+               JOIN ops.goal g ON g.id = r.goal_id
+              WHERE g.org_id = $1
+                AND r.status = 'failed'
                 AND r.finished_at >= $2
               GROUP BY 1`,
             [scope.org_id, periodStart],
@@ -104,7 +115,7 @@ export async function heartbeatRoutes(app: FastifyInstance): Promise<void> {
             [scope.org_id, periodStart],
           ),
         ]);
-        return { captures: c, runs: r, goals: g, audits: a };
+        return { captures: c, runs: r, runsFailed: rf, goals: g, audits: a };
       },
     );
 
@@ -113,10 +124,11 @@ export async function heartbeatRoutes(app: FastifyInstance): Promise<void> {
       period_start: periodStart,
       period_end: periodEnd,
       series: [
-        { kpi: "captures",       label: "Captures",       unit: "count",  points: rollup(captures.rows, dates) },
-        { kpi: "runs_completed", label: "Runs completed", unit: "count",  points: rollup(runs.rows,     dates) },
-        { kpi: "goals_active",   label: "Goals in flight", unit: "count", points: rollup(goals.rows,    dates) },
-        { kpi: "activity",       label: "Activity",       unit: "events", points: rollup(audits.rows,   dates) },
+        { kpi: "captures",       label: "Captures",        unit: "count",  points: rollup(captures.rows,   dates) },
+        { kpi: "runs_completed", label: "Runs completed",  unit: "count",  points: rollup(runs.rows,       dates) },
+        { kpi: "runs_failed",    label: "Runs failed",     unit: "count",  points: rollup(runsFailed.rows, dates) },
+        { kpi: "goals_active",   label: "Goals in flight", unit: "count",  points: rollup(goals.rows,      dates) },
+        { kpi: "activity",       label: "Activity",        unit: "events", points: rollup(audits.rows,     dates) },
       ],
     };
     return response;

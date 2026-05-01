@@ -416,6 +416,7 @@ GET /heartbeat?days=14
   "series": [
     { "kpi": "captures",       "label": "Captures",        "unit": "count",  "points": [{ "date": "2026-04-15", "value": 3 }, ...] },
     { "kpi": "runs_completed", "label": "Runs completed",  "unit": "count",  "points": [...] },
+    { "kpi": "runs_failed",    "label": "Runs failed",     "unit": "count",  "points": [...] },
     { "kpi": "goals_active",   "label": "Goals in flight", "unit": "count",  "points": [...] },
     { "kpi": "activity",       "label": "Activity",        "unit": "events", "points": [...] }
   ]
