@@ -1,4 +1,12 @@
-"""HTTP sinks: gbrain (memory) + paperclip (goal). Tiny, idempotent."""
+"""HTTP sinks: gbrain (conversation memory) + paperclip (capture).
+
+Every actionable inbound email lands as TWO rows:
+  1. A `conversation` memory in gbrain — for recall.
+  2. A `capture` in Paperclip — which the classifier resolves to a goal
+     of the right kind (ephemeral / decision / standing / routine).
+
+Non-actionable emails (announcements, FYIs) get only the memory.
+"""
 
 from __future__ import annotations
 
@@ -13,14 +21,7 @@ log = logging.getLogger("email-ingest.sinks")
 
 
 async def get_org_id(client: httpx.AsyncClient) -> str | None:
-    """Resolve the demo org's UUID via Paperclip's audit endpoint as a side
-    effect (Paperclip resolves the same org on its side for every request).
-
-    For now we hit /api/health then ask Paperclip to surface its scope via
-    a goals listing; if any goal exists, we can derive org_id. To avoid
-    that fragile path we use Paperclip's /api/orgs/by-slug endpoint added
-    in the same commit.
-    """
+    """Resolve the configured org's UUID. Used to scope gbrain writes."""
     try:
         r = await client.get(
             f"{settings.paperclip_url}/api/orgs/by-slug/{settings.org_slug}"
@@ -56,20 +57,25 @@ async def write_conversation_memory(
         return None
 
 
-async def create_draft_goal(
+async def create_capture(
     client: httpx.AsyncClient,
     *,
-    title: str,
-    description: str,
+    raw_content: str,
     metadata: dict[str, Any],
-) -> str | None:
-    body = {"title": title, "description": description, "metadata": metadata}
+) -> dict[str, Any] | None:
+    """Posts to Paperclip's /api/capture endpoint with source=email.
+
+    Paperclip classifies the content into a goal kind (ephemeral / decision /
+    standing / routine), creates the goal, and persists the capture row.
+    Returns { capture_id, goal_id, intent } on success.
+    """
+    body = {"raw_content": raw_content, "source": "email", "metadata": metadata}
     try:
         r = await client.post(
-            f"{settings.paperclip_url}/api/goals", json=body, timeout=15.0
+            f"{settings.paperclip_url}/api/capture", json=body, timeout=15.0
         )
         r.raise_for_status()
-        return r.json().get("id")
+        return r.json()
     except Exception as e:
-        log.warning("paperclip goal create failed: %s", e)
+        log.warning("paperclip capture failed: %s", e)
         return None

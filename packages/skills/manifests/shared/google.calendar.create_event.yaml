@@ -1,0 +1,35 @@
+id: google.calendar.create_event
+version: 1
+scope: shared
+mode_aware: true
+agent_kind: openclaw
+title: Create a Google Calendar event
+description: |
+  Books an event on the user's primary Google Calendar via Nango.
+  Mode-aware: in single-user mode the event lands on your personal
+  calendar; in multi-user mode the team calendar is selectable via
+  `calendar_id`.
+inputs:
+  summary:
+    type: string
+    required: true
+  description:
+    type: string
+  start:
+    type: string
+    format: date-time
+    required: true
+  end:
+    type: string
+    format: date-time
+    required: true
+  attendees:
+    type: array
+    items: { type: string, format: email }
+  calendar_id:
+    type: string
+    default: primary
+side_effects: external
+permissions:
+  required_role: any
+  approval_under: 0

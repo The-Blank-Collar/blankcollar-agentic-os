@@ -1,0 +1,23 @@
+id: web.fetch
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Fetch a URL
+description: |
+  Politely fetches a URL with SSRF guards (no IP literals, no localhost,
+  rate-limited per host), extracts visible text, and writes a `document`
+  memory to gbrain. The fetched body is then available to any subsequent
+  Hermes summary or decision step.
+inputs:
+  url:
+    type: string
+    format: uri
+    required: true
+  timeout_s:
+    type: integer
+    default: 30
+side_effects: read
+permissions:
+  required_role: any
+  approval_under: 0

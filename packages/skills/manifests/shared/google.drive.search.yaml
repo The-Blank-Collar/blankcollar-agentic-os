@@ -1,0 +1,22 @@
+id: google.drive.search
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Search Google Drive
+description: |
+  Searches the user's Drive via Nango. Returns file metadata; use
+  google.docs.append (or future google.drive.export) to actually pull
+  contents.
+inputs:
+  query:
+    type: string
+    required: true
+    description: Drive search syntax (e.g. "name contains 'invoice'").
+  max_results:
+    type: integer
+    default: 20
+side_effects: read
+permissions:
+  required_role: any
+  approval_under: 0

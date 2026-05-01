@@ -45,6 +45,10 @@ reset: ## Interactive reset (asks for confirmation before wiping)
 doctor: ## Health-check every service
 	./infra/scripts/doctor.sh
 
+.PHONY: smoke
+smoke: ## End-to-end exercise of the live API (capture, inbox, briefing, self-audit, knowledge, …)
+	./infra/scripts/smoke.sh
+
 .PHONY: ps
 ps: ## Show running containers
 	$(COMPOSE) ps
@@ -107,6 +111,13 @@ paperclip: ## Launch real Paperclip command centre natively at :3100 (Ctrl+C to 
 .PHONY: paperclip-onboard
 paperclip-onboard: ## One-time setup for native paperclipai (rarely needed; onboard runs on first start anyway)
 	@cd "$$HOME" && npx --yes paperclipai@latest onboard --yes
+
+# -----------------------------------------------------------------------------
+# Single-user mode
+# -----------------------------------------------------------------------------
+.PHONY: personal
+personal: ## Land in single-user mode. Usage: make personal NAME="Lior" EMAIL=lior@example.com
+	@NAME="$(NAME)" EMAIL="$(EMAIL)" PERSONAL_ORG_SLUG="$(PERSONAL_ORG_SLUG)" ./infra/scripts/personal.sh
 
 # -----------------------------------------------------------------------------
 # Supabase local-testing helpers — see docs/SUPABASE_LOCAL.md

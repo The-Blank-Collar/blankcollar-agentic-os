@@ -1,0 +1,31 @@
+id: email.send
+version: 1
+scope: shared
+mode_aware: true
+agent_kind: openclaw
+title: Send an email
+description: |
+  Sends mail via SMTP. In single-user mode the default is "draft only" —
+  the email lands in your sent-drafts directory and surfaces in the inbox
+  for approval before send. In multi-user mode the policy engine decides
+  per-role.
+inputs:
+  to:
+    type: string
+    format: email
+    required: true
+  subject:
+    type: string
+    required: true
+  body:
+    type: string
+    required: true
+  cc:
+    type: string
+  reply_to:
+    type: string
+    format: email
+side_effects: external
+permissions:
+  required_role: any
+  approval_under: 0

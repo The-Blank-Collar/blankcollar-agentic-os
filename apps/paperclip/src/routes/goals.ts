@@ -4,7 +4,7 @@ import { audit } from "../audit.js";
 import { query, tx } from "../db.js";
 import { generatePlan } from "../plan.js";
 import { resolveCallerScope } from "../scope.js";
-import { GoalCreate, GoalListQuery, GoalPatch, RunDispatch } from "../schemas.js";
+import { DecisionResolve, GoalCreate, GoalListQuery, GoalPatch, RunDispatch } from "../schemas.js";
 
 type GoalRow = {
   id: string;
@@ -14,10 +14,24 @@ type GoalRow = {
   title: string;
   description: string | null;
   status: string;
+  kind: string;
+  cron_expr: string | null;
+  due_at: string | null;
+  progress: string | null;
+  target_value: string | null;
+  actual_value: string | null;
+  delta_label: string | null;
+  track_state: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
+
+const GOAL_COLUMNS = `
+  id, org_id, department_id, owner_id, title, description, status,
+  kind, cron_expr, due_at, progress, target_value, actual_value,
+  delta_label, track_state, metadata, created_at, updated_at
+`;
 
 export async function goalRoutes(app: FastifyInstance): Promise<void> {
   // -- list ---------------------------------------------------------------
@@ -33,13 +47,17 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       params.push(parsed.data.status);
       where.push(`status = $${params.length}::ops.goal_status`);
     }
+    if (parsed.data.kind) {
+      params.push(parsed.data.kind);
+      where.push(`kind = $${params.length}::ops.goal_kind`);
+    }
     if (parsed.data.department_id) {
       params.push(parsed.data.department_id);
       where.push(`department_id = $${params.length}`);
     }
     params.push(parsed.data.limit);
     const sql = `
-      SELECT id, org_id, department_id, owner_id, title, description, status, metadata, created_at, updated_at
+      SELECT ${GOAL_COLUMNS}
       FROM ops.goal
       WHERE ${where.join(" AND ")}
       ORDER BY created_at DESC
@@ -59,9 +77,12 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     const result = await tx(async (client) => {
       const { rows } = await client.query<GoalRow>(
         `
-        INSERT INTO ops.goal (org_id, department_id, title, description, metadata)
-        VALUES ($1, $2, $3, $4, $5::jsonb)
-        RETURNING id, org_id, department_id, owner_id, title, description, status, metadata, created_at, updated_at
+        INSERT INTO ops.goal (
+          org_id, department_id, title, description, metadata,
+          kind, cron_expr, due_at, target_value
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::ops.goal_kind, $7, $8, $9)
+        RETURNING ${GOAL_COLUMNS}
         `,
         [
           scope.org_id,
@@ -69,6 +90,10 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
           parsed.data.title,
           parsed.data.description ?? null,
           JSON.stringify(parsed.data.metadata ?? {}),
+          parsed.data.kind ?? "ephemeral",
+          parsed.data.cron_expr ?? null,
+          parsed.data.due_at ?? null,
+          parsed.data.target_value ?? null,
         ],
       );
       const goal = rows[0]!;
@@ -78,7 +103,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
           action: "goal.create",
           target_type: "goal",
           target_id: goal.id,
-          metadata: { title: goal.title, department_id: goal.department_id },
+          metadata: { title: goal.title, kind: goal.kind, department_id: goal.department_id },
         },
         client,
       );
@@ -87,16 +112,27 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send(result);
   });
 
-  // -- get ----------------------------------------------------------------
+  // -- get (with key_results + contributors embedded) --------------------
   app.get<{ Params: { id: string } }>("/api/goals/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
     const { rows } = await query<GoalRow>(
-      `SELECT id, org_id, department_id, owner_id, title, description, status, metadata, created_at, updated_at
-       FROM ops.goal WHERE id = $1 AND org_id = $2`,
+      `SELECT ${GOAL_COLUMNS} FROM ops.goal WHERE id = $1 AND org_id = $2`,
       [req.params.id, scope.org_id],
     );
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
-    return rows[0];
+    const goal = rows[0]!;
+
+    const { rows: krs } = await query(
+      `SELECT id, label, target_value, current_value, unit, weight, due_at, created_at, updated_at
+       FROM ops.key_result WHERE goal_id = $1 ORDER BY created_at ASC`,
+      [goal.id],
+    );
+    const { rows: contributors } = await query(
+      `SELECT agent_id, user_id, added_at FROM ops.goal_contributor WHERE goal_id = $1`,
+      [goal.id],
+    );
+
+    return { ...goal, key_results: krs, contributors };
   });
 
   // -- patch --------------------------------------------------------------
@@ -108,25 +144,25 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     const scope = await resolveCallerScope(req);
     const sets: string[] = [];
     const params: unknown[] = [req.params.id, scope.org_id];
-    if (parsed.data.title !== undefined) {
-      params.push(parsed.data.title);
-      sets.push(`title = $${params.length}`);
-    }
-    if (parsed.data.description !== undefined) {
-      params.push(parsed.data.description);
-      sets.push(`description = $${params.length}`);
-    }
-    if (parsed.data.metadata !== undefined) {
-      params.push(JSON.stringify(parsed.data.metadata));
-      sets.push(`metadata = $${params.length}::jsonb`);
-    }
-    if (parsed.data.status !== undefined) {
-      params.push(parsed.data.status);
-      sets.push(`status = $${params.length}::ops.goal_status`);
-    }
+    const setCol = (col: string, val: unknown, cast?: string): void => {
+      params.push(val);
+      sets.push(`${col} = $${params.length}${cast ?? ""}`);
+    };
+    if (parsed.data.title !== undefined)        setCol("title", parsed.data.title);
+    if (parsed.data.description !== undefined)  setCol("description", parsed.data.description);
+    if (parsed.data.kind !== undefined)         setCol("kind", parsed.data.kind, "::ops.goal_kind");
+    if (parsed.data.cron_expr !== undefined)    setCol("cron_expr", parsed.data.cron_expr);
+    if (parsed.data.due_at !== undefined)       setCol("due_at", parsed.data.due_at);
+    if (parsed.data.progress !== undefined)     setCol("progress", parsed.data.progress);
+    if (parsed.data.target_value !== undefined) setCol("target_value", parsed.data.target_value);
+    if (parsed.data.actual_value !== undefined) setCol("actual_value", parsed.data.actual_value);
+    if (parsed.data.delta_label !== undefined)  setCol("delta_label", parsed.data.delta_label);
+    if (parsed.data.track_state !== undefined)  setCol("track_state", parsed.data.track_state);
+    if (parsed.data.metadata !== undefined)     setCol("metadata", JSON.stringify(parsed.data.metadata), "::jsonb");
+    if (parsed.data.status !== undefined)       setCol("status", parsed.data.status, "::ops.goal_status");
     if (sets.length === 0) return reply.code(400).send({ error: "no_changes" });
     sets.push("updated_at = now()");
-    const sql = `UPDATE ops.goal SET ${sets.join(", ")} WHERE id = $1 AND org_id = $2 RETURNING *`;
+    const sql = `UPDATE ops.goal SET ${sets.join(", ")} WHERE id = $1 AND org_id = $2 RETURNING ${GOAL_COLUMNS}`;
     const result = await tx(async (client) => {
       const { rows } = await client.query<GoalRow>(sql, params);
       if (rows.length === 0) return undefined;
@@ -166,6 +202,70 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!result) return reply.code(404).send({ error: "not_found" });
     return result;
+  });
+
+  // -- resolve a decision -------------------------------------------------
+  // Decision goals (kind=decision) accumulate in the inbox until the user
+  // approves or declines. Resolving moves the goal to a terminal state and
+  // logs the resolution + note for audit.
+  app.post<{ Params: { id: string } }>("/api/goals/:id/resolve", async (req, reply) => {
+    const parsed = DecisionResolve.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
+    }
+    const scope = await resolveCallerScope(req);
+    const result = await tx(async (client) => {
+      const { rows } = await client.query<GoalRow>(
+        `SELECT ${GOAL_COLUMNS} FROM ops.goal
+          WHERE id = $1 AND org_id = $2 FOR UPDATE`,
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return { kind: "not_found" as const };
+      const goal = rows[0]!;
+      if (goal.kind !== "decision") {
+        return { kind: "wrong_kind" as const, goal };
+      }
+      if (goal.status === "achieved" || goal.status === "archived") {
+        return { kind: "already_resolved" as const, goal };
+      }
+
+      const newStatus = parsed.data.resolution === "approved" ? "achieved" : "archived";
+      const mergedMeta = {
+        ...(goal.metadata ?? {}),
+        resolution: parsed.data.resolution,
+        resolution_note: parsed.data.note ?? null,
+        resolved_at: new Date().toISOString(),
+      };
+      const { rows: updated } = await client.query<GoalRow>(
+        `UPDATE ops.goal
+            SET status   = $2::ops.goal_status,
+                metadata = $3::jsonb,
+                updated_at = now()
+          WHERE id = $1
+          RETURNING ${GOAL_COLUMNS}`,
+        [goal.id, newStatus, JSON.stringify(mergedMeta)],
+      );
+      await audit(
+        {
+          scope,
+          action: parsed.data.resolution === "approved" ? "decision.approve" : "decision.decline",
+          target_type: "goal",
+          target_id: goal.id,
+          metadata: { note: parsed.data.note ?? null },
+        },
+        client,
+      );
+      return { kind: "ok" as const, goal: updated[0]! };
+    });
+
+    if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (result.kind === "wrong_kind") {
+      return reply.code(409).send({ error: "not_a_decision", current_kind: result.goal.kind });
+    }
+    if (result.kind === "already_resolved") {
+      return reply.code(409).send({ error: "already_resolved", current_status: result.goal.status });
+    }
+    return result.goal;
   });
 
   // -- plan ---------------------------------------------------------------

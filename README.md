@@ -73,6 +73,25 @@ You manage **outcomes**, the OS manages **execution**.
 
 ---
 
+## 🧭 The Four Cs — How the OS is organised
+
+Every backend module belongs to one of four pillars. New code that doesn't map to one is a smell.
+
+| Pillar          | Question it answers       | Where it lives                                                                       |
+|-----------------|---------------------------|---------------------------------------------------------------------------------------|
+| **Context**     | *What does the OS know?*  | `gbrain` (semantic recall) + `Graphiti` (temporal graph) + `ops.knowledge_doc` (wiki) |
+| **Connections** | *What can it reach?*      | `Nango` (400+ services) + Google Workspace connectors + `apps/email-ingest`           |
+| **Capabilities**| *What can it do?*         | Skills Engine (`packages/skills/`) routed through Hermes / OpenClaw / LangGraph       |
+| **Cadence**     | *When does it act?*       | Routines Engine — scheduler in Paperclip + event-triggered routines + audit-driven    |
+
+Operating modes — every component is **mode-aware**:
+- **Single-user** (personal AIOS) — one human, one org, role=`owner`, dept=`NULL`. `make personal` lands you here.
+- **Multi-user** (company / team) — multiple humans + departments, role-scoped, RLS-enforced.
+
+The same data model serves both; the difference is which scopes are populated. See [`docs/INTEGRATION_PLAN.md`](docs/INTEGRATION_PLAN.md) for how the Four Cs connect end-to-end and how each new feature wires into the existing pipeline.
+
+---
+
 ## 🏗 System Architecture
 
 ```
@@ -293,14 +312,15 @@ development.
 
 | Phase | Theme                       | What lands                                                       |
 |-------|-----------------------------|------------------------------------------------------------------|
-| **0** | **Groundwork** *(now)*      | Monorepo, Docker stack, placeholders, docs                       |
-| 1     | Real data layer             | gbrain v0, Qdrant collections, Postgres schemas, seed data        |
-| 2     | Paperclip orchestrator      | Goal CRUD, run queue, agent registry, basic dashboard             |
-| 3     | First real workforce        | Hermes adapter live, OpenClaw live, end‑to‑end goal demo          |
-| 4     | Goal Command Centre         | Beautiful goal-first UX, dept views, role-scoped panels           |
-| 5     | Intelligence layer          | Skills catalog, MCP tool registry, policy/permissions engine      |
-| 6     | Auth & multi‑tenancy        | Supabase auth, org/department/user model, audit log               |
-| 7     | Payments & onboarding       | Stripe billing, hosted onboarding, agent@blankcollar.ai inbox     |
+| 0     | Groundwork ✅                | Monorepo, Docker stack, init.sql, doctor.sh                      |
+| 1     | Real memory ✅               | gbrain HTTP service, Qdrant, role-scoped recall                  |
+| 2     | Paperclip orchestrator ✅    | Full `/api/*`, run queue, agent registry, htmx dashboard          |
+| 3     | First real workforce ✅      | Hermes + OpenClaw + LangGraph, web skills, Nango, Graphiti       |
+| **3.5** | **Backend tightening** *(now)* | Goal kinds, captures, briefings, inbox, scheduler, RLS, **Four Cs**, Skills Engine, Routines Engine, Onboarding, Self-Improvement, Knowledge wiki |
+| 4     | Goal Command Centre         | Custom React console replaces Paperclip's htmx UI                 |
+| 5     | Intelligence layer          | Policy engine, approval inbox, MCP tool registry                  |
+| 6     | Auth & multi‑tenancy        | Supabase auth UI, invite flows, org/dept CRUD                     |
+| 7     | Payments & onboarding       | Stripe billing UI, hosted-tier gating                             |
 | 8     | Public launch               | www.blankcollar.ai, hosted tier, marketplace of skills            |
 
 > 📚 Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
@@ -337,6 +357,7 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 ### How
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Layered model, contracts.
+- [`docs/INTEGRATION_PLAN.md`](docs/INTEGRATION_PLAN.md) — Four Cs extension + how every new module wires into the existing pipeline.
 - [`docs/ROLES.md`](docs/ROLES.md) — Role model + 3-layer enforcement.
 - [`docs/COMPANY_BRAIN.md`](docs/COMPANY_BRAIN.md) — gbrain + Qdrant + Postgres design.
 - [`docs/GRAPHITI.md`](docs/GRAPHITI.md) — Temporal knowledge graph (Neo4j) bridged from gbrain.

@@ -1,0 +1,24 @@
+id: self.level_up
+version: 1
+scope: shared
+mode_aware: true
+agent_kind: hermes
+title: Weekly level-up suggestions
+description: |
+  Reads the most recent self.audit report and proposes concrete improvements:
+  new routines to set up, skills to enable, governance rules to tighten.
+  In single_user mode the suggestions are personal ("you keep dropping
+  follow-ups on Wednesdays — want a Wednesday-evening sweep routine?").
+  In multi_user mode the suggestions can target departments. Output is
+  persisted as an `ops.audit_report` row of kind=level_up.
+inputs:
+  audit_report_id:
+    type: string
+    format: uuid
+    description: |
+      Source audit to draw from. Defaults to the most recent self.audit
+      for the caller's scope.
+side_effects: read
+permissions:
+  required_role: owner
+  approval_under: 0

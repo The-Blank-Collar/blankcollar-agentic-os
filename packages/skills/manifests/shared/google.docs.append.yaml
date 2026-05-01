@@ -1,0 +1,21 @@
+id: google.docs.append
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Append to a Google Doc
+description: |
+  Appends a markdown block to an existing Google Doc, identified by
+  document_id (Drive ID). Useful for daily-journal patterns where the
+  daily briefing also lands in a long-running doc.
+inputs:
+  document_id:
+    type: string
+    required: true
+  markdown:
+    type: string
+    required: true
+side_effects: external
+permissions:
+  required_role: any
+  approval_under: 0

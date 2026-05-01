@@ -1,0 +1,22 @@
+id: google.gmail.search
+version: 1
+scope: shared
+mode_aware: true
+agent_kind: openclaw
+title: Search Gmail
+description: |
+  Searches the user's Gmail via Nango's Google connection. Returns a list
+  of matching message threads with snippets. In single-user mode this is
+  always your inbox; in multi-user mode the connection_id determines whose.
+inputs:
+  query:
+    type: string
+    required: true
+    description: Gmail search syntax (e.g. "from:alice newer_than:7d").
+  max_results:
+    type: integer
+    default: 10
+side_effects: read
+permissions:
+  required_role: any
+  approval_under: 0

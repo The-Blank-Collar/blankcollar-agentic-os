@@ -136,6 +136,105 @@ CREATE INDEX IF NOT EXISTS run_goal_idx   ON ops.run (goal_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS run_status_idx ON ops.run (status, created_at);
 
 -- =============================================================================
+-- ops: goal kind + first-class fields (was: jsonb metadata)
+-- The user-facing primitive is "things on your plate" — internally a goal can be:
+--   ephemeral  — one-off task, runs once and archives
+--   standing   — long-lived objective with key results
+--   routine    — recurring on a cron schedule
+--   decision   — single yes/no awaiting the user
+-- =============================================================================
+DO $$ BEGIN
+    CREATE TYPE ops.goal_kind AS ENUM ('ephemeral', 'standing', 'routine', 'decision');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+ALTER TABLE ops.goal
+    ADD COLUMN IF NOT EXISTS kind          ops.goal_kind NOT NULL DEFAULT 'ephemeral',
+    ADD COLUMN IF NOT EXISTS cron_expr     text,
+    ADD COLUMN IF NOT EXISTS due_at        timestamptz,
+    ADD COLUMN IF NOT EXISTS progress      numeric(5,2),
+    ADD COLUMN IF NOT EXISTS target_value  text,
+    ADD COLUMN IF NOT EXISTS actual_value  text,
+    ADD COLUMN IF NOT EXISTS delta_label   text,
+    ADD COLUMN IF NOT EXISTS track_state   text;
+
+CREATE INDEX IF NOT EXISTS goal_kind_idx     ON ops.goal (org_id, kind, status);
+CREATE INDEX IF NOT EXISTS goal_due_idx      ON ops.goal (org_id, due_at) WHERE due_at IS NOT NULL;
+
+-- Key results — only meaningful for kind='standing', but available everywhere.
+CREATE TABLE IF NOT EXISTS ops.key_result (
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    goal_id        uuid NOT NULL REFERENCES ops.goal(id) ON DELETE CASCADE,
+    label          text NOT NULL,
+    target_value   text,
+    current_value  text,
+    unit           text,
+    weight         numeric(6,3) NOT NULL DEFAULT 1.0,
+    due_at         timestamptz,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    updated_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS key_result_goal_idx ON ops.key_result (goal_id);
+
+-- Contributors — humans and agents that work on a goal together.
+CREATE TABLE IF NOT EXISTS ops.goal_contributor (
+    goal_id      uuid NOT NULL REFERENCES ops.goal(id) ON DELETE CASCADE,
+    agent_id     uuid REFERENCES ops.agent(id) ON DELETE CASCADE,
+    user_id      uuid REFERENCES core.user_account(id) ON DELETE CASCADE,
+    added_at     timestamptz NOT NULL DEFAULT now(),
+    -- Exactly one of agent_id / user_id is set per row.
+    CHECK ( (agent_id IS NOT NULL)::int + (user_id IS NOT NULL)::int = 1 )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS goal_contributor_agent_uniq
+    ON ops.goal_contributor (goal_id, agent_id) WHERE agent_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS goal_contributor_user_uniq
+    ON ops.goal_contributor (goal_id, user_id)  WHERE user_id  IS NOT NULL;
+
+-- =============================================================================
+-- ops: briefing — generated editorial summary (daily / weekly / on_demand)
+-- Not a button; a real resource. Hermes writes the copy in brand voice.
+-- =============================================================================
+DO $$ BEGIN
+    CREATE TYPE ops.briefing_kind AS ENUM ('daily', 'weekly', 'on_demand');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS ops.briefing (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+    kind          ops.briefing_kind NOT NULL,
+    generated_at  timestamptz NOT NULL DEFAULT now(),
+    period_start  timestamptz,
+    period_end    timestamptz,
+    summary_md    text NOT NULL,
+    sources       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    audio_url     text
+);
+CREATE INDEX IF NOT EXISTS briefing_org_kind_idx
+    ON ops.briefing (org_id, kind, generated_at DESC);
+
+-- =============================================================================
+-- ops: capture — every raw thing the user throws at the system before it
+-- gets classified into the right downstream shape. Email forward, voice memo,
+-- typed text, photo, webhook payload. The audit trail of "what did you tell
+-- me, and what did I do with it."
+-- =============================================================================
+DO $$ BEGIN
+    CREATE TYPE ops.capture_source AS ENUM ('text', 'email', 'voice', 'image', 'webhook');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS ops.capture (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id          uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+    actor_id        uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+    source          ops.capture_source NOT NULL,
+    raw_content     text NOT NULL,
+    parsed_intent   jsonb,
+    resolved_to_id  uuid,
+    resolved_kind   text,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS capture_org_idx ON ops.capture (org_id, created_at DESC);
+
+-- =============================================================================
 -- brain: memory metadata (vectors themselves live in Qdrant)
 -- =============================================================================
 DO $$ BEGIN
