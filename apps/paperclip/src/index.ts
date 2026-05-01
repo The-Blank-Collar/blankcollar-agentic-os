@@ -14,6 +14,8 @@ import { briefingRoutes } from "./routes/briefings.js";
 import { captureRoutes } from "./routes/captures.js";
 import { goalRoutes } from "./routes/goals.js";
 import { healthRoutes } from "./routes/health.js";
+import { heartbeatRoutes } from "./routes/heartbeat.js";
+import { inboxRoutes } from "./routes/inbox.js";
 import { keyResultRoutes } from "./routes/keyresults.js";
 import { orgRoutes } from "./routes/orgs.js";
 import { runRoutes } from "./routes/runs.js";
@@ -50,6 +52,8 @@ async function main(): Promise<void> {
   await app.register(keyResultRoutes);
   await app.register(captureRoutes);
   await app.register(briefingRoutes);
+  await app.register(inboxRoutes);
+  await app.register(heartbeatRoutes);
   await app.register(runRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);

@@ -68,9 +68,13 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] `ops.briefing` table + `/api/briefing/today`, `/api/briefing/generate` (templated v0)
 - [x] `ops.capture` table + `POST /api/capture` (the user's verb) with heuristic classifier
 - [x] Idempotent additive migrations apply on every Paperclip boot
+- [x] `GET /api/inbox` — decisions / blocked / drafts feed, urgency-ordered
+- [x] `GET /api/heartbeat` — 14-day system pulse (captures, runs, goals, activity)
+- [x] `GET /api/agents/:id/state` — live / idle / warn + current activity + sigil seed
 - [ ] Hermes-narrated briefings (swap-in for the templated renderer)
 - [ ] Scheduled daily briefing job (cron-like in-process scheduler)
-- [ ] `/api/inbox`, `/api/heartbeat`, `/api/agents/:id/state` (unblock the UI rails)
+- [ ] Single-user `make personal` bootstrap (one user, one org, default agents, brand voice)
+- [ ] RLS policies (belt-and-suspenders alongside in-code scope filters)
 
 ## Phase 4 — Goal Command Centre
 

@@ -119,6 +119,45 @@ POST /briefing/generate
 → 201 { ...briefing }
 ```
 
+### Inbox
+
+The Inbox answers the only question that matters: "what wants me?" It's not a folder of unread emails — it's the prioritised feed of things waiting on the human. v0 sources three item kinds; Phase 5 adds approval requests from the policy engine.
+
+```http
+GET /inbox?limit=20
+→ 200 [{
+  "item_kind": "decision" | "blocked" | "draft",
+  "goal_id": "<uuid>",
+  "title": "Should I extend the offer to candidate C-019?",
+  "created_at": "...",
+  "urgency": "urgent" | "normal",
+  "metadata": { ... }
+}]
+```
+
+Ordering: urgent first, then by item kind (decisions before drafts before blocked), then most-recent.
+
+### Heartbeat
+
+14-day system pulse for the design's sparkline rail and the Goal Detail timeline. v0 reports what we have data for; richer business KPIs (ARR, pipeline, margin) land when Stripe / CRM data is connected.
+
+```http
+GET /heartbeat?days=14
+→ 200 {
+  "period_days": 14,
+  "period_start": "...",
+  "period_end": "...",
+  "series": [
+    { "kpi": "captures",       "label": "Captures",        "unit": "count",  "points": [{ "date": "2026-04-15", "value": 3 }, ...] },
+    { "kpi": "runs_completed", "label": "Runs completed",  "unit": "count",  "points": [...] },
+    { "kpi": "goals_active",   "label": "Goals in flight", "unit": "count",  "points": [...] },
+    { "kpi": "activity",       "label": "Activity",        "unit": "events", "points": [...] }
+  ]
+}
+```
+
+Series are date-aligned (one point per day, missing days = 0) so the frontend can chart them directly without re-aligning.
+
 ### Runs
 
 ```http
@@ -152,6 +191,20 @@ POST /agents
 GET /agents?is_active=true
 PATCH /agents/{id}      # config edit, name, is_active=false (fire)
 ```
+
+```http
+GET /agents/{id}/state
+→ 200 {
+  ...agent,
+  "status": "live" | "idle" | "warn",
+  "current_activity": "Working on: <goal title>" | null,
+  "last_run": { ...run } | null,
+  "recent_runs": [{ ...run, "goal_title": "..." }],
+  "sigil_seed": "<deterministic>"     # used by the UI for the agent's geometric mark
+}
+```
+
+`status` is derived: `live` if there's a running run, `warn` if the most-recent terminal run failed, `idle` otherwise. `sigil_seed` is stable across requests so the visual identity is constant.
 
 ### Audit
 

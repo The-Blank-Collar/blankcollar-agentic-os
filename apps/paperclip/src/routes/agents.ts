@@ -15,6 +15,36 @@ type AgentRow = {
   created_at: string;
 };
 
+type RunRow = {
+  id: string;
+  goal_id: string;
+  status: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  goal_title: string | null;
+};
+
+export type AgentState = AgentRow & {
+  status: "live" | "idle" | "warn";
+  current_activity: string | null;
+  last_run: RunRow | null;
+  recent_runs: RunRow[];
+  sigil_seed: string;
+};
+
+/**
+ * Deterministic sigil seed used by the UI to render the agent's geometric
+ * mark. Stable across requests so the visual identity is constant.
+ */
+export function sigilSeed(agent: { id: string; name: string; kind: string }): string {
+  const slug = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${slug}-${agent.kind}-${agent.id.slice(0, 8)}`;
+}
+
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { is_active?: string } }>("/api/agents", async (req) => {
     const scope = await resolveCallerScope(req);
@@ -100,5 +130,66 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!result) return reply.code(404).send({ error: "not_found" });
     return result;
+  });
+
+  // -- per-agent state ----------------------------------------------------
+  // Powers the design's Live agents rail and Team page. All derived from
+  // existing data — config.activity is the static description, the live
+  // status comes from ops.run.
+  app.get<{ Params: { id: string } }>("/api/agents/:id/state", async (req, reply) => {
+    const scope = await resolveCallerScope(req);
+    const { rows: agentRows } = await query<AgentRow>(
+      `SELECT id, org_id, kind, name, config, is_active, created_at
+         FROM ops.agent WHERE id = $1 AND org_id = $2`,
+      [req.params.id, scope.org_id],
+    );
+    if (agentRows.length === 0) return reply.code(404).send({ error: "not_found" });
+    const agent = agentRows[0]!;
+
+    const { rows: runRows } = await query<RunRow>(
+      `SELECT r.id, r.goal_id, r.status, r.input, r.output, r.error,
+              r.started_at, r.finished_at, r.created_at, g.title AS goal_title
+         FROM ops.run r
+         JOIN ops.goal g ON g.id = r.goal_id
+        WHERE r.agent_id = $1 AND g.org_id = $2
+        ORDER BY r.created_at DESC
+        LIMIT 5`,
+      [agent.id, scope.org_id],
+    );
+
+    const live = runRows.find((r) => r.status === "running") ?? null;
+    const lastTerminal = runRows.find((r) =>
+      r.status === "succeeded" || r.status === "failed" || r.status === "cancelled",
+    ) ?? null;
+
+    let status: AgentState["status"] = "idle";
+    let current_activity: string | null = null;
+    if (live) {
+      status = "live";
+      const inputSubtask = (live.input as { subtask?: { title?: string } } | null)?.subtask;
+      current_activity = inputSubtask?.title
+        ? `Working on: ${inputSubtask.title}`
+        : live.goal_title
+          ? `Working on: ${live.goal_title}`
+          : "Working";
+    } else if (lastTerminal && lastTerminal.status === "failed") {
+      status = "warn";
+      current_activity = lastTerminal.error
+        ? `Last task failed: ${lastTerminal.error.slice(0, 120)}`
+        : "Last task failed";
+    } else {
+      const fallback = (agent.config as { activity?: string } | null)?.activity;
+      current_activity = fallback ?? null;
+    }
+
+    const state: AgentState = {
+      ...agent,
+      status,
+      current_activity,
+      last_run: lastTerminal ?? live ?? null,
+      recent_runs: runRows,
+      sigil_seed: sigilSeed(agent),
+    };
+    return state;
   });
 }
