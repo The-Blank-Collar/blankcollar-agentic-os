@@ -57,15 +57,31 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [ ] Email send skill *(deferred to Phase 5 alongside the policy engine)*
 - [ ] WebSocket telemetry *(deferred — polling is sufficient for v0)*
 
+## Phase 3.5 — Backend Tightening (single-user first) ✅ in progress
+
+**Goal:** lock the API contract before the React console handoff. Soften the goal-first language without breaking the goal-first model.
+
+- [x] `ops.goal` gets a `kind` enum (`ephemeral` | `standing` | `routine` | `decision`)
+- [x] `ops.goal` first-class columns: `cron_expr`, `due_at`, `progress`, `target_value`, `actual_value`, `delta_label`, `track_state`
+- [x] `ops.key_result` table + CRUD routes; embedded in `GET /api/goals/:id`
+- [x] `ops.goal_contributor` table (humans + agents per goal)
+- [x] `ops.briefing` table + `/api/briefing/today`, `/api/briefing/generate` (templated v0)
+- [x] `ops.capture` table + `POST /api/capture` (the user's verb) with heuristic classifier
+- [x] Idempotent additive migrations apply on every Paperclip boot
+- [ ] Hermes-narrated briefings (swap-in for the templated renderer)
+- [ ] Scheduled daily briefing job (cron-like in-process scheduler)
+- [ ] `/api/inbox`, `/api/heartbeat`, `/api/agents/:id/state` (unblock the UI rails)
+
 ## Phase 4 — Goal Command Centre
 
-**Goal:** the dashboard becomes the *thing*. Goal-first UX, not API-first.
+**Goal:** the dashboard becomes the *thing*. Goal-first UX, not API-first. The console replaces Paperclip's htmx UI; built against the Phase-3.5 contract.
 
-- [ ] Beautiful goal cards (status, blockers, next decision)
-- [ ] Department views
-- [ ] Plan review/approve flow
+- [ ] Vite + React console at `apps/website/` (Swiss editorial, dark-first)
+- [ ] Capture-first input ("what's on your mind") instead of "create a goal"
+- [ ] Daily briefing as the front door (replaces the goals list as default)
+- [ ] Goal cards differentiated by `kind` (decision card / routine card / standing card)
 - [ ] Drill-down to runs and (only on demand) raw agent traces
-- [ ] Mobile-friendly read view
+- [ ] Mobile-friendly read view (deferred until desktop ships)
 
 ## Phase 5 — Intelligence Layer
 

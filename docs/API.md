@@ -21,26 +21,102 @@ Base URL (local): `http://localhost:3000/api`.
 
 ### Goals
 
+A goal is the internal planning primitive — but the user never types "create a goal". They send natural language to `/capture` (below), and the classifier resolves it into one of four kinds:
+
+- **`ephemeral`** — one-off task, runs once, archives
+- **`standing`** — long-lived objective with key results
+- **`routine`** — recurring on a cron schedule
+- **`decision`** — single yes/no awaiting the user
+
 ```http
 POST /goals
 {
   "title": "Reach 1k newsletter subscribers by July",
   "description": "...",
   "department_id": "<uuid|null>",
-  "metadata": { "kpi": "subscribers", "target": 1000, "due": "2026-07-01" }
+  "kind": "standing",                   # default: ephemeral
+  "cron_expr": "0 9 * * 1",             # only meaningful for kind=routine
+  "due_at": "2026-07-01T00:00:00Z",
+  "target_value": "1000",
+  "metadata": { ... }
 }
-→ 201 { "id": "<uuid>", "status": "draft" }
+→ 201 { "id", "kind", "status": "draft", ... }
 ```
 
 ```http
-GET /goals?status=active&department_id=<uuid>
+GET /goals?status=active&kind=standing&department_id=<uuid>
 → 200 [{ ...goal }]
 ```
 
 ```http
 GET /goals/{id}
-PATCH /goals/{id}      # title, description, metadata, status transition
+→ 200 { ...goal,
+         "key_results": [{ id, label, target_value, current_value, unit, weight, due_at, ... }],
+         "contributors": [{ agent_id|user_id, added_at }] }
+
+PATCH /goals/{id}      # title, description, kind, cron_expr, due_at,
+                       # progress, target_value, actual_value, delta_label,
+                       # track_state, metadata, status
 DELETE /goals/{id}     # soft archive
+```
+
+### Key results
+
+```http
+GET    /goals/{id}/key-results       → 200 [{ ...kr }]
+POST   /goals/{id}/key-results       { "label", "target_value?", "current_value?", "unit?", "weight?", "due_at?" } → 201
+PATCH  /key-results/{id}             → 200
+DELETE /key-results/{id}             → 204
+```
+
+### Captures (the user's verb)
+
+The user never says "create a goal." They throw raw text (or email / voice / image later) at `/capture`. The classifier resolves it to the right downstream shape (today: a goal of one of the four kinds; tomorrow: also memories, decisions, contacts).
+
+```http
+POST /capture
+{
+  "raw_content": "Every Monday morning, summarise the weekend in my inboxes",
+  "source": "text" | "email" | "voice" | "image" | "webhook",
+  "metadata?": {}
+}
+→ 201 {
+  "capture_id": "<uuid>",
+  "goal_id": "<uuid>",
+  "intent": { "kind": "routine", "title": "...", "cron_expr": "0 8 * * 1" },
+  "created_at": "..."
+}
+```
+
+```http
+GET /capture
+→ 200 [{ id, source, raw_content, parsed_intent, resolved_to_id, resolved_kind, created_at }]
+```
+
+The capture row is the audit trail of "what did you tell me, and what did I do with it."
+
+### Briefings
+
+A briefing is a generated editorial summary — not a button, a real resource. v0 templates the markdown deterministically from current state; Phase 5 routes the same input through Hermes for narrative prose in brand voice.
+
+```http
+GET /briefing/today
+→ 200 { id, kind: "daily", generated_at, period_start, period_end,
+         summary_md, sources: { hours, goal_count, decision_count, run_count, ... },
+         audio_url? }
+```
+
+If today's daily briefing doesn't exist yet, this endpoint generates one on demand and persists it.
+
+```http
+GET /briefing?kind=weekly&limit=14
+→ 200 [{ ...briefing }]
+```
+
+```http
+POST /briefing/generate
+{ "kind": "daily" | "weekly" | "on_demand", "period_hours?": 24 }
+→ 201 { ...briefing }
 ```
 
 ### Runs

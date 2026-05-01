@@ -4,14 +4,17 @@ import formbody from "@fastify/formbody";
 import Fastify from "fastify";
 
 import { authPreHandler } from "./auth.js";
-import { ensureDefaultAgents } from "./bootstrap.js";
+import { applyAdditiveMigrations, ensureDefaultAgents } from "./bootstrap.js";
 import { config } from "./config.js";
 import { close as closeDb } from "./db.js";
 import { worker } from "./queue/worker.js";
 import { agentRoutes } from "./routes/agents.js";
 import { auditRoutes } from "./routes/audit.js";
+import { briefingRoutes } from "./routes/briefings.js";
+import { captureRoutes } from "./routes/captures.js";
 import { goalRoutes } from "./routes/goals.js";
 import { healthRoutes } from "./routes/health.js";
+import { keyResultRoutes } from "./routes/keyresults.js";
 import { orgRoutes } from "./routes/orgs.js";
 import { runRoutes } from "./routes/runs.js";
 import { uiRoutes } from "./routes/ui.js";
@@ -44,6 +47,9 @@ async function main(): Promise<void> {
   await app.register(healthRoutes);
   await app.register(orgRoutes);
   await app.register(goalRoutes);
+  await app.register(keyResultRoutes);
+  await app.register(captureRoutes);
+  await app.register(briefingRoutes);
   await app.register(runRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
@@ -58,6 +64,14 @@ async function main(): Promise<void> {
       `<!doctype html><body style="font-family:system-ui;background:#0b0d10;color:#e7eaee;display:grid;place-items:center;min-height:100vh"><div style="text-align:center"><h1>Not found</h1><p><a style="color:#7aa7ff" href="/">← Goals</a></p></div></body>`,
     );
   });
+
+  // Additive schema migrations — idempotent, run every boot so existing dev
+  // volumes don't need a wipe to pick up new tables.
+  try {
+    await applyAdditiveMigrations({ info: (msg) => app.log.info(msg) });
+  } catch (err) {
+    app.log.error({ err }, "additive migrations failed");
+  }
 
   // First-boot bootstrap: ensure Hermes + OpenClaw rows exist in ops.agent.
   try {
