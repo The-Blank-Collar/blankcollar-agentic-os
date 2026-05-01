@@ -34,7 +34,7 @@ export type GoalsSummary = {
     active: number;
     paused: number;
     achieved: number;
-    abandoned: number;
+    archived: number;
   };
   stalled_count: number;
 };
@@ -90,7 +90,7 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
         active: string;
         paused: string;
         achieved: string;
-        abandoned: string;
+        archived: string;
       }>(
         `SELECT
             COUNT(*)::text                                         AS total,
@@ -102,7 +102,7 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
             COUNT(*) FILTER (WHERE status = 'active')::text        AS active,
             COUNT(*) FILTER (WHERE status = 'paused')::text        AS paused,
             COUNT(*) FILTER (WHERE status = 'achieved')::text      AS achieved,
-            COUNT(*) FILTER (WHERE status = 'abandoned')::text     AS abandoned
+            COUNT(*) FILTER (WHERE status = 'archived')::text     AS archived
            FROM ops.goal
           WHERE org_id = $1`,
         [scope.org_id],
@@ -133,7 +133,7 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
           active: Number(r.active ?? "0"),
           paused: Number(r.paused ?? "0"),
           achieved: Number(r.achieved ?? "0"),
-          abandoned: Number(r.abandoned ?? "0"),
+          archived: Number(r.archived ?? "0"),
         },
         stalled_count: Number(stalledRows[0]?.stalled ?? "0"),
       };

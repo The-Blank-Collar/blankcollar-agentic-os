@@ -42,7 +42,7 @@ type GoalsSummary = {
     active: number;
     paused: number;
     achieved: number;
-    abandoned: number;
+    archived: number;
   };
   stalled_count: number;
 };
@@ -70,7 +70,7 @@ export async function runGoalsList(args: ParsedArgs, client: Client): Promise<nu
       `  active     ${sum.by_status.active}`,
       `  paused     ${sum.by_status.paused}`,
       `  achieved   ${sum.by_status.achieved}`,
-      `  abandoned  ${sum.by_status.abandoned}`,
+      `  archived  ${sum.by_status.archived}`,
     ];
     emit("pretty", lines.join("\n"));
     return 0;

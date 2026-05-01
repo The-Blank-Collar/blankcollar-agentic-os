@@ -321,7 +321,7 @@ GET /goals/summary?stalled_days=7
 → 200 {
   "total":         42,
   "by_kind":       { "ephemeral": 12, "standing": 6, "routine": 4, "decision": 20 },
-  "by_status":     { "draft": 1, "active": 30, "paused": 3, "achieved": 7, "abandoned": 1 },
+  "by_status":     { "draft": 1, "active": 30, "paused": 3, "achieved": 7, "archived": 1 },
   "stalled_count": 5
 }
 ```

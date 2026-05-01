@@ -14,6 +14,14 @@ COMMANDS
   goals --stalled[=N]      list goals with no run activity in N days (default 7)
   goal <id>                show one goal with KRs + contributors
   goal <id> --stats        + run rollup (totals, avg duration, last run)
+  close <goal_id>          mark a goal achieved
+  pause <goal_id>          pause a goal (becomes blocked in inbox)
+  resume <goal_id>         resume a paused goal
+  archive <goal_id>        archive a goal
+  kr list <goal_id>        list key results on a goal
+  kr add <goal_id> <label> [--target=N --current=N --unit=X --due=ISO]
+  kr set <kr_id> <value> [--unit=X]   update a KR's current value
+  kr rm <kr_id>            delete a KR
   briefing                 today's editorial briefing
   agents                   list active agents
   agent <id>               show one agent's live state + recent runs

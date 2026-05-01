@@ -15,8 +15,10 @@ import { runAudit, runLevelUp } from "./commands/audit.js";
 import { runBriefing } from "./commands/briefing.js";
 import { runCapture } from "./commands/capture.js";
 import { runChannels } from "./commands/channels.js";
+import { runGoalStatus } from "./commands/goal-status.js";
 import { runGoalGet, runGoalResolve, runGoalsList } from "./commands/goals.js";
 import { runHealth } from "./commands/health.js";
+import { runKrAdd, runKrList, runKrRm, runKrSet } from "./commands/kr.js";
 import { runHelp } from "./commands/help.js";
 import { runInboxAck, runInboxList } from "./commands/inbox.js";
 import { runKnowledgeGet, runKnowledgeList } from "./commands/knowledge.js";
@@ -57,6 +59,23 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runGoalsList(args, client);
       case "goal":
         return await runGoalGet(args, client);
+      case "close":
+      case "pause":
+      case "resume":
+      case "archive":
+        return await runGoalStatus(args, client);
+
+      case "kr": {
+        const verb = args.positional[0];
+        const sub = { ...args, positional: args.positional.slice(1) };
+        if (verb === "add")  return await runKrAdd(sub, client);
+        if (verb === "set")  return await runKrSet(sub, client);
+        if (verb === "rm" || verb === "remove") return await runKrRm(sub, client);
+        if (verb === "list" || verb === undefined) return await runKrList(sub, client);
+        process.stderr.write(`unknown kr verb: ${verb}\n`);
+        process.stderr.write("usage: bc kr (list|add|set|rm) <args>\n");
+        return 2;
+      }
       case "approve":
       case "decline": {
         // For decision goals: bc approve <goal_id>; for approvals queue:
