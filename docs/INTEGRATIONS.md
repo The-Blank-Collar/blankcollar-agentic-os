@@ -64,6 +64,8 @@ External systems Blank Collar talks to (or will). Each section covers: what it's
 - Replay attacks if signature verification is skipped — never skip it.
 - Race conditions on subscription state changes — handle webhooks idempotently.
 
+**Deep dive:** [`docs/STRIPE.md`](STRIPE.md) — webhook flow, schema, security rules, runbook.
+
 ## Inbound email (`agent@blankcollar.ai`)
 
 **For:** turning emails into goals or memories. The customer-facing "send a request to your agent" flow.
