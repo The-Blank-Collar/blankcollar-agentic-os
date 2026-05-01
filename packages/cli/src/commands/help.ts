@@ -40,7 +40,8 @@ COMMANDS
   knowledge get <slug>     show one doc + backlinks
   channels                 connected providers + sentinel rows
   depts                    list departments + active goal counts
-  brain                    print the constellation graph (json only)
+  brain                    constellation graph (json by default)
+  brain --summary          counts per node/edge kind
   runs --goal=<id>         list runs on a goal
   run <id> [--watch]       single run; --watch streams live status via SSE
   routines                 list active kind=routine goals + next cron fire

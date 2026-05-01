@@ -12,6 +12,7 @@ import { parseArgv } from "./argv.js";
 import { runAgentGet, runAgentsList } from "./commands/agents.js";
 import { runApprovalResolve, runApprovalsList } from "./commands/approvals.js";
 import { runAudit, runLevelUp } from "./commands/audit.js";
+import { runBrain } from "./commands/brain.js";
 import { runBriefing } from "./commands/briefing.js";
 import { runCapture } from "./commands/capture.js";
 import { runChannels } from "./commands/channels.js";
@@ -135,6 +136,9 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         }
         return await runKnowledgeList(args, client);
       }
+
+      case "brain":
+        return await runBrain(args, client);
 
       case "channels":
         return await runChannels(args, client);
