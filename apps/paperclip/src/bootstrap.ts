@@ -522,6 +522,38 @@ const ADDITIVE_MIGRATIONS = [
      WITH CHECK (current_setting('app.org_id', true) IS NULL
                  OR current_setting('app.org_id', true) = ''
                  OR org_id::text = current_setting('app.org_id', true));`,
+
+  // -- Phase B: privileged "system scope" sibling policy ------------------
+  // Cross-org tasks (worker run-claim, scheduler routine scan, briefing
+  // sweep, health counts) bind `app.system_scope = 'true'` via
+  // `withSystemScope()` in db.ts. PERMISSIVE policies are OR'd, so
+  // app_system_scope unblocks the row whenever the GUC is set. Adding it
+  // here is non-breaking: callers that don't set it continue to flow
+  // through app_scope_org's permissive-on-unset branch.
+  ...[
+    "ops.goal",
+    "ops.agent",
+    "ops.run",
+    "ops.key_result",
+    "ops.goal_contributor",
+    "ops.briefing",
+    "ops.capture",
+    "brain.memory",
+    "core.audit_log",
+    "ops.skill",
+    "ops.routine_trigger",
+    "ops.onboarding_profile",
+    "ops.audit_report",
+    "ops.knowledge_doc",
+    "ops.knowledge_link",
+    "ops.approval",
+  ].flatMap((tbl) => [
+    `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
+    `CREATE POLICY app_system_scope ON ${tbl}
+       AS PERMISSIVE FOR ALL
+       USING      (current_setting('app.system_scope', true) = 'true')
+       WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+  ]),
 ];
 
 export async function applyAdditiveMigrations(

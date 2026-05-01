@@ -67,6 +67,34 @@ export async function withOrgScope<T>(
   }
 }
 
+/**
+ * Privileged scope for cross-org system tasks: the worker claiming runs,
+ * the scheduler scanning all orgs for due routines, the bootstrap
+ * sweeping every org. Sets `app.system_scope = 'true'` so the
+ * `app_system_scope` policy fires and bypasses the normal per-org check.
+ *
+ * Use this sparingly — anything that touches user-facing requests must go
+ * through `withOrgScope()` instead. System scope is for the engine's own
+ * heartbeat, not for handler logic.
+ */
+export async function withSystemScope<T>(
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.system_scope', 'true', true)");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function close(): Promise<void> {
   await pool.end();
 }

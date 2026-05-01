@@ -35,7 +35,7 @@
 import { audit } from "./audit.js";
 import { composeBriefing } from "./briefing.js";
 import { config } from "./config.js";
-import { query, withOrgScope } from "./db.js";
+import { withOrgScope, withSystemScope } from "./db.js";
 import { generatePlan } from "./plan.js";
 import { fireRoutineFromTrigger, matchesEvent, type TriggerRow } from "./routines/triggers.js";
 import type { Scope } from "./schemas.js";
@@ -175,13 +175,16 @@ export class Scheduler {
     const since = this.lastTick;
     this.lastTick = now;
 
-    const { rows } = await query<RoutineRow>(
-      `SELECT id, org_id, title, description, cron_expr
-         FROM ops.goal
-        WHERE kind = 'routine'
-          AND status IN ('draft','active')
-          AND cron_expr IS NOT NULL`,
-    );
+    const rows = await withSystemScope(async (client) => {
+      const r = await client.query<RoutineRow>(
+        `SELECT id, org_id, title, description, cron_expr
+           FROM ops.goal
+          WHERE kind = 'routine'
+            AND status IN ('draft','active')
+            AND cron_expr IS NOT NULL`,
+      );
+      return r.rows;
+    });
 
     let fired = 0;
     for (const r of rows) {
@@ -236,37 +239,37 @@ export class Scheduler {
   }
 
   private async fireEventTriggers(since: Date, now: Date, log: Logger): Promise<number> {
-    // 1. Pull audit entries created in (since, now]. These are the events
-    //    that *might* match a trigger.
-    const { rows: events } = await query<{
-      id: string;
-      org_id: string | null;
-      action: string;
-      target_type: string | null;
-      target_id: string | null;
-      metadata: Record<string, unknown>;
-      created_at: string;
-    }>(
-      `SELECT id, org_id, action, target_type, target_id, metadata, created_at
-         FROM core.audit_log
-        WHERE created_at > $1 AND created_at <= $2
-        ORDER BY created_at ASC
-        LIMIT 500`,
-      [since.toISOString(), now.toISOString()],
-    );
+    // 1. Pull audit entries created in (since, now] and every enabled event
+    //    trigger — both cross-org scans, so they run under withSystemScope.
+    const { events, triggers } = await withSystemScope(async (client) => {
+      const ev = await client.query<{
+        id: string;
+        org_id: string | null;
+        action: string;
+        target_type: string | null;
+        target_id: string | null;
+        metadata: Record<string, unknown>;
+        created_at: string;
+      }>(
+        `SELECT id, org_id, action, target_type, target_id, metadata, created_at
+           FROM core.audit_log
+          WHERE created_at > $1 AND created_at <= $2
+          ORDER BY created_at ASC
+          LIMIT 500`,
+        [since.toISOString(), now.toISOString()],
+      );
+      const tr = await client.query<TriggerRow & { goal_org_id: string }>(
+        `SELECT t.id, t.goal_id, t.trigger_kind, t.trigger_spec,
+                t.enabled, t.last_fired_at, g.org_id AS goal_org_id
+           FROM ops.routine_trigger t
+           JOIN ops.goal g ON g.id = t.goal_id
+          WHERE t.trigger_kind = 'event'
+            AND t.enabled = true
+            AND g.status IN ('draft','active')`,
+      );
+      return { events: ev.rows, triggers: tr.rows };
+    });
     if (events.length === 0) return 0;
-
-    // 2. Pull every enabled event trigger. At v0 scale (one operator) the
-    //    set is tiny; we scan in-memory.
-    const { rows: triggers } = await query<TriggerRow & { goal_org_id: string }>(
-      `SELECT t.id, t.goal_id, t.trigger_kind, t.trigger_spec,
-              t.enabled, t.last_fired_at, g.org_id AS goal_org_id
-         FROM ops.routine_trigger t
-         JOIN ops.goal g ON g.id = t.goal_id
-        WHERE t.trigger_kind = 'event'
-          AND t.enabled = true
-          AND g.status IN ('draft','active')`,
-    );
     if (triggers.length === 0) return 0;
 
     let fires = 0;
@@ -299,18 +302,21 @@ export class Scheduler {
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
-    const { rows } = await query<{ id: string }>(
-      `SELECT DISTINCT o.id
-         FROM core.organization o
-        WHERE EXISTS (SELECT 1 FROM ops.goal g WHERE g.org_id = o.id)
-          AND NOT EXISTS (
-            SELECT 1 FROM ops.briefing b
-             WHERE b.org_id = o.id
-               AND b.kind = 'daily'
-               AND b.generated_at >= $1
-          )`,
-      [todayStart.toISOString()],
-    );
+    const rows = await withSystemScope(async (client) => {
+      const r = await client.query<{ id: string }>(
+        `SELECT DISTINCT o.id
+           FROM core.organization o
+          WHERE EXISTS (SELECT 1 FROM ops.goal g WHERE g.org_id = o.id)
+            AND NOT EXISTS (
+              SELECT 1 FROM ops.briefing b
+               WHERE b.org_id = o.id
+                 AND b.kind = 'daily'
+                 AND b.generated_at >= $1
+            )`,
+        [todayStart.toISOString()],
+      );
+      return r.rows;
+    });
 
     for (const o of rows) {
       try {
@@ -356,18 +362,21 @@ export class Scheduler {
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
-    const { rows: profiles } = await query<{
-      org_id: string;
-      user_id: string;
-      briefing_hour_utc: number;
-    }>(
-      `SELECT org_id, user_id, (derived->>'briefing_hour_utc')::int AS briefing_hour_utc
-         FROM ops.onboarding_profile
-        WHERE user_id IS NOT NULL
-          AND completed_at IS NOT NULL
-          AND derived ? 'briefing_hour_utc'
-          AND (derived->>'briefing_hour_utc') ~ '^[0-9]+$'`,
-    );
+    const profiles = await withSystemScope(async (client) => {
+      const r = await client.query<{
+        org_id: string;
+        user_id: string;
+        briefing_hour_utc: number;
+      }>(
+        `SELECT org_id, user_id, (derived->>'briefing_hour_utc')::int AS briefing_hour_utc
+           FROM ops.onboarding_profile
+          WHERE user_id IS NOT NULL
+            AND completed_at IS NOT NULL
+            AND derived ? 'briefing_hour_utc'
+            AND (derived->>'briefing_hour_utc') ~ '^[0-9]+$'`,
+      );
+      return r.rows;
+    });
 
     let fired = 0;
     for (const p of profiles) {

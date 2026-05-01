@@ -99,8 +99,8 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] **CLI surface fan-out** — `bc routines / triggers / fire` (manage cron + event + api routines), `bc inbox --summary` and `bc approvals --summary` (count-only badges), `bc search` (cross-corpus over goals/captures/knowledge/agents, ILIKE-based), `bc tail` (org-wide activity feed), `bc heartbeat` (block-character sparklines), `bc logs` (audit log viewer), `bc whoami`, `bc depts`, `bc close|pause|resume|archive <goal_id>`, `bc kr list|add|set|rm`, `bc capture --kind=<k>`, `bc briefing list`, `bc skills --scope|--agent`, `bc routines` shows next-cron-fire client-side. All subcommands honour `--json` / `--pretty`.
 - [x] **Stats + summary endpoints** — `GET /api/goals/summary` (kind/status rollup + stalled count), `GET /api/goals/:id/stats` (per-goal run rollup), `GET /api/agents/:id/stats` (per-agent lifetime rollup), `GET /api/activity` (org-wide chronological feed), `GET /api/inbox/summary`, `GET /api/approvals/summary`, `GET /api/whoami`, `GET /api/departments`, `GET /api/search`. All derived views over existing tables — no schema changes.
 - [x] **Stalled-goals filter** — `GET /api/goals?stalled_for_days=N` returns active/draft goals with no recent run activity; backs `bc goals --stalled[=N]`.
-- [ ] **withOrgScope Phase B flip** — privileged-role / SECURITY DEFINER for cross-org scans, then flip RLS unset branch to strict. Bounded follow-up.
-- [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
+- [x] **withOrgScope Phase B foundation** — `withSystemScope()` helper + `app_system_scope` PERMISSIVE policy on every RLS-enabled table. Worker run-claim, scheduler scans (routines/event-triggers/per-user briefings/missing-briefings), and health counts now run under system scope. Webhook capture migrated to `withOrgScope`.
+- [ ] **withOrgScope Phase B flip** — tighten `app_scope_org` to drop the permissive-on-unset branch (`IS NULL OR = ''`). Requires a full callsite audit first; deferred until every route is provably scoped.
 
 ## Phase 4 — Goal Command Centre
 

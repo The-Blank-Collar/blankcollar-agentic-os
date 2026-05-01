@@ -22,7 +22,7 @@
 
 import { audit } from "../audit.js";
 import { config } from "../config.js";
-import { tx, withOrgScope } from "../db.js";
+import { withOrgScope, withSystemScope } from "../db.js";
 import type { Scope } from "../schemas.js";
 import type { AdapterClient } from "./adapter-client.js";
 import { getAdapter, knownKinds } from "./registry.js";
@@ -83,7 +83,10 @@ export class Worker {
     type ClaimedRun = { id: string; goal_id: string; input: Record<string, unknown> };
     type ClaimedGoal = { id: string; org_id: string; department_id: string | null };
 
-    const claim = await tx(async (client) => {
+    // Cross-org claim: the worker doesn't yet know which org the run
+     // belongs to, so we run under withSystemScope. The downstream
+     // dispatch then re-binds to the run's actual org via withOrgScope.
+    const claim = await withSystemScope(async (client) => {
       const { rows } = await client.query<ClaimedRun>(
         `
         UPDATE ops.run

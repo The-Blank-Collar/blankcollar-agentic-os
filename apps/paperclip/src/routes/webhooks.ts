@@ -17,7 +17,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { audit } from "../audit.js";
-import { tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import {
   StripeSignatureError,
@@ -146,7 +146,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     const intent = classify(body.raw_content);
     const scope = await resolveCallerScope(req);
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const goalMetadata = {
         source: "webhook",
         capture_source: "webhook",

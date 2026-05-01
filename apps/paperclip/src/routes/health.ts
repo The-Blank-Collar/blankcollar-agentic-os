@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 import { config } from "../config.js";
 import { googleConnectorsReady } from "../connectors/google.js";
-import { query } from "../db.js";
+import { query, withSystemScope } from "../db.js";
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/health", async () => {
@@ -50,26 +50,31 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     probes.workspace = google.ok ? { ok: true } : { ok: false, error: google.reason };
 
     // -- Counts (no probe; informational) ---------------------------------
+    // Counts are deliberately cross-org — health is a system view, not a
+    // tenant view. Run under `withSystemScope` so the strict RLS policy
+    // doesn't block them when no caller scope is bound.
     let counts: Record<string, number> = {};
     try {
-      const { rows: [skillCount] } = await query<{ ct: string }>(
-        "SELECT count(*)::text AS ct FROM ops.skill WHERE enabled = true",
-      );
-      const { rows: [agentCount] } = await query<{ ct: string }>(
-        "SELECT count(*)::text AS ct FROM ops.agent WHERE is_active = true",
-      );
-      const { rows: [routineCount] } = await query<{ ct: string }>(
-        "SELECT count(*)::text AS ct FROM ops.goal WHERE kind = 'routine' AND status IN ('draft','active')",
-      );
-      const { rows: [pendingApprovalCount] } = await query<{ ct: string }>(
-        "SELECT count(*)::text AS ct FROM ops.approval WHERE resolution IS NULL",
-      );
-      counts = {
-        skills_enabled: Number(skillCount?.ct ?? 0),
-        agents_active: Number(agentCount?.ct ?? 0),
-        routines_active: Number(routineCount?.ct ?? 0),
-        approvals_pending: Number(pendingApprovalCount?.ct ?? 0),
-      };
+      counts = await withSystemScope(async (client) => {
+        const { rows: [skillCount] } = await client.query<{ ct: string }>(
+          "SELECT count(*)::text AS ct FROM ops.skill WHERE enabled = true",
+        );
+        const { rows: [agentCount] } = await client.query<{ ct: string }>(
+          "SELECT count(*)::text AS ct FROM ops.agent WHERE is_active = true",
+        );
+        const { rows: [routineCount] } = await client.query<{ ct: string }>(
+          "SELECT count(*)::text AS ct FROM ops.goal WHERE kind = 'routine' AND status IN ('draft','active')",
+        );
+        const { rows: [pendingApprovalCount] } = await client.query<{ ct: string }>(
+          "SELECT count(*)::text AS ct FROM ops.approval WHERE resolution IS NULL",
+        );
+        return {
+          skills_enabled: Number(skillCount?.ct ?? 0),
+          agents_active: Number(agentCount?.ct ?? 0),
+          routines_active: Number(routineCount?.ct ?? 0),
+          approvals_pending: Number(pendingApprovalCount?.ct ?? 0),
+        };
+      });
     } catch {
       counts = {};
     }
