@@ -91,6 +91,144 @@ const ADDITIVE_MIGRATIONS = [
      created_at      timestamptz NOT NULL DEFAULT now()
    );`,
   `CREATE INDEX IF NOT EXISTS capture_org_idx ON ops.capture (org_id, created_at DESC);`,
+
+  // -- Row-Level Security (Phase 3.5) ------------------------------------
+  // Belt-and-suspenders alongside the in-code resolveCallerScope() filters.
+  // Policies match `org_id` against the session GUC `app.org_id` when set;
+  // when unset (existing routes that don't opt in yet), they fall through
+  // to permissive — in-code filters remain authoritative. Routes opt in by
+  // running their queries inside `withOrgScope(orgId, fn)` from db.ts.
+  //
+  // Eventually unset = NONE (block), once every route has opted in. That
+  // flip is a one-line change to the policy expression.
+  `ALTER TABLE ops.goal             ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.goal             FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.run              ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.run              FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.agent            ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.agent            FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.key_result       ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.key_result       FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.goal_contributor ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.goal_contributor FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.briefing         ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.briefing         FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.capture          ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.capture          FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE brain.memory         ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE brain.memory         FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE core.audit_log       ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE core.audit_log       FORCE  ROW LEVEL SECURITY;`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.goal;`,
+  `CREATE POLICY app_scope_org ON ops.goal
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.agent;`,
+  `CREATE POLICY app_scope_org ON ops.agent
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  // ops.run is scoped via its parent goal (no direct org_id column).
+  `DROP POLICY IF EXISTS app_scope_org ON ops.run;`,
+  `CREATE POLICY app_scope_org ON ops.run
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.run.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.run.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ));`,
+
+  // ops.key_result + ops.goal_contributor — same parent-goal indirection.
+  `DROP POLICY IF EXISTS app_scope_org ON ops.key_result;`,
+  `CREATE POLICY app_scope_org ON ops.key_result
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.key_result.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.key_result.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.goal_contributor;`,
+  `CREATE POLICY app_scope_org ON ops.goal_contributor
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.goal_contributor.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.goal_contributor.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.briefing;`,
+  `CREATE POLICY app_scope_org ON ops.briefing
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.capture;`,
+  `CREATE POLICY app_scope_org ON ops.capture
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON brain.memory;`,
+  `CREATE POLICY app_scope_org ON brain.memory
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  // audit_log allows NULL org_id (rare — surfaces after org delete).
+  `DROP POLICY IF EXISTS app_scope_org ON core.audit_log;`,
+  `CREATE POLICY app_scope_org ON core.audit_log
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true));`,
 ];
 
 export async function applyAdditiveMigrations(

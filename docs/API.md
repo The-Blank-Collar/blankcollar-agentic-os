@@ -379,6 +379,24 @@ Headers: X-Blankcollar-Signature: hmac-sha256=...
 
 Verify with `INBOUND_EMAIL_WEBHOOK_SECRET`. Email becomes a memory of kind `conversation` plus, optionally, a new `goal` if the parser detects an actionable request.
 
+## Row-Level Security (Phase 3.5)
+
+Every org-scoped table (`ops.goal`, `ops.run`, `ops.agent`, `ops.key_result`, `ops.goal_contributor`, `ops.briefing`, `ops.capture`, `brain.memory`, `core.audit_log`) has RLS enabled with `FORCE ROW LEVEL SECURITY` so the policies apply to the application user, not just role-restricted users.
+
+The single policy (`app_scope_org`) checks the session GUC `app.org_id`:
+
+```sql
+USING (
+  current_setting('app.org_id', true) IS NULL
+  OR current_setting('app.org_id', true) = ''
+  OR org_id::text = current_setting('app.org_id', true)
+)
+```
+
+When the GUC is unset, the policy is permissive — in-code scope filters in `resolveCallerScope()` remain authoritative. Routes opt into RLS by running queries inside `withOrgScope(orgId, fn)` (see `apps/paperclip/src/db.ts`), which sets the GUC via `SET LOCAL` for the duration of the transaction. Once every route has migrated, the unset branch flips to `false` and RLS becomes the only enforcement.
+
+`ops.run`, `ops.key_result`, and `ops.goal_contributor` don't have a direct `org_id` column — their policy joins to `ops.goal` to derive scope.
+
 ## Versioning
 
 - All endpoints under `/api/v1/...` once Paperclip ships in Phase 2.

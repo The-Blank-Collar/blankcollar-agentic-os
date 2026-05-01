@@ -5,7 +5,9 @@ Loop:
   2. Fetch every UNSEEN message.
   3. For each message:
      - Write a `conversation` memory to gbrain.
-     - If the parser flags it actionable, also create a draft goal in Paperclip.
+     - If the parser flags it actionable, POST to Paperclip's /api/capture.
+       The classifier on the server decides goal kind (ephemeral / decision /
+       standing / routine).
      - Mark the message as SEEN.
   4. Sleep `EMAIL_POLL_INTERVAL_S`.
 
@@ -19,6 +21,7 @@ import asyncio
 import logging
 import os
 import time
+from typing import Any
 
 import httpx
 from imap_tools import AND, MailBox, MailBoxUnencrypted
@@ -26,7 +29,7 @@ from imap_tools import AND, MailBox, MailBoxUnencrypted
 from app import __version__
 from app.config import settings
 from app.parser import parse
-from app.sinks import create_draft_goal, get_org_id, write_conversation_memory
+from app.sinks import create_capture, get_org_id, write_conversation_memory
 
 HEARTBEAT_PATH = "/tmp/email-ingest.heartbeat"
 
@@ -84,21 +87,31 @@ async def _process_messages(client: httpx.AsyncClient, org_id: str) -> int:
                 metadata=metadata,
             )
 
-            goal_id: str | None = None
+            capture_result: dict[str, Any] | None = None
             if parsed.is_actionable:
-                goal_id = await create_draft_goal(
+                # Send the original email body (with sender + subject context)
+                # to /api/capture. Paperclip's classifier decides whether this
+                # is an ephemeral task, a decision, a standing goal, or a
+                # routine, and creates the right shape downstream.
+                capture_result = await create_capture(
                     client,
-                    title=parsed.goal_title,
-                    description=parsed.text,
+                    raw_content=parsed.memory_content,
                     metadata={**metadata, "memory_id": memory_id},
                 )
 
+            goal_id = capture_result.get("goal_id") if capture_result else None
+            intent_kind = (
+                (capture_result.get("intent") or {}).get("kind")
+                if capture_result
+                else None
+            )
             log.info(
-                "ingested uid=%s actionable=%s memory_id=%s goal_id=%s",
+                "ingested uid=%s actionable=%s memory_id=%s goal_id=%s kind=%s",
                 msg.uid,
                 parsed.is_actionable,
                 memory_id,
                 goal_id,
+                intent_kind,
             )
 
             # Only mark SEEN once we've stored it somewhere.

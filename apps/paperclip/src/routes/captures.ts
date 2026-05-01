@@ -96,6 +96,14 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
     const intent = classify(parsed.data.raw_content);
 
     const result = await tx(async (client) => {
+      // Pass the source through to the goal's metadata so downstream
+      // consumers (briefing, inbox) can attribute it to the right channel.
+      const goalMetadata = {
+        source: "capture",
+        capture_source: parsed.data.source,
+        ...(parsed.data.metadata ?? {}),
+      };
+
       // Create the downstream goal first so we can link the capture row.
       const { rows: goalRows } = await client.query<{ id: string }>(
         `INSERT INTO ops.goal (
@@ -111,11 +119,18 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
           intent.cron_expr ?? null,
           intent.due_at ?? null,
           intent.target_value ?? null,
-          JSON.stringify({ source: "capture" }),
+          JSON.stringify(goalMetadata),
         ],
       );
       const goalId = goalRows[0]!.id;
 
+      // The parsed_intent column captures both the classifier's output and
+      // any provenance metadata the caller passed in (sender, subject,
+      // message_id for emails; transcript_id for voice; etc.).
+      const parsedIntentRow = {
+        ...intent,
+        ...(parsed.data.metadata ? { metadata: parsed.data.metadata } : {}),
+      };
       const { rows: capRows } = await client.query<{ id: string; created_at: string }>(
         `INSERT INTO ops.capture (
            org_id, source, raw_content, parsed_intent, resolved_to_id, resolved_kind
@@ -126,7 +141,7 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
           scope.org_id,
           parsed.data.source,
           parsed.data.raw_content,
-          JSON.stringify(intent),
+          JSON.stringify(parsedIntentRow),
           goalId,
           "goal",
         ],

@@ -34,6 +34,39 @@ export async function tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<
   }
 }
 
+/**
+ * Run `fn` inside a transaction with the session GUC `app.org_id` bound to
+ * the caller's scope. Postgres RLS policies on every org-scoped table
+ * enforce `org_id = current_setting('app.org_id')` while inside this
+ * transaction. `SET LOCAL` ensures the binding is dropped automatically on
+ * COMMIT/ROLLBACK so pooled connections don't leak scope across requests.
+ *
+ * Routes opt in to RLS-enforced scope by running their queries through this
+ * helper instead of `tx()` directly. Eventually all routes migrate; the
+ * RLS policies' permissive default (unset = ALL) flips to NONE.
+ */
+export async function withOrgScope<T>(
+  orgId: string,
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // `set_config(name, value, is_local=true)` is the parameterised form
+    // of SET LOCAL — safe against injection for the value, plus survives
+    // the COMMIT boundary cleanly.
+    await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function close(): Promise<void> {
   await pool.end();
 }

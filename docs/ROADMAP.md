@@ -76,9 +76,10 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] Hermes-narrated briefings (Anthropic-direct, brand voice, templated fallback)
 - [x] In-process routine scheduler — fires `kind=routine` goals on `cron_expr`
 - [x] `make personal` — single-user bootstrap with personal org + default agents
-- [ ] RLS policies (belt-and-suspenders alongside in-code scope filters)
+- [x] Email-ingest service activated — IMAP poller writes conversation memories + POSTs actionable mail to `/api/capture`
+- [x] RLS policies on `ops.*`, `brain.memory`, `core.audit_log` — bound to session GUC `app.org_id` via `withOrgScope()`. Permissive default until routes migrate.
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
-- [ ] Email-ingest service activation (POST inbound mail → /api/capture)
+- [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
 
 ## Phase 4 — Goal Command Centre
 
