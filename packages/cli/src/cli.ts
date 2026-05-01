@@ -18,7 +18,9 @@ import { runChannels } from "./commands/channels.js";
 import { runGoalStatus } from "./commands/goal-status.js";
 import { runGoalGet, runGoalResolve, runGoalsList } from "./commands/goals.js";
 import { runHealth } from "./commands/health.js";
+import { runHeartbeat } from "./commands/heartbeat.js";
 import { runKrAdd, runKrList, runKrRm, runKrSet } from "./commands/kr.js";
+import { runLogs } from "./commands/logs.js";
 import { runHelp } from "./commands/help.js";
 import { runInboxAck, runInboxList } from "./commands/inbox.js";
 import { runKnowledgeGet, runKnowledgeList } from "./commands/knowledge.js";
@@ -152,6 +154,10 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runSearch(args, client);
       case "tail":
         return await runTail(args, client);
+      case "heartbeat":
+        return await runHeartbeat(args, client);
+      case "logs":
+        return await runLogs(args, client);
       case "whoami":
         return await runWhoami(args, client);
 
