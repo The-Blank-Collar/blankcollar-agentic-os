@@ -17,7 +17,7 @@
  */
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { narrate } from "../llm.js";
 import type { Scope } from "../schemas.js";
 
@@ -59,65 +59,75 @@ export async function composeAudit(
   const userFilter = userId ? "AND actor_id = $3" : "";
   const userParams = userId ? [orgId, periodStartIso, userId] : [orgId, periodStartIso];
 
-  const [
+  const {
     decisionsOpen,
     decisionsResolved,
     runsByStatus,
     capturesByKind,
     blockedGoals,
     auditTotal,
-  ] = await Promise.all([
-    query<{ ct: string }>(
-      `SELECT count(*)::text AS ct
-         FROM ops.goal
-        WHERE org_id = $1
-          AND kind = 'decision'
-          AND status IN ('draft','active')
-          AND created_at >= $2`,
-      [orgId, periodStartIso],
-    ),
-    query<{ ct: string }>(
-      `SELECT count(*)::text AS ct
-         FROM ops.goal
-        WHERE org_id = $1
-          AND kind = 'decision'
-          AND status IN ('achieved','archived')
-          AND updated_at >= $2`,
-      [orgId, periodStartIso],
-    ),
-    query<{ status: string; ct: string }>(
-      `SELECT r.status, count(*)::text AS ct
-         FROM ops.run r
-         JOIN ops.goal g ON g.id = r.goal_id
-        WHERE g.org_id = $1
-          AND r.created_at >= $2
-        GROUP BY r.status`,
-      [orgId, periodStartIso],
-    ),
-    query<{ source: string; ct: string }>(
-      `SELECT source::text AS source, count(*)::text AS ct
-         FROM ops.capture
-        WHERE org_id = $1
-          AND created_at >= $2
-        GROUP BY source`,
-      [orgId, periodStartIso],
-    ),
-    query<{ id: string; title: string }>(
-      `SELECT id, title
-         FROM ops.goal
-        WHERE org_id = $1
-          AND status = 'paused'
-          AND updated_at >= $2
-        LIMIT 10`,
-      [orgId, periodStartIso],
-    ),
-    query<{ ct: string }>(
-      `SELECT count(*)::text AS ct
-         FROM core.audit_log
-        WHERE org_id = $1 AND created_at >= $2 ${userFilter}`,
-      userParams,
-    ),
-  ]);
+  } = await withOrgScope(orgId, async (client) => {
+    const [d_open, d_res, runs, caps, blk, aud] = await Promise.all([
+      client.query<{ ct: string }>(
+        `SELECT count(*)::text AS ct
+           FROM ops.goal
+          WHERE org_id = $1
+            AND kind = 'decision'
+            AND status IN ('draft','active')
+            AND created_at >= $2`,
+        [orgId, periodStartIso],
+      ),
+      client.query<{ ct: string }>(
+        `SELECT count(*)::text AS ct
+           FROM ops.goal
+          WHERE org_id = $1
+            AND kind = 'decision'
+            AND status IN ('achieved','archived')
+            AND updated_at >= $2`,
+        [orgId, periodStartIso],
+      ),
+      client.query<{ status: string; ct: string }>(
+        `SELECT r.status, count(*)::text AS ct
+           FROM ops.run r
+           JOIN ops.goal g ON g.id = r.goal_id
+          WHERE g.org_id = $1
+            AND r.created_at >= $2
+          GROUP BY r.status`,
+        [orgId, periodStartIso],
+      ),
+      client.query<{ source: string; ct: string }>(
+        `SELECT source::text AS source, count(*)::text AS ct
+           FROM ops.capture
+          WHERE org_id = $1
+            AND created_at >= $2
+          GROUP BY source`,
+        [orgId, periodStartIso],
+      ),
+      client.query<{ id: string; title: string }>(
+        `SELECT id, title
+           FROM ops.goal
+          WHERE org_id = $1
+            AND status = 'paused'
+            AND updated_at >= $2
+          LIMIT 10`,
+        [orgId, periodStartIso],
+      ),
+      client.query<{ ct: string }>(
+        `SELECT count(*)::text AS ct
+           FROM core.audit_log
+          WHERE org_id = $1 AND created_at >= $2 ${userFilter}`,
+        userParams,
+      ),
+    ]);
+    return {
+      decisionsOpen: d_open,
+      decisionsResolved: d_res,
+      runsByStatus: runs,
+      capturesByKind: caps,
+      blockedGoals: blk,
+      auditTotal: aud,
+    };
+  });
 
   const findings: AuditFinding[] = [];
   const open = Number(decisionsOpen.rows[0]?.ct ?? 0);
@@ -191,17 +201,20 @@ export async function composeLevelUp(
   basisAuditId?: string,
 ): Promise<AuditReport> {
   // Pull the most recent audit if no specific id provided.
-  const { rows: auditRows } = basisAuditId
-    ? await query<{ id: string; period_start: string; period_end: string; findings: AuditFinding[] }>(
-        `SELECT id, period_start, period_end, findings FROM ops.audit_report
-          WHERE id = $1 AND org_id = $2 AND kind = 'audit'`,
-        [basisAuditId, orgId],
-      )
-    : await query<{ id: string; period_start: string; period_end: string; findings: AuditFinding[] }>(
-        `SELECT id, period_start, period_end, findings FROM ops.audit_report
-          WHERE org_id = $1 AND kind = 'audit' ORDER BY created_at DESC LIMIT 1`,
-        [orgId],
-      );
+  const auditRows = await withOrgScope(orgId, async (client) => {
+    const { rows } = basisAuditId
+      ? await client.query<{ id: string; period_start: string; period_end: string; findings: AuditFinding[] }>(
+          `SELECT id, period_start, period_end, findings FROM ops.audit_report
+            WHERE id = $1 AND org_id = $2 AND kind = 'audit'`,
+          [basisAuditId, orgId],
+        )
+      : await client.query<{ id: string; period_start: string; period_end: string; findings: AuditFinding[] }>(
+          `SELECT id, period_start, period_end, findings FROM ops.audit_report
+            WHERE org_id = $1 AND kind = 'audit' ORDER BY created_at DESC LIMIT 1`,
+          [orgId],
+        );
+    return rows;
+  });
   const periodEnd = new Date();
   const periodStart = auditRows[0]?.period_start
     ? new Date(auditRows[0].period_start)
@@ -278,7 +291,7 @@ export async function persistReport(
   report: AuditReport,
   userId?: string,
 ): Promise<{ id: string }> {
-  return tx(async (client) => {
+  return withOrgScope(scope.org_id, async (client) => {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO ops.audit_report (
          org_id, user_id, kind, period_start, period_end, summary_md,

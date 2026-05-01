@@ -17,7 +17,7 @@ import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { extractWikilinks, pushDocToBrain } from "../knowledge/wiki.js";
 import { resolveCallerScope } from "../scope.js";
 import { KnowledgeDocCreate, KnowledgeDocPatch, KnowledgeListQuery } from "../schemas.js";
@@ -85,62 +85,68 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       where.push(`(title ILIKE $${params.length} OR content_md ILIKE $${params.length})`);
     }
     params.push(parsed.data.limit);
-    const { rows } = await query<DocRow>(
-      `SELECT ${DOC_COLUMNS} FROM ops.knowledge_doc
-        WHERE ${where.join(" AND ")}
-        ORDER BY hot DESC, updated_at DESC
-        LIMIT $${params.length}`,
-      params,
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<DocRow>(
+        `SELECT ${DOC_COLUMNS} FROM ops.knowledge_doc
+          WHERE ${where.join(" AND ")}
+          ORDER BY hot DESC, updated_at DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      return rows;
+    });
   });
 
   // -- hot context (used by Hermes) ---------------------------------------
   app.get("/api/knowledge/hot", async (req) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<DocRow>(
-      `SELECT ${DOC_COLUMNS} FROM ops.knowledge_doc
-        WHERE hot = true AND (scope = 'shared' OR org_id = $1)
-        ORDER BY scope, updated_at DESC`,
-      [scope.org_id],
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<DocRow>(
+        `SELECT ${DOC_COLUMNS} FROM ops.knowledge_doc
+          WHERE hot = true AND (scope = 'shared' OR org_id = $1)
+          ORDER BY scope, updated_at DESC`,
+        [scope.org_id],
+      );
+      return rows;
+    });
   });
 
   // -- get one + neighbours ----------------------------------------------
   app.get<{ Params: { slug: string } }>("/api/knowledge/:slug", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<DocRow>(
-      `SELECT ${DOC_COLUMNS} FROM ops.knowledge_doc
-        WHERE slug = $1 AND (scope = 'shared' OR org_id = $2)
-        ORDER BY scope DESC LIMIT 1`,
-      [req.params.slug, scope.org_id],
-    );
-    if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
-    const doc = rows[0]!;
-
-    const [outbound, inbound] = await Promise.all([
-      query<{ slug: string; title: string; anchor: string | null }>(
-        `SELECT d.slug, d.title, l.anchor
-           FROM ops.knowledge_link l
-           JOIN ops.knowledge_doc d ON d.id = l.to_doc_id
-          WHERE l.from_doc_id = $1`,
-        [doc.id],
-      ),
-      query<{ slug: string; title: string }>(
-        `SELECT d.slug, d.title
-           FROM ops.knowledge_link l
-           JOIN ops.knowledge_doc d ON d.id = l.from_doc_id
-          WHERE l.to_doc_id = $1`,
-        [doc.id],
-      ),
-    ]);
-
-    return {
-      ...doc,
-      outbound_links: outbound.rows,
-      backlinks: inbound.rows,
-    };
+    const data = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<DocRow>(
+        `SELECT ${DOC_COLUMNS} FROM ops.knowledge_doc
+          WHERE slug = $1 AND (scope = 'shared' OR org_id = $2)
+          ORDER BY scope DESC LIMIT 1`,
+        [req.params.slug, scope.org_id],
+      );
+      if (rows.length === 0) return null;
+      const doc = rows[0]!;
+      const [outbound, inbound] = await Promise.all([
+        client.query<{ slug: string; title: string; anchor: string | null }>(
+          `SELECT d.slug, d.title, l.anchor
+             FROM ops.knowledge_link l
+             JOIN ops.knowledge_doc d ON d.id = l.to_doc_id
+            WHERE l.from_doc_id = $1`,
+          [doc.id],
+        ),
+        client.query<{ slug: string; title: string }>(
+          `SELECT d.slug, d.title
+             FROM ops.knowledge_link l
+             JOIN ops.knowledge_doc d ON d.id = l.from_doc_id
+            WHERE l.to_doc_id = $1`,
+          [doc.id],
+        ),
+      ]);
+      return {
+        ...doc,
+        outbound_links: outbound.rows,
+        backlinks: inbound.rows,
+      };
+    });
+    if (!data) return reply.code(404).send({ error: "not_found" });
+    return data;
   });
 
   // -- create -------------------------------------------------------------
@@ -150,7 +156,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<DocRow>(
         `INSERT INTO ops.knowledge_doc (org_id, slug, title, scope, hot, content_md, tags)
          VALUES ($1, $2, $3, $4::ops.knowledge_scope, $5, $6, $7)
@@ -189,7 +195,9 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       tags: result.tags,
     });
     if (memoryId) {
-      await query(`UPDATE ops.knowledge_doc SET memory_id = $1 WHERE id = $2`, [memoryId, result.id]);
+      await withOrgScope(scope.org_id, (client) =>
+        client.query(`UPDATE ops.knowledge_doc SET memory_id = $1 WHERE id = $2`, [memoryId, result.id]),
+      );
     }
     return reply.code(201).send({ ...result, memory_id: memoryId });
   });
@@ -211,7 +219,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     if (sets.length === 0) return reply.code(400).send({ error: "no_changes" });
     sets.push("updated_at = now()");
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<DocRow>(
         `UPDATE ops.knowledge_doc
             SET ${sets.join(", ")}
@@ -248,7 +256,9 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         tags: result.tags,
       });
       if (memoryId) {
-        await query(`UPDATE ops.knowledge_doc SET memory_id = $1 WHERE id = $2`, [memoryId, result.id]);
+        await withOrgScope(scope.org_id, (client) =>
+        client.query(`UPDATE ops.knowledge_doc SET memory_id = $1 WHERE id = $2`, [memoryId, result.id]),
+      );
       }
     }
     return result;
@@ -257,7 +267,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   // -- delete -------------------------------------------------------------
   app.delete<{ Params: { id: string } }>("/api/knowledge/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<{ id: string }>(
         `DELETE FROM ops.knowledge_doc
           WHERE id = $1 AND org_id = $2

@@ -2,8 +2,10 @@
 
 import type { FastifyInstance } from "fastify";
 
+import type pg from "pg";
+
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { KeyResultCreate, KeyResultPatch } from "../schemas.js";
 
@@ -22,8 +24,8 @@ type KrRow = {
 
 const KR_COLUMNS = "id, goal_id, label, target_value, current_value, unit, weight, due_at, created_at, updated_at";
 
-async function ownedGoal(goalId: string, orgId: string): Promise<boolean> {
-  const { rows } = await query("SELECT 1 FROM ops.goal WHERE id = $1 AND org_id = $2", [goalId, orgId]);
+async function ownedGoal(client: pg.PoolClient, goalId: string, orgId: string): Promise<boolean> {
+  const { rows } = await client.query("SELECT 1 FROM ops.goal WHERE id = $1 AND org_id = $2", [goalId, orgId]);
   return rows.length > 0;
 }
 
@@ -31,14 +33,16 @@ export async function keyResultRoutes(app: FastifyInstance): Promise<void> {
   // -- list per goal ------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/goals/:id/key-results", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    if (!(await ownedGoal(req.params.id, scope.org_id))) {
-      return reply.code(404).send({ error: "not_found" });
-    }
-    const { rows } = await query<KrRow>(
-      `SELECT ${KR_COLUMNS} FROM ops.key_result WHERE goal_id = $1 ORDER BY created_at ASC`,
-      [req.params.id],
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      if (!(await ownedGoal(client, req.params.id, scope.org_id))) {
+        return reply.code(404).send({ error: "not_found" });
+      }
+      const { rows } = await client.query<KrRow>(
+        `SELECT ${KR_COLUMNS} FROM ops.key_result WHERE goal_id = $1 ORDER BY created_at ASC`,
+        [req.params.id],
+      );
+      return rows;
+    });
   });
 
   // -- create -------------------------------------------------------------
@@ -48,11 +52,11 @@ export async function keyResultRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    if (!(await ownedGoal(req.params.id, scope.org_id))) {
-      return reply.code(404).send({ error: "not_found" });
-    }
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
+      if (!(await ownedGoal(client, req.params.id, scope.org_id))) {
+        return undefined;
+      }
       const { rows } = await client.query<KrRow>(
         `INSERT INTO ops.key_result (goal_id, label, target_value, current_value, unit, weight, due_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -80,6 +84,7 @@ export async function keyResultRoutes(app: FastifyInstance): Promise<void> {
       );
       return kr;
     });
+    if (!result) return reply.code(404).send({ error: "not_found" });
     return reply.code(201).send(result);
   });
 
@@ -112,7 +117,7 @@ export async function keyResultRoutes(app: FastifyInstance): Promise<void> {
          AND goal_id IN (SELECT id FROM ops.goal WHERE org_id = $2)
        RETURNING ${KR_COLUMNS}
     `;
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<KrRow>(sql, params);
       if (rows.length === 0) return undefined;
       const kr = rows[0]!;
@@ -135,7 +140,7 @@ export async function keyResultRoutes(app: FastifyInstance): Promise<void> {
   // -- delete -------------------------------------------------------------
   app.delete<{ Params: { id: string } }>("/api/key-results/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<{ id: string; goal_id: string }>(
         `DELETE FROM ops.key_result
           WHERE id = $1

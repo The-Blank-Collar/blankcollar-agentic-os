@@ -17,8 +17,10 @@ import { randomBytes } from "node:crypto";
 
 import type { FastifyInstance } from "fastify";
 
+import type pg from "pg";
+
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { fireRoutineFromTrigger } from "../routines/triggers.js";
 import { resolveCallerScope } from "../scope.js";
 import { RoutineTriggerCreate, RoutineTriggerPatch } from "../schemas.js";
@@ -35,8 +37,12 @@ type TriggerRowFull = {
 
 const TRIGGER_COLUMNS = "id, goal_id, trigger_kind, trigger_spec, enabled, last_fired_at, created_at";
 
-async function ownedRoutineGoal(goalId: string, orgId: string): Promise<{ kind: string } | null> {
-  const { rows } = await query<{ kind: string }>(
+async function ownedRoutineGoal(
+  client: pg.PoolClient,
+  goalId: string,
+  orgId: string,
+): Promise<{ kind: string } | null> {
+  const { rows } = await client.query<{ kind: string }>(
     "SELECT kind FROM ops.goal WHERE id = $1 AND org_id = $2",
     [goalId, orgId],
   );
@@ -49,14 +55,18 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
     "/api/goals/:goal_id/triggers",
     async (req, reply) => {
       const scope = await resolveCallerScope(req);
-      const goal = await ownedRoutineGoal(req.params.goal_id, scope.org_id);
-      if (!goal) return reply.code(404).send({ error: "not_found" });
-      const { rows } = await query<TriggerRowFull>(
-        `SELECT ${TRIGGER_COLUMNS} FROM ops.routine_trigger
-          WHERE goal_id = $1 ORDER BY created_at ASC`,
-        [req.params.goal_id],
-      );
-      return rows;
+      const result = await withOrgScope(scope.org_id, async (client) => {
+        const goal = await ownedRoutineGoal(client, req.params.goal_id, scope.org_id);
+        if (!goal) return null;
+        const { rows } = await client.query<TriggerRowFull>(
+          `SELECT ${TRIGGER_COLUMNS} FROM ops.routine_trigger
+            WHERE goal_id = $1 ORDER BY created_at ASC`,
+          [req.params.goal_id],
+        );
+        return rows;
+      });
+      if (!result) return reply.code(404).send({ error: "not_found" });
+      return result;
     },
   );
 
@@ -69,17 +79,6 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
       }
       const scope = await resolveCallerScope(req);
-      const goal = await ownedRoutineGoal(req.params.goal_id, scope.org_id);
-      if (!goal) return reply.code(404).send({ error: "not_found" });
-
-      // Triggers only make sense on routine goals. Be friendly if the user
-      // forgot — bump the kind for them when it's still 'ephemeral'.
-      // Decision goals shouldn't fire automatically; reject those.
-      if (goal.kind !== "routine" && goal.kind !== "ephemeral") {
-        return reply
-          .code(409)
-          .send({ error: "not_a_routine", current_kind: goal.kind });
-      }
 
       const spec = { ...(parsed.data.trigger_spec ?? {}) };
       // For api triggers, auto-mint an endpoint_token if missing.
@@ -87,7 +86,13 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
         spec.endpoint_token = randomBytes(18).toString("hex");
       }
 
-      const result = await tx(async (client) => {
+      const result = await withOrgScope(scope.org_id, async (client) => {
+        const goal = await ownedRoutineGoal(client, req.params.goal_id, scope.org_id);
+        if (!goal) return { kind: "not_found" as const };
+        // Triggers only make sense on routine / ephemeral goals.
+        if (goal.kind !== "routine" && goal.kind !== "ephemeral") {
+          return { kind: "wrong_kind" as const, current_kind: goal.kind };
+        }
         const { rows } = await client.query<TriggerRowFull>(
           `INSERT INTO ops.routine_trigger (goal_id, trigger_kind, trigger_spec, enabled)
            VALUES ($1, $2::ops.routine_trigger_kind, $3::jsonb, $4)
@@ -127,9 +132,13 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
           },
           client,
         );
-        return trigger;
+        return { kind: "ok" as const, trigger };
       });
-      return reply.code(201).send(result);
+      if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
+      if (result.kind === "wrong_kind") {
+        return reply.code(409).send({ error: "not_a_routine", current_kind: result.current_kind });
+      }
+      return reply.code(201).send(result.trigger);
     },
   );
 
@@ -154,7 +163,7 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
       }
       if (sets.length === 0) return reply.code(400).send({ error: "no_changes" });
 
-      const result = await tx(async (client) => {
+      const result = await withOrgScope(scope.org_id, async (client) => {
         const { rows } = await client.query<TriggerRowFull>(
           `UPDATE ops.routine_trigger t
               SET ${sets.join(", ")}
@@ -189,7 +198,7 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
     "/api/routines/triggers/:id",
     async (req, reply) => {
       const scope = await resolveCallerScope(req);
-      const result = await tx(async (client) => {
+      const result = await withOrgScope(scope.org_id, async (client) => {
         const { rows } = await client.query<{ id: string }>(
           `DELETE FROM ops.routine_trigger
             USING ops.goal g
@@ -227,7 +236,7 @@ export async function routineRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const scope = await resolveCallerScope(req);
       const body = req.body ?? {};
-      const result = await tx(async (client) => {
+      const result = await withOrgScope(scope.org_id, async (client) => {
         const { rows } = await client.query<TriggerRowFull & { goal_org_id: string }>(
           `SELECT t.id, t.goal_id, t.trigger_kind, t.trigger_spec,
                   t.enabled, t.last_fired_at, t.created_at, g.org_id AS goal_org_id

@@ -17,7 +17,7 @@
 
 import type { FastifyInstance } from "fastify";
 
-import { query } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 
 type NangoConnection = {
@@ -125,13 +125,15 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Recent capture counts per source — labels matched against provider.
-    const { rows: captureCounts } = await query<{ source: string; ct: string; last_at: string }>(
-      `SELECT source::text AS source, count(*)::text AS ct, max(created_at) AS last_at
-         FROM ops.capture
-        WHERE org_id = $1
-          AND created_at >= now() - interval '7 days'
-        GROUP BY source`,
-      [scope.org_id],
+    const { rows: captureCounts } = await withOrgScope(scope.org_id, (client) =>
+      client.query<{ source: string; ct: string; last_at: string }>(
+        `SELECT source::text AS source, count(*)::text AS ct, max(created_at) AS last_at
+           FROM ops.capture
+          WHERE org_id = $1
+            AND created_at >= now() - interval '7 days'
+          GROUP BY source`,
+        [scope.org_id],
+      ),
     );
     const captureMap: Record<string, { ct: number; last: string }> = {};
     for (const c of captureCounts) {

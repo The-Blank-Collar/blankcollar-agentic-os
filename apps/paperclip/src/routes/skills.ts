@@ -17,7 +17,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { SkillListQuery } from "../schemas.js";
 
@@ -69,26 +69,31 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
       params.push(parsed.data.enabled);
       where.push(`enabled = $${params.length}`);
     }
-    const { rows } = await query<SkillRow>(
-      `SELECT ${SKILL_COLUMNS} FROM ops.skill
-        WHERE ${where.join(" AND ")}
-        ORDER BY scope DESC, slug ASC, version DESC`,
-      params,
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<SkillRow>(
+        `SELECT ${SKILL_COLUMNS} FROM ops.skill
+          WHERE ${where.join(" AND ")}
+          ORDER BY scope DESC, slug ASC, version DESC`,
+        params,
+      );
+      return rows;
+    });
   });
 
   // -- get one ------------------------------------------------------------
   app.get<{ Params: { slug: string } }>("/api/skills/:slug", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<SkillRow>(
-      `SELECT ${SKILL_COLUMNS} FROM ops.skill
-        WHERE slug = $1
-          AND (org_id IS NULL OR org_id = $2)
-          AND enabled = true
-        ORDER BY version DESC LIMIT 1`,
-      [req.params.slug, scope.org_id],
-    );
+    const rows = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: rs } = await client.query<SkillRow>(
+        `SELECT ${SKILL_COLUMNS} FROM ops.skill
+          WHERE slug = $1
+            AND (org_id IS NULL OR org_id = $2)
+            AND enabled = true
+          ORDER BY version DESC LIMIT 1`,
+        [req.params.slug, scope.org_id],
+      );
+      return rs;
+    });
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
     return rows[0];
   });
@@ -101,18 +106,17 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
       const inputs = req.body?.inputs ?? {};
       const titleHint = req.body?.title?.slice(0, 200) ?? `Run ${req.params.slug}`;
 
-      const { rows: skillRows } = await query<SkillRow>(
-        `SELECT ${SKILL_COLUMNS} FROM ops.skill
-          WHERE slug = $1
-            AND (org_id IS NULL OR org_id = $2)
-            AND enabled = true
-          ORDER BY version DESC LIMIT 1`,
-        [req.params.slug, scope.org_id],
-      );
-      if (skillRows.length === 0) return reply.code(404).send({ error: "skill_not_found" });
-      const skill = skillRows[0]!;
-
-      const result = await tx(async (client) => {
+      const result = await withOrgScope(scope.org_id, async (client) => {
+        const { rows: skillRows } = await client.query<SkillRow>(
+          `SELECT ${SKILL_COLUMNS} FROM ops.skill
+            WHERE slug = $1
+              AND (org_id IS NULL OR org_id = $2)
+              AND enabled = true
+            ORDER BY version DESC LIMIT 1`,
+          [req.params.slug, scope.org_id],
+        );
+        if (skillRows.length === 0) return { kind: "not_found" as const };
+        const skill = skillRows[0]!;
         // Ephemeral goal carries the skill invocation. The run queue picks
         // it up and dispatches to the agent kind declared in the manifest.
         const { rows: goalRows } = await client.query<{ id: string }>(
@@ -164,14 +168,20 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
           client,
         );
 
-        return { goal_id: goalId, run_id: runId };
+        return {
+          kind: "ok" as const,
+          goal_id: goalId,
+          run_id: runId,
+          skill: { slug: skill.slug, version: skill.version, agent_kind: skill.agent_kind },
+        };
       });
 
+      if (result.kind === "not_found") return reply.code(404).send({ error: "skill_not_found" });
       return reply.code(201).send({
         goal_id: result.goal_id,
         run_id: result.run_id,
         status: "queued",
-        skill: { slug: skill.slug, version: skill.version, agent_kind: skill.agent_kind },
+        skill: result.skill,
       });
     },
   );

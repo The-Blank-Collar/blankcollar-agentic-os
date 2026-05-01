@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { generatePlan } from "../plan.js";
 import { resolveCallerScope } from "../scope.js";
 import { DecisionResolve, GoalCreate, GoalListQuery, GoalPatch, RunDispatch } from "../schemas.js";
@@ -63,8 +63,10 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY created_at DESC
       LIMIT $${params.length}
     `;
-    const { rows } = await query<GoalRow>(sql, params);
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<GoalRow>(sql, params);
+      return rows;
+    });
   });
 
   // -- create -------------------------------------------------------------
@@ -74,7 +76,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<GoalRow>(
         `
         INSERT INTO ops.goal (
@@ -115,24 +117,26 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
   // -- get (with key_results + contributors embedded) --------------------
   app.get<{ Params: { id: string } }>("/api/goals/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<GoalRow>(
-      `SELECT ${GOAL_COLUMNS} FROM ops.goal WHERE id = $1 AND org_id = $2`,
-      [req.params.id, scope.org_id],
-    );
-    if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
-    const goal = rows[0]!;
-
-    const { rows: krs } = await query(
-      `SELECT id, label, target_value, current_value, unit, weight, due_at, created_at, updated_at
-       FROM ops.key_result WHERE goal_id = $1 ORDER BY created_at ASC`,
-      [goal.id],
-    );
-    const { rows: contributors } = await query(
-      `SELECT agent_id, user_id, added_at FROM ops.goal_contributor WHERE goal_id = $1`,
-      [goal.id],
-    );
-
-    return { ...goal, key_results: krs, contributors };
+    const data = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<GoalRow>(
+        `SELECT ${GOAL_COLUMNS} FROM ops.goal WHERE id = $1 AND org_id = $2`,
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return null;
+      const goal = rows[0]!;
+      const { rows: krs } = await client.query(
+        `SELECT id, label, target_value, current_value, unit, weight, due_at, created_at, updated_at
+         FROM ops.key_result WHERE goal_id = $1 ORDER BY created_at ASC`,
+        [goal.id],
+      );
+      const { rows: contributors } = await client.query(
+        `SELECT agent_id, user_id, added_at FROM ops.goal_contributor WHERE goal_id = $1`,
+        [goal.id],
+      );
+      return { ...goal, key_results: krs, contributors };
+    });
+    if (!data) return reply.code(404).send({ error: "not_found" });
+    return data;
   });
 
   // -- patch --------------------------------------------------------------
@@ -163,7 +167,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     if (sets.length === 0) return reply.code(400).send({ error: "no_changes" });
     sets.push("updated_at = now()");
     const sql = `UPDATE ops.goal SET ${sets.join(", ")} WHERE id = $1 AND org_id = $2 RETURNING ${GOAL_COLUMNS}`;
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<GoalRow>(sql, params);
       if (rows.length === 0) return undefined;
       const goal = rows[0]!;
@@ -186,7 +190,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
   // -- archive ------------------------------------------------------------
   app.delete<{ Params: { id: string } }>("/api/goals/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<GoalRow>(
         `UPDATE ops.goal SET status = 'archived', updated_at = now()
          WHERE id = $1 AND org_id = $2 RETURNING *`,
@@ -214,7 +218,7 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<GoalRow>(
         `SELECT ${GOAL_COLUMNS} FROM ops.goal
           WHERE id = $1 AND org_id = $2 FOR UPDATE`,
@@ -271,15 +275,14 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
   // -- plan ---------------------------------------------------------------
   app.post<{ Params: { id: string } }>("/api/goals/:id/plan", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<GoalRow>(
-      "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
-      [req.params.id, scope.org_id],
-    );
-    if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
-    const goal = rows[0]!;
-    const subtasks = generatePlan({ title: goal.title, description: goal.description });
-
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<GoalRow>(
+        "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return { kind: "not_found" as const };
+      const goal = rows[0]!;
+      const subtasks = generatePlan({ title: goal.title, description: goal.description });
       const merged = { ...(goal.metadata ?? {}), plan: { subtasks, generated_at: new Date().toISOString() } };
       await client.query(
         "UPDATE ops.goal SET metadata = $2::jsonb, updated_at = now() WHERE id = $1",
@@ -295,10 +298,11 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
         },
         client,
       );
-      return subtasks;
+      return { kind: "ok" as const, subtasks };
     });
+    if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
 
-    return reply.send({ subtasks: result });
+    return reply.send({ subtasks: result.subtasks });
   });
 
   // -- dispatch -----------------------------------------------------------
@@ -308,23 +312,19 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<GoalRow>(
-      "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
-      [req.params.id, scope.org_id],
-    );
-    if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
-    const goal = rows[0]!;
-    const plan = (goal.metadata as { plan?: { subtasks: unknown[] } } | null)?.plan;
-    if (!plan || !Array.isArray(plan.subtasks) || plan.subtasks.length === 0) {
-      return reply
-        .code(409)
-        .send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
-    }
-    const subtask = plan.subtasks[parsed.data.subtask_index];
-    if (!subtask) {
-      return reply.code(400).send({ error: "subtask_index_out_of_range" });
-    }
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<GoalRow>(
+        "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return { kind: "not_found" as const };
+      const goal = rows[0]!;
+      const plan = (goal.metadata as { plan?: { subtasks: unknown[] } } | null)?.plan;
+      if (!plan || !Array.isArray(plan.subtasks) || plan.subtasks.length === 0) {
+        return { kind: "no_plan" as const };
+      }
+      const subtask = plan.subtasks[parsed.data.subtask_index];
+      if (!subtask) return { kind: "out_of_range" as const };
       const { rows: runRows } = await client.query<{ id: string }>(
         `INSERT INTO ops.run (goal_id, agent_id, status, input)
          VALUES ($1, $2, 'queued', $3::jsonb)
@@ -347,25 +347,30 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
         },
         client,
       );
-      return runId;
+      return { kind: "ok" as const, runId };
     });
-    return reply.code(201).send({ run_id: result, status: "queued" });
+    if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (result.kind === "no_plan") {
+      return reply.code(409).send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
+    }
+    if (result.kind === "out_of_range") return reply.code(400).send({ error: "subtask_index_out_of_range" });
+    return reply.code(201).send({ run_id: result.runId, status: "queued" });
   });
 
   // -- dispatch all (run plan) -------------------------------------------
   app.post<{ Params: { id: string } }>("/api/goals/:id/dispatch-all", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<GoalRow>(
-      "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
-      [req.params.id, scope.org_id],
-    );
-    if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
-    const goal = rows[0]!;
-    const plan = (goal.metadata as { plan?: { subtasks: { index: number }[] } } | null)?.plan;
-    if (!plan || !Array.isArray(plan.subtasks) || plan.subtasks.length === 0) {
-      return reply.code(409).send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
-    }
-    const queued = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<GoalRow>(
+        "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return { kind: "not_found" as const };
+      const goal = rows[0]!;
+      const plan = (goal.metadata as { plan?: { subtasks: { index: number }[] } } | null)?.plan;
+      if (!plan || !Array.isArray(plan.subtasks) || plan.subtasks.length === 0) {
+        return { kind: "no_plan" as const };
+      }
       const ids: string[] = [];
       for (const st of plan.subtasks) {
         const { rows: runRows } = await client.query<{ id: string }>(
@@ -390,8 +395,12 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
         "UPDATE ops.goal SET status = CASE WHEN status = 'draft' THEN 'active'::ops.goal_status ELSE status END, updated_at = now() WHERE id = $1",
         [goal.id],
       );
-      return ids;
+      return { kind: "ok" as const, ids };
     });
-    return reply.code(201).send({ run_ids: queued, queued: queued.length });
+    if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (result.kind === "no_plan") {
+      return reply.code(409).send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
+    }
+    return reply.code(201).send({ run_ids: result.ids, queued: result.ids.length });
   });
 }

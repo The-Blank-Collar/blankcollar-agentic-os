@@ -22,7 +22,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 
 export type InboxItemKind = "approval" | "decision" | "blocked" | "routine_output" | "draft";
@@ -55,59 +55,65 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     const scope = await resolveCallerScope(req);
     const limit = Math.min(Math.max(Number(req.query.limit ?? DEFAULT_LIMIT), 1), 100);
 
-    const [approvals, decisions, blocked, drafts] = await Promise.all([
-      query<ApprovalRowSummary>(
-        `SELECT id, goal_id, action_kind, reason, urgency, created_at
-           FROM ops.approval
-          WHERE org_id = $1
-            AND resolution IS NULL
-            AND (expires_at IS NULL OR expires_at > now())
-          ORDER BY
-            CASE urgency WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
-            created_at DESC
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-      query<DecisionRow>(
-        `SELECT id, title, created_at, due_at
-           FROM ops.goal
-          WHERE org_id = $1
-            AND kind = 'decision'
-            AND status IN ('draft','active')
-          ORDER BY due_at NULLS LAST, created_at DESC
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-      query<BlockedRow>(
-        `SELECT id, title, updated_at
-           FROM ops.goal
-          WHERE org_id = $1
-            AND status = 'paused'
-          ORDER BY updated_at DESC
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-      query<DraftRow>(
-        // Drafts / routine outputs: latest unacknowledged succeeded run per
-        // active goal. We carry goal.kind so the response can label routine
-        // outputs distinctly from generic drafts.
-        `SELECT DISTINCT ON (g.id)
-                g.id     AS goal_id,
-                g.title,
-                g.kind   AS goal_kind,
-                r.finished_at,
-                r.output
-           FROM ops.goal g
-           JOIN ops.run  r ON r.goal_id = g.id
-          WHERE g.org_id = $1
-            AND r.status = 'succeeded'
-            AND r.acknowledged_at IS NULL
-            AND g.status IN ('active','draft')
-          ORDER BY g.id, r.finished_at DESC
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-    ]);
+    const { approvals, decisions, blocked, drafts } = await withOrgScope(
+      scope.org_id,
+      async (client) => {
+        const [ap, dc, bl, dr] = await Promise.all([
+          client.query<ApprovalRowSummary>(
+            `SELECT id, goal_id, action_kind, reason, urgency, created_at
+               FROM ops.approval
+              WHERE org_id = $1
+                AND resolution IS NULL
+                AND (expires_at IS NULL OR expires_at > now())
+              ORDER BY
+                CASE urgency WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+                created_at DESC
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+          client.query<DecisionRow>(
+            `SELECT id, title, created_at, due_at
+               FROM ops.goal
+              WHERE org_id = $1
+                AND kind = 'decision'
+                AND status IN ('draft','active')
+              ORDER BY due_at NULLS LAST, created_at DESC
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+          client.query<BlockedRow>(
+            `SELECT id, title, updated_at
+               FROM ops.goal
+              WHERE org_id = $1
+                AND status = 'paused'
+              ORDER BY updated_at DESC
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+          client.query<DraftRow>(
+            // Drafts / routine outputs: latest unacknowledged succeeded run per
+            // active goal. We carry goal.kind so the response can label routine
+            // outputs distinctly from generic drafts.
+            `SELECT DISTINCT ON (g.id)
+                    g.id     AS goal_id,
+                    g.title,
+                    g.kind   AS goal_kind,
+                    r.finished_at,
+                    r.output
+               FROM ops.goal g
+               JOIN ops.run  r ON r.goal_id = g.id
+              WHERE g.org_id = $1
+                AND r.status = 'succeeded'
+                AND r.acknowledged_at IS NULL
+                AND g.status IN ('active','draft')
+              ORDER BY g.id, r.finished_at DESC
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+        ]);
+        return { approvals: ap, decisions: dc, blocked: bl, drafts: dr };
+      },
+    );
 
     const items: InboxItem[] = [];
 
@@ -188,7 +194,7 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
   // by un-pausing the underlying goal; approvals resolve via /api/approvals.
   app.post<{ Params: { goal_id: string } }>("/api/inbox/acknowledge/:goal_id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows: ownerCheck } = await client.query(
         "SELECT 1 FROM ops.goal WHERE id = $1 AND org_id = $2",
         [req.params.goal_id, scope.org_id],

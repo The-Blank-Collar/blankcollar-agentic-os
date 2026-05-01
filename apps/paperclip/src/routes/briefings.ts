@@ -13,7 +13,7 @@ import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
 import { type Briefing, type BriefingKind, composeBriefing } from "../briefing.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { BriefingGenerate, BriefingListQuery, type Scope } from "../schemas.js";
 
@@ -32,7 +32,7 @@ type BriefingRow = {
 const BRIEFING_COLUMNS = "id, org_id, kind, generated_at, period_start, period_end, summary_md, sources, audio_url";
 
 async function persist(scope: Scope, b: Briefing): Promise<BriefingRow> {
-  return tx(async (client) => {
+  return withOrgScope(scope.org_id, async (client) => {
     const { rows } = await client.query<BriefingRow>(
       `INSERT INTO ops.briefing (org_id, kind, period_start, period_end, summary_md, sources)
        VALUES ($1, $2::ops.briefing_kind, $3, $4, $5, $6::jsonb)
@@ -61,14 +61,17 @@ export async function briefingRoutes(app: FastifyInstance): Promise<void> {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const { rows } = await query<BriefingRow>(
-      `SELECT ${BRIEFING_COLUMNS}
-         FROM ops.briefing
-        WHERE org_id = $1 AND kind = 'daily' AND generated_at >= $2
-        ORDER BY generated_at DESC LIMIT 1`,
-      [scope.org_id, todayStart.toISOString()],
-    );
-    if (rows.length > 0) return rows[0];
+    const existing = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<BriefingRow>(
+        `SELECT ${BRIEFING_COLUMNS}
+           FROM ops.briefing
+          WHERE org_id = $1 AND kind = 'daily' AND generated_at >= $2
+          ORDER BY generated_at DESC LIMIT 1`,
+        [scope.org_id, todayStart.toISOString()],
+      );
+      return rows;
+    });
+    if (existing.length > 0) return existing[0];
 
     const composed = await composeBriefing(scope.org_id, "daily");
     return persist(scope, composed);
@@ -88,15 +91,17 @@ export async function briefingRoutes(app: FastifyInstance): Promise<void> {
       where.push(`kind = $${params.length}::ops.briefing_kind`);
     }
     params.push(parsed.data.limit);
-    const { rows } = await query<BriefingRow>(
-      `SELECT ${BRIEFING_COLUMNS}
-         FROM ops.briefing
-        WHERE ${where.join(" AND ")}
-        ORDER BY generated_at DESC
-        LIMIT $${params.length}`,
-      params,
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<BriefingRow>(
+        `SELECT ${BRIEFING_COLUMNS}
+           FROM ops.briefing
+          WHERE ${where.join(" AND ")}
+          ORDER BY generated_at DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      return rows;
+    });
   });
 
   // -- generate (force) ---------------------------------------------------

@@ -16,7 +16,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { deriveFromAnswers } from "../onboarding/derive.js";
 import { questionsFor } from "../onboarding/questions.js";
 import { resolveCallerScope } from "../scope.js";
@@ -41,7 +41,7 @@ async function findOrCreateProfile(
   userId: string | null,
   mode: "single_user" | "multi_user",
 ): Promise<ProfileRow> {
-  return tx(async (client) => {
+  return withOrgScope(orgId, async (client) => {
     const { rows: existing } = await client.query<ProfileRow>(
       `SELECT ${PROFILE_COLUMNS}
          FROM ops.onboarding_profile
@@ -74,16 +74,18 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
 
     let userId: string | null = null;
     if (parsed.data.user_email) {
-      const { rows } = await query<{ id: string }>(
-        `INSERT INTO core.user_account (org_id, email, display_name, is_active)
-         VALUES ($1, $2, $3, true)
-         ON CONFLICT (email) DO UPDATE
-            SET display_name = COALESCE(EXCLUDED.display_name, core.user_account.display_name),
-                is_active = true
-         RETURNING id`,
-        [scope.org_id, parsed.data.user_email, parsed.data.user_name ?? null],
-      );
-      userId = rows[0]!.id;
+      userId = await withOrgScope(scope.org_id, async (client) => {
+        const { rows } = await client.query<{ id: string }>(
+          `INSERT INTO core.user_account (org_id, email, display_name, is_active)
+           VALUES ($1, $2, $3, true)
+           ON CONFLICT (email) DO UPDATE
+              SET display_name = COALESCE(EXCLUDED.display_name, core.user_account.display_name),
+                  is_active = true
+           RETURNING id`,
+          [scope.org_id, parsed.data.user_email, parsed.data.user_name ?? null],
+        );
+        return rows[0]!.id;
+      });
     }
 
     // For multi_user mode, the company track has user_id NULL; the per-user
@@ -107,10 +109,13 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     const profileId = req.query.profile_id;
     if (!profileId) return reply.code(400).send({ error: "missing_profile_id" });
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<ProfileRow>(
-      `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile WHERE id = $1 AND org_id = $2`,
-      [profileId, scope.org_id],
-    );
+    const rows = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: rs } = await client.query<ProfileRow>(
+        `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile WHERE id = $1 AND org_id = $2`,
+        [profileId, scope.org_id],
+      );
+      return rs;
+    });
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
     const profile = rows[0]!;
     const track =
@@ -139,7 +144,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (!profileId) return reply.code(400).send({ error: "missing_profile_id" });
     const scope = await resolveCallerScope(req);
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows: existing } = await client.query<ProfileRow>(
         `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile
           WHERE id = $1 AND org_id = $2 FOR UPDATE`,
@@ -195,7 +200,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (!profileId) return reply.code(400).send({ error: "missing_profile_id" });
     const scope = await resolveCallerScope(req);
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows: existing } = await client.query<ProfileRow>(
         `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile
           WHERE id = $1 AND org_id = $2 FOR UPDATE`,
@@ -285,16 +290,19 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { profile_id?: string } }>("/api/onboarding/profile", async (req, reply) => {
     const profileId = req.query.profile_id;
     const scope = await resolveCallerScope(req);
-    const { rows } = profileId
-      ? await query<ProfileRow>(
-          `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile WHERE id = $1 AND org_id = $2`,
-          [profileId, scope.org_id],
-        )
-      : await query<ProfileRow>(
-          `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile
-            WHERE org_id = $1 ORDER BY created_at DESC LIMIT 1`,
-          [scope.org_id],
-        );
+    const rows = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: rs } = profileId
+        ? await client.query<ProfileRow>(
+            `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile WHERE id = $1 AND org_id = $2`,
+            [profileId, scope.org_id],
+          )
+        : await client.query<ProfileRow>(
+            `SELECT ${PROFILE_COLUMNS} FROM ops.onboarding_profile
+              WHERE org_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            [scope.org_id],
+          );
+      return rs;
+    });
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
     return rows[0];
   });

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { AgentCreate, AgentPatch } from "../schemas.js";
 
@@ -52,14 +52,16 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const params: unknown[] = [scope.org_id];
     if (req.query.is_active === "true") where.push("is_active = true");
     if (req.query.is_active === "false") where.push("is_active = false");
-    const { rows } = await query<AgentRow>(
-      `SELECT id, org_id, kind, name, config, is_active, created_at
-       FROM ops.agent
-       WHERE ${where.join(" AND ")}
-       ORDER BY created_at DESC`,
-      params,
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<AgentRow>(
+        `SELECT id, org_id, kind, name, config, is_active, created_at
+         FROM ops.agent
+         WHERE ${where.join(" AND ")}
+         ORDER BY created_at DESC`,
+        params,
+      );
+      return rows;
+    });
   });
 
   app.post("/api/agents", async (req, reply) => {
@@ -68,7 +70,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<AgentRow>(
         `INSERT INTO ops.agent (org_id, kind, name, config)
          VALUES ($1, $2, $3, $4::jsonb)
@@ -113,7 +115,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     }
     if (sets.length === 0) return reply.code(400).send({ error: "no_changes" });
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<AgentRow>(
         `UPDATE ops.agent SET ${sets.join(", ")} WHERE id = $1 AND org_id = $2
          RETURNING id, org_id, kind, name, config, is_active, created_at`,
@@ -138,24 +140,28 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // status comes from ops.run.
   app.get<{ Params: { id: string } }>("/api/agents/:id/state", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows: agentRows } = await query<AgentRow>(
-      `SELECT id, org_id, kind, name, config, is_active, created_at
-         FROM ops.agent WHERE id = $1 AND org_id = $2`,
-      [req.params.id, scope.org_id],
-    );
-    if (agentRows.length === 0) return reply.code(404).send({ error: "not_found" });
-    const agent = agentRows[0]!;
-
-    const { rows: runRows } = await query<RunRow>(
-      `SELECT r.id, r.goal_id, r.status, r.input, r.output, r.error,
-              r.started_at, r.finished_at, r.created_at, g.title AS goal_title
-         FROM ops.run r
-         JOIN ops.goal g ON g.id = r.goal_id
-        WHERE r.agent_id = $1 AND g.org_id = $2
-        ORDER BY r.created_at DESC
-        LIMIT 5`,
-      [agent.id, scope.org_id],
-    );
+    const data = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: agentRows } = await client.query<AgentRow>(
+        `SELECT id, org_id, kind, name, config, is_active, created_at
+           FROM ops.agent WHERE id = $1 AND org_id = $2`,
+        [req.params.id, scope.org_id],
+      );
+      if (agentRows.length === 0) return null;
+      const agent = agentRows[0]!;
+      const { rows: runRows } = await client.query<RunRow>(
+        `SELECT r.id, r.goal_id, r.status, r.input, r.output, r.error,
+                r.started_at, r.finished_at, r.created_at, g.title AS goal_title
+           FROM ops.run r
+           JOIN ops.goal g ON g.id = r.goal_id
+          WHERE r.agent_id = $1 AND g.org_id = $2
+          ORDER BY r.created_at DESC
+          LIMIT 5`,
+        [agent.id, scope.org_id],
+      );
+      return { agent, runRows };
+    });
+    if (!data) return reply.code(404).send({ error: "not_found" });
+    const { agent, runRows } = data;
 
     const live = runRows.find((r) => r.status === "running") ?? null;
     const lastTerminal = runRows.find((r) =>

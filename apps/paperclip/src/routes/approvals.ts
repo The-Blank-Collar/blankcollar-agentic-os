@@ -16,7 +16,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { ApprovalCreate, ApprovalListQuery, ApprovalResolve } from "../schemas.js";
 
@@ -55,7 +55,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
     const expiresAt = parsed.data.expires_in_hours
       ? new Date(Date.now() + parsed.data.expires_in_hours * 3_600_000).toISOString()
       : null;
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<ApprovalRow>(
         `INSERT INTO ops.approval (
            org_id, goal_id, run_id, requesting_agent_id, action_kind,
@@ -125,26 +125,31 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
       where.push(`urgency = $${params.length}::ops.approval_urgency`);
     }
     params.push(parsed.data.limit);
-    const { rows } = await query<ApprovalRow>(
-      `SELECT ${APPROVAL_COLUMNS}
-         FROM ops.approval
-        WHERE ${where.join(" AND ")}
-        ORDER BY
-          CASE urgency WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
-          created_at DESC
-        LIMIT $${params.length}`,
-      params,
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<ApprovalRow>(
+        `SELECT ${APPROVAL_COLUMNS}
+           FROM ops.approval
+          WHERE ${where.join(" AND ")}
+          ORDER BY
+            CASE urgency WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+            created_at DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      return rows;
+    });
   });
 
   // -- get ----------------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/approvals/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<ApprovalRow>(
-      `SELECT ${APPROVAL_COLUMNS} FROM ops.approval WHERE id = $1 AND org_id = $2`,
-      [req.params.id, scope.org_id],
-    );
+    const rows = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: rs } = await client.query<ApprovalRow>(
+        `SELECT ${APPROVAL_COLUMNS} FROM ops.approval WHERE id = $1 AND org_id = $2`,
+        [req.params.id, scope.org_id],
+      );
+      return rs;
+    });
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
     return rows[0];
   });
@@ -169,7 +174,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<ApprovalRow>(
         `SELECT ${APPROVAL_COLUMNS} FROM ops.approval
           WHERE id = $1 AND org_id = $2 FOR UPDATE`,

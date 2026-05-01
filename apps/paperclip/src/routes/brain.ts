@@ -24,7 +24,7 @@
 
 import type { FastifyInstance } from "fastify";
 
-import { query } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 
 export type BrainNodeKind = "person" | "agent" | "goal" | "capture" | "tool";
@@ -68,58 +68,64 @@ export async function brainRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    const [people, agents, goals, captures, contributors, runs] = await Promise.all([
-      query<{ id: string; display_name: string | null; email: string }>(
-        `SELECT id, display_name, email
-           FROM core.user_account
-          WHERE org_id = $1 AND is_active = true
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-      query<{ id: string; name: string; kind: string; is_active: boolean }>(
-        `SELECT id, name, kind, is_active
-           FROM ops.agent
-          WHERE org_id = $1 AND is_active = true
-          ORDER BY created_at ASC
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-      query<{ id: string; title: string; kind: string; status: string; owner_id: string | null }>(
-        `SELECT id, title, kind, status, owner_id
-           FROM ops.goal
-          WHERE org_id = $1
-            AND status IN ('draft','active','paused','achieved')
-          ORDER BY updated_at DESC
-          LIMIT $2`,
-        [scope.org_id, limit],
-      ),
-      query<{ id: string; raw_content: string; resolved_to_id: string | null; resolved_kind: string | null }>(
-        `SELECT id, raw_content, resolved_to_id, resolved_kind
-           FROM ops.capture
-          WHERE org_id = $1
-          ORDER BY created_at DESC
-          LIMIT 20`,
-        [scope.org_id],
-      ),
-      query<{ goal_id: string; agent_id: string | null; user_id: string | null }>(
-        `SELECT gc.goal_id, gc.agent_id, gc.user_id
-           FROM ops.goal_contributor gc
-           JOIN ops.goal g ON g.id = gc.goal_id
-          WHERE g.org_id = $1
-          LIMIT $2`,
-        [scope.org_id, limit * 4],
-      ),
-      query<{ goal_id: string; agent_id: string }>(
-        `SELECT DISTINCT r.goal_id, r.agent_id
-           FROM ops.run r
-           JOIN ops.goal g ON g.id = r.goal_id
-          WHERE g.org_id = $1
-            AND r.agent_id IS NOT NULL
-            AND r.created_at >= now() - interval '14 days'
-          LIMIT $2`,
-        [scope.org_id, limit * 4],
-      ),
-    ]);
+    const { people, agents, goals, captures, contributors, runs } = await withOrgScope(
+      scope.org_id,
+      async (client) => {
+        const [pp, ag, gl, cp, ct, rn] = await Promise.all([
+          client.query<{ id: string; display_name: string | null; email: string }>(
+            `SELECT id, display_name, email
+               FROM core.user_account
+              WHERE org_id = $1 AND is_active = true
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+          client.query<{ id: string; name: string; kind: string; is_active: boolean }>(
+            `SELECT id, name, kind, is_active
+               FROM ops.agent
+              WHERE org_id = $1 AND is_active = true
+              ORDER BY created_at ASC
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+          client.query<{ id: string; title: string; kind: string; status: string; owner_id: string | null }>(
+            `SELECT id, title, kind, status, owner_id
+               FROM ops.goal
+              WHERE org_id = $1
+                AND status IN ('draft','active','paused','achieved')
+              ORDER BY updated_at DESC
+              LIMIT $2`,
+            [scope.org_id, limit],
+          ),
+          client.query<{ id: string; raw_content: string; resolved_to_id: string | null; resolved_kind: string | null }>(
+            `SELECT id, raw_content, resolved_to_id, resolved_kind
+               FROM ops.capture
+              WHERE org_id = $1
+              ORDER BY created_at DESC
+              LIMIT 20`,
+            [scope.org_id],
+          ),
+          client.query<{ goal_id: string; agent_id: string | null; user_id: string | null }>(
+            `SELECT gc.goal_id, gc.agent_id, gc.user_id
+               FROM ops.goal_contributor gc
+               JOIN ops.goal g ON g.id = gc.goal_id
+              WHERE g.org_id = $1
+              LIMIT $2`,
+            [scope.org_id, limit * 4],
+          ),
+          client.query<{ goal_id: string; agent_id: string }>(
+            `SELECT DISTINCT r.goal_id, r.agent_id
+               FROM ops.run r
+               JOIN ops.goal g ON g.id = r.goal_id
+              WHERE g.org_id = $1
+                AND r.agent_id IS NOT NULL
+                AND r.created_at >= now() - interval '14 days'
+              LIMIT $2`,
+            [scope.org_id, limit * 4],
+          ),
+        ]);
+        return { people: pp, agents: ag, goals: gl, captures: cp, contributors: ct, runs: rn };
+      },
+    );
 
     const nodes: BrainNode[] = [];
     const seen = new Set<string>();

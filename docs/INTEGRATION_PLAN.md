@@ -225,7 +225,24 @@ KNOWLEDGE      GET    /api/knowledge                   list (filter by scope, ho
                DELETE /api/knowledge/:id               delete
 ```
 
-All endpoints respect RLS via `resolveCallerScope()` + the existing in-code filters. As routes migrate to `withOrgScope()`, the same RLS policies become DB-enforced.
+All endpoints now run inside `withOrgScope(scope.org_id, ...)` — the GUC `app.org_id` is bound for the duration of every request's transaction, so the RLS policies have something to match against. The policies still keep their permissive-when-unset branch as a safety net; flipping it to strict is the Phase-B work below.
+
+### Phase B — RLS strict flip (deferred, single bounded session)
+
+Swap the `app_scope_org` policy expression from
+```
+USING (current_setting('app.org_id', true) IS NULL
+       OR current_setting('app.org_id', true) = ''
+       OR org_id::text = current_setting('app.org_id', true))
+```
+to
+```
+USING (org_id::text = current_setting('app.org_id', true))
+```
+
+Two known follow-ups before flipping:
+1. **Worker** (`apps/paperclip/src/queue/worker.ts`) and **Scheduler** (`apps/paperclip/src/scheduler.ts`) iterate goals across orgs — they need per-iteration `withOrgScope(goal.org_id, ...)` so each run/fire is scoped to its own org.
+2. **Boot migrations** (`applyAdditiveMigrations`) run schema DDL with no scope — that's correct (DDL bypasses RLS) but needs to stay outside `withOrgScope`.
 
 ## 7. Logging + observability
 

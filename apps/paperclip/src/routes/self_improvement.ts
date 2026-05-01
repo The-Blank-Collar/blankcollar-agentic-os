@@ -14,7 +14,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { AuditReportRunRequest } from "../schemas.js";
 import {
@@ -73,13 +73,15 @@ export async function selfImprovementRoutes(app: FastifyInstance): Promise<void>
         where.push(`kind = $${params.length}::ops.audit_report_kind`);
       }
       params.push(limit);
-      const { rows } = await query<ReportRow>(
-        `SELECT ${REPORT_COLUMNS} FROM ops.audit_report
-          WHERE ${where.join(" AND ")}
-          ORDER BY created_at DESC LIMIT $${params.length}`,
-        params,
-      );
-      return rows;
+      return withOrgScope(scope.org_id, async (client) => {
+        const { rows } = await client.query<ReportRow>(
+          `SELECT ${REPORT_COLUMNS} FROM ops.audit_report
+            WHERE ${where.join(" AND ")}
+            ORDER BY created_at DESC LIMIT $${params.length}`,
+          params,
+        );
+        return rows;
+      });
     },
   );
 
@@ -88,7 +90,7 @@ export async function selfImprovementRoutes(app: FastifyInstance): Promise<void>
     "/api/self/reports/:id/apply",
     async (req, reply) => {
       const scope = await resolveCallerScope(req);
-      const result = await tx(async (client) => {
+      const result = await withOrgScope(scope.org_id, async (client) => {
         const { rows } = await client.query<ReportRow>(
           `UPDATE ops.audit_report
               SET applied = true

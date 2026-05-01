@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
-import { query } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { AuditQuery } from "../schemas.js";
 
@@ -40,7 +40,9 @@ export async function auditRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY created_at DESC
       LIMIT $${params.length}
     `;
-    const { rows } = await query<AuditRow>(sql, params);
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<AuditRow>(sql, params);
+      return rows;
+    });
   });
 }

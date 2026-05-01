@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 
 type RunRow = {
@@ -36,7 +36,10 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY r.created_at DESC
       LIMIT 100
     `;
-    const { rows } = await query<RunRow>(sql, params);
+    const rows = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: rs } = await client.query<RunRow>(sql, params);
+      return rs;
+    });
     if (req.query.goal_id) return rows;
     return reply.send(rows);
   });
@@ -44,13 +47,16 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
   // -- get ----------------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/runs/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query<RunRow>(
-      `SELECT r.*
-       FROM ops.run r
-       JOIN ops.goal g ON g.id = r.goal_id
-       WHERE r.id = $1 AND g.org_id = $2`,
-      [req.params.id, scope.org_id],
-    );
+    const rows = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: rs } = await client.query<RunRow>(
+        `SELECT r.*
+         FROM ops.run r
+         JOIN ops.goal g ON g.id = r.goal_id
+         WHERE r.id = $1 AND g.org_id = $2`,
+        [req.params.id, scope.org_id],
+      );
+      return rs;
+    });
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
     return rows[0];
   });
@@ -58,7 +64,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
   // -- cancel -------------------------------------------------------------
   app.post<{ Params: { id: string } }>("/api/runs/:id/cancel", async (req, reply) => {
     const scope = await resolveCallerScope(req);
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<RunRow>(
         `UPDATE ops.run r
          SET status = 'cancelled', finished_at = now()

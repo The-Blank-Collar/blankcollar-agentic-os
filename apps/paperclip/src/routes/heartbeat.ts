@@ -12,7 +12,7 @@
 
 import type { FastifyInstance } from "fastify";
 
-import { query } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 
 export type HeartbeatPoint = { date: string; value: number };
@@ -59,48 +59,54 @@ export async function heartbeatRoutes(app: FastifyInstance): Promise<void> {
     const periodStart = `${dates[0]!}T00:00:00Z`;
     const periodEnd = new Date().toISOString();
 
-    const [captures, runs, goals, audits] = await Promise.all([
-      query<{ day: string; ct: string }>(
-        `SELECT to_char(date_trunc('day', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
-                count(*)::text AS ct
-           FROM ops.capture
-          WHERE org_id = $1 AND created_at >= $2
-          GROUP BY 1`,
-        [scope.org_id, periodStart],
-      ),
-      query<{ day: string; ct: string }>(
-        `SELECT to_char(date_trunc('day', r.finished_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
-                count(*)::text AS ct
-           FROM ops.run r
-           JOIN ops.goal g ON g.id = r.goal_id
-          WHERE g.org_id = $1
-            AND r.status = 'succeeded'
-            AND r.finished_at >= $2
-          GROUP BY 1`,
-        [scope.org_id, periodStart],
-      ),
-      query<{ day: string; ct: string }>(
-        // "active goals on day X" is counted as goals created on X that are
-        // still active or were active during X. Cheap proxy for v0: count
-        // active-status goals whose updated_at falls on day X.
-        `SELECT to_char(date_trunc('day', updated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
-                count(DISTINCT id)::text AS ct
-           FROM ops.goal
-          WHERE org_id = $1
-            AND status = 'active'
-            AND updated_at >= $2
-          GROUP BY 1`,
-        [scope.org_id, periodStart],
-      ),
-      query<{ day: string; ct: string }>(
-        `SELECT to_char(date_trunc('day', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
-                count(*)::text AS ct
-           FROM core.audit_log
-          WHERE org_id = $1 AND created_at >= $2
-          GROUP BY 1`,
-        [scope.org_id, periodStart],
-      ),
-    ]);
+    const { captures, runs, goals, audits } = await withOrgScope(
+      scope.org_id,
+      async (client) => {
+        const [c, r, g, a] = await Promise.all([
+          client.query<{ day: string; ct: string }>(
+            `SELECT to_char(date_trunc('day', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+                    count(*)::text AS ct
+               FROM ops.capture
+              WHERE org_id = $1 AND created_at >= $2
+              GROUP BY 1`,
+            [scope.org_id, periodStart],
+          ),
+          client.query<{ day: string; ct: string }>(
+            `SELECT to_char(date_trunc('day', r.finished_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+                    count(*)::text AS ct
+               FROM ops.run r
+               JOIN ops.goal g ON g.id = r.goal_id
+              WHERE g.org_id = $1
+                AND r.status = 'succeeded'
+                AND r.finished_at >= $2
+              GROUP BY 1`,
+            [scope.org_id, periodStart],
+          ),
+          client.query<{ day: string; ct: string }>(
+            // "active goals on day X" is counted as goals created on X that are
+            // still active or were active during X. Cheap proxy for v0: count
+            // active-status goals whose updated_at falls on day X.
+            `SELECT to_char(date_trunc('day', updated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+                    count(DISTINCT id)::text AS ct
+               FROM ops.goal
+              WHERE org_id = $1
+                AND status = 'active'
+                AND updated_at >= $2
+              GROUP BY 1`,
+            [scope.org_id, periodStart],
+          ),
+          client.query<{ day: string; ct: string }>(
+            `SELECT to_char(date_trunc('day', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+                    count(*)::text AS ct
+               FROM core.audit_log
+              WHERE org_id = $1 AND created_at >= $2
+              GROUP BY 1`,
+            [scope.org_id, periodStart],
+          ),
+        ]);
+        return { captures: c, runs: r, goals: g, audits: a };
+      },
+    );
 
     const response: HeartbeatResponse = {
       period_days: days,

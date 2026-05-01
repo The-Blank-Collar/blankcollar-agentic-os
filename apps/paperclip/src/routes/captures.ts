@@ -18,7 +18,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
-import { query, tx } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { config } from "../config.js";
 import { narrate } from "../llm.js";
 import { resolveCallerScope } from "../scope.js";
@@ -213,7 +213,7 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
     const llmIntent = await classifyWithHermes(parsed.data.raw_content);
     const intent = llmIntent ?? classify(parsed.data.raw_content);
 
-    const result = await tx(async (client) => {
+    const result = await withOrgScope(scope.org_id, async (client) => {
       // Pass the source through to the goal's metadata so downstream
       // consumers (briefing, inbox) can attribute it to the right channel.
       const goalMetadata = {
@@ -314,11 +314,13 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
   // -- recent captures ----------------------------------------------------
   app.get("/api/capture", async (req) => {
     const scope = await resolveCallerScope(req);
-    const { rows } = await query(
-      `SELECT id, source, raw_content, parsed_intent, resolved_to_id, resolved_kind, created_at
-       FROM ops.capture WHERE org_id = $1 ORDER BY created_at DESC LIMIT 50`,
-      [scope.org_id],
-    );
-    return rows;
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, source, raw_content, parsed_intent, resolved_to_id, resolved_kind, created_at
+         FROM ops.capture WHERE org_id = $1 ORDER BY created_at DESC LIMIT 50`,
+        [scope.org_id],
+      );
+      return rows;
+    });
   });
 }
