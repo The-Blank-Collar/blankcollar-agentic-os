@@ -31,9 +31,11 @@ import { searchRoutes } from "./routes/search.js";
 import { selfImprovementRoutes } from "./routes/self_improvement.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
+import { toolRoutes } from "./routes/tools.js";
 import { uiRoutes } from "./routes/ui.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { syncSkillRegistry } from "./skills/registry.js";
+import { syncToolRegistry } from "./tools/registry.js";
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -69,6 +71,7 @@ async function main(): Promise<void> {
   await app.register(heartbeatRoutes);
   await app.register(brainRoutes);
   await app.register(skillRoutes);
+  await app.register(toolRoutes);
   await app.register(routineRoutes);
   await app.register(onboardingRoutes);
   await app.register(policyRoutes);
@@ -118,6 +121,17 @@ async function main(): Promise<void> {
     });
   } catch (err) {
     app.log.error({ err }, "skills registry sync failed");
+  }
+
+  // Tools registry sync — same shape, packages/tools/manifests/.
+  try {
+    await syncToolRegistry({
+      info: (msg) => app.log.info(msg),
+      warn: (msg) => app.log.warn(msg),
+      error: (err, msg) => app.log.error({ err }, msg),
+    });
+  } catch (err) {
+    app.log.error({ err }, "tools registry sync failed");
   }
 
   if (config.workerEnabled) {

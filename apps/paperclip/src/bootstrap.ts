@@ -528,6 +528,53 @@ const ADDITIVE_MIGRATIONS = [
   // additively so existing dev volumes don't need a wipe.
   `ALTER TYPE core.role_kind ADD VALUE IF NOT EXISTS 'agent';`,
 
+  // -- ops.tool — MCP tool registry ----------------------------------------
+  // Mirrors ops.skill's structure but for MCP tools: a discoverable tool
+  // (name, transport, target, input_schema) that an agent can call. YAML
+  // manifests in packages/tools/manifests/{shared,company,personal}/ are
+  // the source of truth; the loader upserts shared manifests on every
+  // boot. Per-org tools (transport=stdio with org-specific binaries)
+  // live behind onboarding.
+  `DO $$ BEGIN
+     CREATE TYPE ops.tool_transport AS ENUM ('stdio', 'http', 'sse', 'websocket');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `CREATE TABLE IF NOT EXISTS ops.tool (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid REFERENCES core.organization(id) ON DELETE CASCADE,
+     slug            text NOT NULL,
+     version         integer NOT NULL DEFAULT 1,
+     scope           ops.skill_scope NOT NULL DEFAULT 'shared',
+     name            text NOT NULL,
+     description     text,
+     transport       ops.tool_transport NOT NULL,
+     target          text NOT NULL,
+     env_keys        jsonb NOT NULL DEFAULT '[]'::jsonb,
+     input_schema    jsonb NOT NULL DEFAULT '{}'::jsonb,
+     manifest_path   text NOT NULL,
+     enabled         boolean NOT NULL DEFAULT true,
+     created_at      timestamptz NOT NULL DEFAULT now(),
+     updated_at      timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS tool_uniq_idx
+      ON ops.tool (COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid), slug, version);`,
+  `ALTER TABLE ops.tool ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.tool FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.tool;`,
+  `CREATE POLICY app_scope_org ON ops.tool
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.tool;`,
+  `CREATE POLICY app_system_scope ON ops.tool
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- ops.policy — (role, agent_kind, skill_slug, action_kind) → effect --
   // The policy engine. Every skill invocation passes through evaluatePolicy
   // before queueing. Multiple matching rows: lowest priority wins, ties

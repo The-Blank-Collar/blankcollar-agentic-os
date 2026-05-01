@@ -348,6 +348,26 @@ export type ApprovalListQuery = z.infer<typeof ApprovalListQuery>;
 export const PolicyEffect = z.enum(["allow", "approve", "deny"]);
 export type PolicyEffect = z.infer<typeof PolicyEffect>;
 
+// ---------- Tool registry (MCP) -----------------------------------------
+
+export const ToolTransport = z.enum(["stdio", "http", "sse", "websocket"]);
+export type ToolTransport = z.infer<typeof ToolTransport>;
+
+export const ToolManifest = z
+  .object({
+    id:           z.string().min(1).max(120),
+    version:      z.number().int().min(1).default(1),
+    scope:        SkillScope.default("shared"),
+    name:         z.string().min(1).max(200),
+    description:  z.string().max(2_000).optional(),
+    transport:    ToolTransport,
+    target:       z.string().min(1).max(500),
+    env_keys:     z.array(z.string().min(1).max(120)).default([]),
+    input_schema: z.record(z.unknown()).default({}),
+  })
+  .strict();
+export type ToolManifest = z.infer<typeof ToolManifest>;
+
 export const PolicyCreate = z
   .object({
     role:        RoleKind.nullable().optional(),

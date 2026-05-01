@@ -294,6 +294,34 @@ GET /departments
 
 Lists every department in the caller's org with a count of active+draft goals — backs the org-overview tab and `bc depts`.
 
+### Tools (MCP registry)
+
+YAML manifests in `packages/tools/manifests/{shared,company,personal}/` upsert into `ops.tool` on every Paperclip boot. The catalog is read-only at the API layer in v0; invocation lives behind a future MCP-client transport.
+
+```http
+GET /tools?transport=stdio
+→ 200 [{
+  "id":            "<uuid>",
+  "slug":          "web.fetch",
+  "version":       1,
+  "scope":         "shared" | "company" | "personal",
+  "name":          "Fetch a web URL",
+  "description":   "...",
+  "transport":     "stdio" | "http" | "sse" | "websocket",
+  "target":        "npx @modelcontextprotocol/server-fetch",
+  "env_keys":      ["PGHOST", "..."],
+  "input_schema":  { ... },
+  "manifest_path": "/app/packages/tools/manifests/shared/web.fetch.yaml",
+  "enabled":       true
+}]
+```
+
+```http
+GET /tools/{slug}
+→ 200 { ...tool }
+→ 404 { "error": "tool_not_found" }
+```
+
 ### Policy engine
 
 Every skill invocation passes through the policy engine before queueing. Policies match on any combination of `(role, agent_kind, skill_slug, action_kind)` — null criteria are wildcards. Multiple matches: lowest `priority` wins, ties broken by specificity (fewer wildcards), then most-recent. No match → default `allow`.

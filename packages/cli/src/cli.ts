@@ -33,6 +33,7 @@ import { runRunGet, runRunsList } from "./commands/runs.js";
 import { runSearch } from "./commands/search.js";
 import { runSkillInvoke, runSkills } from "./commands/skills.js";
 import { runTail } from "./commands/tail.js";
+import { runToolGet, runToolsList } from "./commands/tools.js";
 import { runWhoami } from "./commands/whoami.js";
 import { emitError } from "./format.js";
 
@@ -105,6 +106,11 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
 
       case "skills":
         return await runSkills(args, client);
+
+      case "tools":
+        return await runToolsList(args, client);
+      case "tool":
+        return await runToolGet(args, client);
       case "skill": {
         if (args.positional[0] === "invoke") {
           const sub = { ...args, positional: args.positional.slice(1) };

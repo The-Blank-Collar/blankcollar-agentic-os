@@ -1,0 +1,21 @@
+id: postgres.query
+version: 1
+scope: shared
+name: Run a read-only Postgres query
+description: |
+  Read-only SQL against the Paperclip database. Always check policy
+  before adding this for non-owner roles — auditors can use it freely;
+  team_member should approve_under for ad-hoc queries.
+transport: stdio
+target: npx @modelcontextprotocol/server-postgres
+env_keys:
+  - PGHOST
+  - PGPORT
+  - PGUSER
+  - PGPASSWORD
+  - PGDATABASE
+input_schema:
+  sql:
+    type: string
+    required: true
+    description: A read-only SELECT statement.

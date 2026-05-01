@@ -1,0 +1,22 @@
+id: web.fetch
+version: 1
+scope: shared
+name: Fetch a web URL
+description: |
+  Fetches an HTTP/HTTPS URL and returns the response body. Useful as a
+  building block for web research without spinning up a full browser
+  (web.browse). Subject to the policy engine — the default policy allows
+  every role; tighten it (e.g. "deny external_url for team_member") via
+  bc policy add.
+transport: stdio
+target: npx @modelcontextprotocol/server-fetch
+env_keys: []
+input_schema:
+  url:
+    type: string
+    format: uri
+    required: true
+  method:
+    type: string
+    enum: [GET, HEAD]
+    default: GET
