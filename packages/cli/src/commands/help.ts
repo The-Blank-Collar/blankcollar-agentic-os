@@ -10,12 +10,14 @@ COMMANDS
   inbox --summary          counts per kind + urgent count (no items)
   inbox ack <goal_id>      mark a draft / routine output as seen
   goals                    list active goals
+  goals --summary          rollup: counts per kind / status + stalled
   goals --stalled[=N]      list goals with no run activity in N days (default 7)
   goal <id>                show one goal with KRs + contributors
   goal <id> --stats        + run rollup (totals, avg duration, last run)
   briefing                 today's editorial briefing
   agents                   list active agents
   agent <id>               show one agent's live state + recent runs
+  agent <id> --stats       + lifetime run rollup (totals, success rate, avg)
   skills                   list available skills
   audit                    run a self-audit on the last 7 days
   level-up                 propose changes from the latest audit

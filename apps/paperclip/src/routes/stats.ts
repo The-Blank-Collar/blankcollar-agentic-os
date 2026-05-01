@@ -26,6 +26,30 @@ export type GoalStats = {
   last_run_status: string | null;
 };
 
+export type GoalsSummary = {
+  total: number;
+  by_kind: { ephemeral: number; standing: number; routine: number; decision: number };
+  by_status: {
+    draft: number;
+    active: number;
+    paused: number;
+    achieved: number;
+    abandoned: number;
+  };
+  stalled_count: number;
+};
+
+export type AgentStats = {
+  agent_id: string;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  runs_running: number;
+  success_rate: number | null;
+  avg_duration_ms: number | null;
+  last_run_at: string | null;
+};
+
 export type ActivityRow = {
   run_id: string;
   goal_id: string;
@@ -43,7 +67,132 @@ export type ActivityRow = {
 const ACTIVITY_DEFAULT_LIMIT = 20;
 const ACTIVITY_MAX_LIMIT = 100;
 
+const STALLED_DEFAULT_DAYS = 7;
+
 export async function statsRoutes(app: FastifyInstance): Promise<void> {
+  // -- goals summary (org-wide rollup) ------------------------------------
+  // One row of integers for the dashboard headline strip — counts per
+  // kind, per status, and "what's stuck" stalled-count. Single trip.
+  app.get<{ Querystring: { stalled_days?: string } }>("/api/goals/summary", async (req) => {
+    const scope = await resolveCallerScope(req);
+    const stalledDays = Math.min(
+      Math.max(Number(req.query.stalled_days ?? STALLED_DEFAULT_DAYS), 1),
+      365,
+    );
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<{
+        total: string;
+        ephemeral: string;
+        standing: string;
+        routine: string;
+        decision: string;
+        draft: string;
+        active: string;
+        paused: string;
+        achieved: string;
+        abandoned: string;
+      }>(
+        `SELECT
+            COUNT(*)::text                                         AS total,
+            COUNT(*) FILTER (WHERE kind = 'ephemeral')::text       AS ephemeral,
+            COUNT(*) FILTER (WHERE kind = 'standing')::text        AS standing,
+            COUNT(*) FILTER (WHERE kind = 'routine')::text         AS routine,
+            COUNT(*) FILTER (WHERE kind = 'decision')::text        AS decision,
+            COUNT(*) FILTER (WHERE status = 'draft')::text         AS draft,
+            COUNT(*) FILTER (WHERE status = 'active')::text        AS active,
+            COUNT(*) FILTER (WHERE status = 'paused')::text        AS paused,
+            COUNT(*) FILTER (WHERE status = 'achieved')::text      AS achieved,
+            COUNT(*) FILTER (WHERE status = 'abandoned')::text     AS abandoned
+           FROM ops.goal
+          WHERE org_id = $1`,
+        [scope.org_id],
+      );
+      const { rows: stalledRows } = await client.query<{ stalled: string }>(
+        `SELECT COUNT(*)::text AS stalled
+           FROM ops.goal g
+          WHERE g.org_id = $1
+            AND g.status IN ('active','draft')
+            AND COALESCE(
+                  (SELECT MAX(r.created_at) FROM ops.run r WHERE r.goal_id = g.id),
+                  g.created_at
+                ) < now() - ($2 || ' days')::interval`,
+        [scope.org_id, stalledDays],
+      );
+
+      const r = rows[0]!;
+      const out: GoalsSummary = {
+        total: Number(r.total ?? "0"),
+        by_kind: {
+          ephemeral: Number(r.ephemeral ?? "0"),
+          standing: Number(r.standing ?? "0"),
+          routine: Number(r.routine ?? "0"),
+          decision: Number(r.decision ?? "0"),
+        },
+        by_status: {
+          draft: Number(r.draft ?? "0"),
+          active: Number(r.active ?? "0"),
+          paused: Number(r.paused ?? "0"),
+          achieved: Number(r.achieved ?? "0"),
+          abandoned: Number(r.abandoned ?? "0"),
+        },
+        stalled_count: Number(stalledRows[0]?.stalled ?? "0"),
+      };
+      return out;
+    });
+  });
+
+  // -- per-agent stats ----------------------------------------------------
+  app.get<{ Params: { id: string } }>("/api/agents/:id/stats", async (req, reply) => {
+    const scope = await resolveCallerScope(req);
+    const stats = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: own } = await client.query<{ id: string }>(
+        "SELECT id FROM ops.agent WHERE id = $1 AND org_id = $2",
+        [req.params.id, scope.org_id],
+      );
+      if (own.length === 0) return null;
+      const { rows } = await client.query<{
+        runs_total: string;
+        runs_succeeded: string;
+        runs_failed: string;
+        runs_running: string;
+        avg_duration_ms: string | null;
+        last_run_at: string | null;
+      }>(
+        `SELECT
+            COUNT(*)::text                                           AS runs_total,
+            COUNT(*) FILTER (WHERE r.status = 'succeeded')::text     AS runs_succeeded,
+            COUNT(*) FILTER (WHERE r.status = 'failed')::text        AS runs_failed,
+            COUNT(*) FILTER (WHERE r.status = 'running')::text       AS runs_running,
+            AVG(EXTRACT(EPOCH FROM (r.finished_at - r.started_at)) * 1000)
+                FILTER (WHERE r.finished_at IS NOT NULL AND r.started_at IS NOT NULL)::text
+                                                                     AS avg_duration_ms,
+            MAX(r.created_at)                                        AS last_run_at
+           FROM ops.run r
+           JOIN ops.goal g ON g.id = r.goal_id
+          WHERE r.agent_id = $1 AND g.org_id = $2`,
+        [req.params.id, scope.org_id],
+      );
+      const row = rows[0]!;
+      const total = Number(row.runs_total ?? "0");
+      const succeeded = Number(row.runs_succeeded ?? "0");
+      const failed = Number(row.runs_failed ?? "0");
+      const terminal = succeeded + failed;
+      const result: AgentStats = {
+        agent_id: req.params.id,
+        runs_total: total,
+        runs_succeeded: succeeded,
+        runs_failed: failed,
+        runs_running: Number(row.runs_running ?? "0"),
+        success_rate: terminal > 0 ? Math.round((succeeded / terminal) * 1000) / 10 : null,
+        avg_duration_ms: row.avg_duration_ms ? Math.round(Number(row.avg_duration_ms)) : null,
+        last_run_at: row.last_run_at,
+      };
+      return result;
+    });
+    if (!stats) return reply.code(404).send({ error: "not_found" });
+    return stats;
+  });
+
   // -- per-goal stats -----------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/goals/:id/stats", async (req, reply) => {
     const scope = await resolveCallerScope(req);

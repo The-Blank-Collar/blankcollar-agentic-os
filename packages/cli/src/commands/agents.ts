@@ -1,5 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
+import { flagBool } from "../argv.js";
 import { detectMode, emit, relative } from "../format.js";
 
 type Agent = {
@@ -15,6 +16,17 @@ type AgentState = Agent & {
   current_activity: string | null;
   sigil_seed: string;
   recent_runs: Array<{ id: string; status: string; created_at: string; goal_title: string | null }>;
+};
+
+type AgentStats = {
+  agent_id: string;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  runs_running: number;
+  success_rate: number | null;
+  avg_duration_ms: number | null;
+  last_run_at: string | null;
 };
 
 const STATUS_DOT: Record<AgentState["status"], string> = {
@@ -41,13 +53,19 @@ export async function runAgentsList(args: ParsedArgs, client: Client): Promise<n
 export async function runAgentGet(args: ParsedArgs, client: Client): Promise<number> {
   const id = args.positional[0];
   if (!id) {
-    process.stderr.write("usage: bc agent <id>\n");
+    process.stderr.write("usage: bc agent <id> [--stats]\n");
     return 2;
   }
-  const a = await client.get<AgentState>(`/api/agents/${encodeURIComponent(id)}/state`);
+  const wantStats = flagBool(args.flags, "stats");
+  const [a, stats] = await Promise.all([
+    client.get<AgentState>(`/api/agents/${encodeURIComponent(id)}/state`),
+    wantStats
+      ? client.get<AgentStats>(`/api/agents/${encodeURIComponent(id)}/stats`)
+      : Promise.resolve(null),
+  ]);
   const mode = detectMode(args.flags);
   if (mode === "json") {
-    emit("json", a);
+    emit("json", stats ? { ...a, stats } : a);
     return 0;
   }
   const lines = [
@@ -60,6 +78,17 @@ export async function runAgentGet(args: ParsedArgs, client: Client): Promise<num
     for (const r of a.recent_runs.slice(0, 5)) {
       lines.push(`    · ${r.status.padEnd(10)} ${(r.goal_title ?? "—").slice(0, 60)}  ${relative(r.created_at)}`);
     }
+  }
+  if (stats) {
+    const dur = stats.avg_duration_ms != null ? `${(stats.avg_duration_ms / 1000).toFixed(1)}s` : "—";
+    const rate = stats.success_rate != null ? `${stats.success_rate}%` : "—";
+    const last = stats.last_run_at ? relative(stats.last_run_at) : "never";
+    lines.push("");
+    lines.push("  stats:");
+    lines.push(`    runs:    ${stats.runs_total} total · ${stats.runs_succeeded} succeeded · ${stats.runs_failed} failed`);
+    lines.push(`    rate:    ${rate}`);
+    lines.push(`    avg:     ${dur}`);
+    lines.push(`    last:    ${last}`);
   }
   emit("pretty", lines.join("\n"));
   return 0;

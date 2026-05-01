@@ -314,7 +314,32 @@ GET /search?q=lark&kind=all&limit=20
 
 ### Stats / Activity
 
-Per-goal run rollup and an org-wide chronological activity feed. Both are derived views over `ops.run` — no new tables.
+Per-goal run rollup, per-agent run rollup, an org-wide goal-summary, and a chronological activity feed. All derived views over `ops.run` + `ops.goal` + `ops.agent` — no new tables.
+
+```http
+GET /goals/summary?stalled_days=7
+→ 200 {
+  "total":         42,
+  "by_kind":       { "ephemeral": 12, "standing": 6, "routine": 4, "decision": 20 },
+  "by_status":     { "draft": 1, "active": 30, "paused": 3, "achieved": 7, "abandoned": 1 },
+  "stalled_count": 5
+}
+```
+
+```http
+GET /agents/{id}/stats
+→ 200 {
+  "agent_id":        "<uuid>",
+  "runs_total":      214,
+  "runs_succeeded":  198,
+  "runs_failed":     12,
+  "runs_running":    1,
+  "success_rate":    94.3,
+  "avg_duration_ms": 4280,
+  "last_run_at":     "..."
+}
+→ 404 { "error": "not_found" }
+```
 
 ```http
 GET /goals/{id}/stats

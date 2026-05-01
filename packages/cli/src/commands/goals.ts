@@ -34,7 +34,48 @@ type GoalStats = {
   last_run_status: string | null;
 };
 
+type GoalsSummary = {
+  total: number;
+  by_kind: { ephemeral: number; standing: number; routine: number; decision: number };
+  by_status: {
+    draft: number;
+    active: number;
+    paused: number;
+    achieved: number;
+    abandoned: number;
+  };
+  stalled_count: number;
+};
+
 export async function runGoalsList(args: ParsedArgs, client: Client): Promise<number> {
+  const mode = detectMode(args.flags);
+
+  if (flagBool(args.flags, "summary")) {
+    const sum = await client.get<GoalsSummary>("/api/goals/summary");
+    if (mode === "json") {
+      emit("json", sum);
+      return 0;
+    }
+    const lines = [
+      `goals · ${sum.total} total · ${sum.stalled_count} stalled`,
+      "",
+      "by kind:",
+      `  ephemeral  ${sum.by_kind.ephemeral}`,
+      `  standing   ${sum.by_kind.standing}`,
+      `  routine    ${sum.by_kind.routine}`,
+      `  decision   ${sum.by_kind.decision}`,
+      "",
+      "by status:",
+      `  draft      ${sum.by_status.draft}`,
+      `  active     ${sum.by_status.active}`,
+      `  paused     ${sum.by_status.paused}`,
+      `  achieved   ${sum.by_status.achieved}`,
+      `  abandoned  ${sum.by_status.abandoned}`,
+    ];
+    emit("pretty", lines.join("\n"));
+    return 0;
+  }
+
   const status = flagString(args.flags, "status", "active");
   const kind = args.flags.kind;
   const stalled = flagBool(args.flags, "stalled") ? flagInt(args.flags, "stalled", 7) : null;
@@ -44,7 +85,6 @@ export async function runGoalsList(args: ParsedArgs, client: Client): Promise<nu
     stalled_for_days: stalled ?? undefined,
     limit: 50,
   });
-  const mode = detectMode(args.flags);
   if (mode === "json") {
     emit("json", goals);
     return 0;
