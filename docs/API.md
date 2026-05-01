@@ -294,6 +294,18 @@ GET /departments
 
 Lists every department in the caller's org with a count of active+draft goals — backs the org-overview tab and `bc depts`.
 
+### Approvals summary
+
+```http
+GET /approvals/summary
+→ 200 {
+  "pending": { "total": <int>, "urgent": <int>, "normal": <int>, "low": <int> },
+  "recent":  { "approved_7d": <int>, "declined_7d": <int>, "expired_7d": <int> }
+}
+```
+
+Counts only — for the governance rail and `bc approvals --summary`. Pending excludes already-expired entries.
+
 ### Whoami
 
 Resolved caller scope — org, role, department — for the status-bar rail and `bc whoami`.

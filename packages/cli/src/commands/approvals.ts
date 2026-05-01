@@ -1,5 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
+import { flagBool } from "../argv.js";
 import { detectMode, emit, relative, trunc } from "../format.js";
 
 type Approval = {
@@ -13,10 +14,37 @@ type Approval = {
   created_at: string;
 };
 
+type ApprovalSummary = {
+  pending: { total: number; urgent: number; normal: number; low: number };
+  recent:  { approved_7d: number; declined_7d: number; expired_7d: number };
+};
+
 export async function runApprovalsList(args: ParsedArgs, client: Client): Promise<number> {
+  const mode = detectMode(args.flags);
+
+  if (flagBool(args.flags, "summary")) {
+    const sum = await client.get<ApprovalSummary>("/api/approvals/summary");
+    if (mode === "json") {
+      emit("json", sum);
+      return 0;
+    }
+    const lines = [
+      `approvals · ${sum.pending.total} pending`,
+      `  urgent     ${sum.pending.urgent}`,
+      `  normal     ${sum.pending.normal}`,
+      `  low        ${sum.pending.low}`,
+      "",
+      "last 7 days:",
+      `  approved   ${sum.recent.approved_7d}`,
+      `  declined   ${sum.recent.declined_7d}`,
+      `  expired    ${sum.recent.expired_7d}`,
+    ];
+    emit("pretty", lines.join("\n"));
+    return 0;
+  }
+
   const status = typeof args.flags.status === "string" ? args.flags.status : "pending";
   const items = await client.get<Approval[]>("/api/approvals", { status, limit: 50 });
-  const mode = detectMode(args.flags);
   if (mode === "json") {
     emit("json", items);
     return 0;

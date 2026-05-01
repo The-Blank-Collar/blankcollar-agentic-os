@@ -140,6 +140,58 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // -- summary ------------------------------------------------------------
+  // Counts per urgency, plus 7-day approve/decline rates. Backs the
+  // governance rail and bc approvals --summary.
+  app.get("/api/approvals/summary", async (req) => {
+    const scope = await resolveCallerScope(req);
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<{
+        pending_total: string;
+        pending_urgent: string;
+        pending_normal: string;
+        pending_low: string;
+        approved_7d: string;
+        declined_7d: string;
+        expired_7d: string;
+      }>(
+        `SELECT
+            COUNT(*) FILTER (WHERE resolution IS NULL
+                              AND (expires_at IS NULL OR expires_at > now()))::text  AS pending_total,
+            COUNT(*) FILTER (WHERE resolution IS NULL AND urgency = 'urgent'
+                              AND (expires_at IS NULL OR expires_at > now()))::text  AS pending_urgent,
+            COUNT(*) FILTER (WHERE resolution IS NULL AND urgency = 'normal'
+                              AND (expires_at IS NULL OR expires_at > now()))::text  AS pending_normal,
+            COUNT(*) FILTER (WHERE resolution IS NULL AND urgency = 'low'
+                              AND (expires_at IS NULL OR expires_at > now()))::text  AS pending_low,
+            COUNT(*) FILTER (WHERE resolution = 'approved'
+                              AND resolved_at > now() - interval '7 days')::text     AS approved_7d,
+            COUNT(*) FILTER (WHERE resolution = 'declined'
+                              AND resolved_at > now() - interval '7 days')::text     AS declined_7d,
+            COUNT(*) FILTER (WHERE resolution IS NULL
+                              AND expires_at IS NOT NULL
+                              AND expires_at < now() - interval '7 days')::text      AS expired_7d
+           FROM ops.approval
+          WHERE org_id = $1`,
+        [scope.org_id],
+      );
+      const r = rows[0]!;
+      return {
+        pending: {
+          total: Number(r.pending_total ?? "0"),
+          urgent: Number(r.pending_urgent ?? "0"),
+          normal: Number(r.pending_normal ?? "0"),
+          low: Number(r.pending_low ?? "0"),
+        },
+        recent: {
+          approved_7d: Number(r.approved_7d ?? "0"),
+          declined_7d: Number(r.declined_7d ?? "0"),
+          expired_7d: Number(r.expired_7d ?? "0"),
+        },
+      };
+    });
+  });
+
   // -- get ----------------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/approvals/:id", async (req, reply) => {
     const scope = await resolveCallerScope(req);

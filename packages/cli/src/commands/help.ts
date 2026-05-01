@@ -33,6 +33,7 @@ COMMANDS
   audit                    run a self-audit on the last 7 days
   level-up                 propose changes from the latest audit
   approvals                list pending approvals
+  approvals --summary      counts per urgency + 7-day approve/decline rates
   approve <id> [note]      approve an agent's proposed action
   decline <id> [note]      decline an agent's proposed action
   knowledge                list wiki docs
