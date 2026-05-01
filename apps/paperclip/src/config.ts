@@ -47,6 +47,13 @@ export const config = {
   /** Routine scheduler — wakes periodically and fires due routines. */
   schedulerEnabled: env.PAPERCLIP_SCHEDULER_ENABLED !== "false",
   schedulerTickMs: Number(env.PAPERCLIP_SCHEDULER_TICK_MS ?? 60_000),
+
+  /**
+   * Auto-generate a daily briefing for each org once per day, at this UTC
+   * hour. Single-user installs will want this in their timezone (8am local
+   * = 13:00 UTC for ET, etc.). Per-user timezone settings land in Phase 6.
+   */
+  briefingHourUtc: Number(env.PAPERCLIP_BRIEFING_HOUR_UTC ?? 8),
 } as const;
 
 export type Config = typeof config;

@@ -92,6 +92,13 @@ const ADDITIVE_MIGRATIONS = [
    );`,
   `CREATE INDEX IF NOT EXISTS capture_org_idx ON ops.capture (org_id, created_at DESC);`,
 
+  // ops.run gets an acknowledged_at column so the user can dismiss inbox
+  // items (drafts / routine outputs) without changing the run's status.
+  `ALTER TABLE ops.run
+     ADD COLUMN IF NOT EXISTS acknowledged_at timestamptz;`,
+  `CREATE INDEX IF NOT EXISTS run_unacknowledged_idx
+      ON ops.run (goal_id, finished_at DESC) WHERE acknowledged_at IS NULL;`,
+
   // -- Row-Level Security (Phase 3.5) ------------------------------------
   // Belt-and-suspenders alongside the in-code resolveCallerScope() filters.
   // Policies match `org_id` against the session GUC `app.org_id` when set;

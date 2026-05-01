@@ -25,6 +25,7 @@
  */
 
 import { audit } from "./audit.js";
+import { composeBriefing } from "./briefing.js";
 import { config } from "./config.js";
 import { query, tx } from "./db.js";
 import { generatePlan } from "./plan.js";
@@ -104,6 +105,26 @@ export function firedInWindow(cron: ParsedCron, lastTick: Date, now: Date): bool
   return false;
 }
 
+/**
+ * True when `hour:00 UTC` falls in (lastTick, now]. Used to fire the daily
+ * briefing exactly once per UTC day. Idempotent at the DB level (the
+ * briefing query skips orgs that already have today's briefing) so the
+ * exact window doesn't have to be perfectly tight.
+ */
+export function briefingHourReached(lastTick: Date, now: Date, hourUtc: number): boolean {
+  const start = new Date(lastTick);
+  start.setUTCSeconds(0, 0);
+  start.setUTCMinutes(start.getUTCMinutes() + 1);
+  for (
+    let t = start;
+    t.getTime() <= now.getTime();
+    t = new Date(t.getTime() + 60_000)
+  ) {
+    if (t.getUTCHours() === hourUtc && t.getUTCMinutes() === 0) return true;
+  }
+  return false;
+}
+
 export class Scheduler {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
@@ -172,7 +193,68 @@ export class Scheduler {
       }
     }
     if (fired > 0) log.info(`scheduler: fired ${fired} routine${fired === 1 ? "" : "s"}`);
+
+    // Daily briefing auto-fire — once per org per day, at the configured UTC
+    // hour. Skips orgs that already have a daily briefing for today.
+    if (briefingHourReached(since, now, config.briefingHourUtc)) {
+      try {
+        await this.generateMissingBriefings(log);
+      } catch (err) {
+        log.error(err, "scheduler: briefing auto-fire failed");
+      }
+    }
+
     return fired;
+  }
+
+  private async generateMissingBriefings(log: Logger): Promise<void> {
+    // One briefing per org. Find orgs that have any goal/run/audit activity
+    // (i.e. real users, not empty test orgs) and don't already have a daily
+    // briefing today.
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    const { rows } = await query<{ id: string }>(
+      `SELECT DISTINCT o.id
+         FROM core.organization o
+        WHERE EXISTS (SELECT 1 FROM ops.goal g WHERE g.org_id = o.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM ops.briefing b
+             WHERE b.org_id = o.id
+               AND b.kind = 'daily'
+               AND b.generated_at >= $1
+          )`,
+      [todayStart.toISOString()],
+    );
+
+    for (const o of rows) {
+      try {
+        const composed = await composeBriefing(o.id, "daily");
+        await tx(async (client) => {
+          const { rows: brRows } = await client.query<{ id: string }>(
+            `INSERT INTO ops.briefing (org_id, kind, period_start, period_end, summary_md, sources)
+             VALUES ($1, 'daily'::ops.briefing_kind, $2, $3, $4, $5::jsonb)
+             RETURNING id`,
+            [o.id, composed.period_start, composed.period_end, composed.summary_md, JSON.stringify(composed.sources)],
+          );
+          const briefingId = brRows[0]!.id;
+          const scope: Scope = { org_id: o.id, role: "owner" };
+          await audit(
+            {
+              scope,
+              action: "briefing.generate",
+              target_type: "briefing",
+              target_id: briefingId,
+              metadata: { kind: "daily", source: "scheduler" },
+            },
+            client,
+          );
+        });
+        log.info(`scheduler: generated daily briefing for org ${o.id}`);
+      } catch (err) {
+        log.error(err, `scheduler: briefing generation failed for org ${o.id}`);
+      }
+    }
   }
 
   private async fireRoutine(r: RoutineRow, log: Logger): Promise<void> {

@@ -128,6 +128,8 @@ POST /briefing/generate
 
 When `ANTHROPIC_API_KEY` is set on Paperclip, the templated briefing is post-processed by Claude in brand voice (loaded from `/app/brand/{BRAND_NAME}.md`). The structured `sources` block stays unchanged — only `summary_md` becomes editorial. When the key is unset, briefings render via the deterministic template so the demo runs offline. The `sources.narrated` boolean tells the UI which path was taken.
 
+The scheduler auto-generates a daily briefing for every active org once per UTC day at `PAPERCLIP_BRIEFING_HOUR_UTC` (default 8). Idempotent — orgs that already have today's briefing are skipped. Per-user / per-org timezone settings land in Phase 6.
+
 ### Routines
 
 Goals with `kind=routine` carry a `cron_expr` and are fired automatically by Paperclip's in-process scheduler. v0 grammar is constrained to what the capture classifier produces:
@@ -168,12 +170,12 @@ Edge kinds:
 
 ### Inbox
 
-The Inbox answers the only question that matters: "what wants me?" It's not a folder of unread emails — it's the prioritised feed of things waiting on the human. v0 sources three item kinds; Phase 5 adds approval requests from the policy engine.
+The Inbox answers the only question that matters: "what wants me?" It's not a folder of unread emails — it's the prioritised feed of things waiting on the human. v0 sources four item kinds; Phase 5 adds approval requests from the policy engine.
 
 ```http
 GET /inbox?limit=20
 → 200 [{
-  "item_kind": "decision" | "blocked" | "draft",
+  "item_kind": "decision" | "routine_output" | "draft" | "blocked",
   "goal_id": "<uuid>",
   "title": "Should I extend the offer to candidate C-019?",
   "created_at": "...",
@@ -182,7 +184,21 @@ GET /inbox?limit=20
 }]
 ```
 
-Ordering: urgent first, then by item kind (decisions before drafts before blocked), then most-recent.
+Ordering: urgent first, then by item kind (decisions → routine outputs → drafts → blocked), then most-recent.
+
+Item kinds:
+- `decision` — kind=decision goals in `draft`/`active` state. Resolve via `POST /goals/:id/resolve`.
+- `routine_output` — a routine fired and produced unacknowledged output (e.g. *"your Monday digest is ready"*). Acknowledge via `POST /inbox/acknowledge/:goal_id`.
+- `draft` — a succeeded run on a standing/ephemeral goal whose output hasn't been acknowledged. Same acknowledge endpoint.
+- `blocked` — paused goals. Unblock by un-pausing the goal (`PATCH /goals/:id` with status).
+
+```http
+POST /inbox/acknowledge/{goal_id}
+→ 200 { "kind": "ok", "runs_acknowledged": <int> }
+→ 404 { "error": "not_found" }
+```
+
+Sets `acknowledged_at = now()` on every unacknowledged succeeded run for the goal, so the inbox stops surfacing it. Idempotent.
 
 ### Heartbeat
 

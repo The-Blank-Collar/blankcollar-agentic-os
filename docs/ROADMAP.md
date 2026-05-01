@@ -78,6 +78,9 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] `make personal` — single-user bootstrap with personal org + default agents
 - [x] Email-ingest service activated — IMAP poller writes conversation memories + POSTs actionable mail to `/api/capture`
 - [x] RLS policies on `ops.*`, `brain.memory`, `core.audit_log` — bound to session GUC `app.org_id` via `withOrgScope()`. Permissive default until routes migrate.
+- [x] Scheduled daily briefing — auto-fires once per UTC day at `PAPERCLIP_BRIEFING_HOUR_UTC` per active org
+- [x] Inbox `routine_output` distinct from `draft` — UI can render "your Monday digest is ready" vs generic drafts
+- [x] Inbox dismissal — `POST /api/inbox/acknowledge/:goal_id` marks runs seen so items stop surfacing
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
 

@@ -158,9 +158,11 @@ services:
       PAPERCLIP_LLM_MAX_TOKENS: ${PAPERCLIP_LLM_MAX_TOKENS:-800}
       BRAND_DIR: ${BRAND_DIR:-/app/brand}
       BRAND_NAME: ${BRAND_NAME:-blankcollar}
-      # Routine scheduler — fires kind=routine goals on their cron_expr.
+      # Routine scheduler — fires kind=routine goals on their cron_expr,
+      # auto-generates a daily briefing at PAPERCLIP_BRIEFING_HOUR_UTC.
       PAPERCLIP_SCHEDULER_ENABLED: ${PAPERCLIP_SCHEDULER_ENABLED:-true}
       PAPERCLIP_SCHEDULER_TICK_MS: ${PAPERCLIP_SCHEDULER_TICK_MS:-60000}
+      PAPERCLIP_BRIEFING_HOUR_UTC: ${PAPERCLIP_BRIEFING_HOUR_UTC:-8}
     ports:
       - "${PAPERCLIP_PORT:-3000}:80"
     volumes:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CronParseError, firedInWindow, parseCron } from "../src/scheduler.js";
+import { briefingHourReached, CronParseError, firedInWindow, parseCron } from "../src/scheduler.js";
 
 describe("parseCron", () => {
   it("parses an every-minute-of-an-hour expression", () => {
@@ -61,5 +61,32 @@ describe("firedInWindow", () => {
     const lastTick = new Date("2026-04-29T13:59:30Z");
     const now = new Date("2026-04-29T14:00:30Z");
     expect(firedInWindow(cron, lastTick, now)).toBe(true);
+  });
+});
+
+describe("briefingHourReached", () => {
+  it("fires when the configured UTC hour boundary is crossed", () => {
+    const lastTick = new Date("2026-04-29T07:59:30Z");
+    const now = new Date("2026-04-29T08:00:30Z");
+    expect(briefingHourReached(lastTick, now, 8)).toBe(true);
+  });
+
+  it("does not fire outside the boundary minute", () => {
+    const lastTick = new Date("2026-04-29T08:01:00Z");
+    const now = new Date("2026-04-29T08:02:00Z");
+    expect(briefingHourReached(lastTick, now, 8)).toBe(false);
+  });
+
+  it("does not fire on a different hour", () => {
+    const lastTick = new Date("2026-04-29T07:59:30Z");
+    const now = new Date("2026-04-29T08:00:30Z");
+    expect(briefingHourReached(lastTick, now, 9)).toBe(false);
+  });
+
+  it("respects multi-minute windows that contain the boundary", () => {
+    // Scheduler crashed for 5 minutes — the briefing minute is still in the window.
+    const lastTick = new Date("2026-04-29T07:55:00Z");
+    const now = new Date("2026-04-29T08:03:00Z");
+    expect(briefingHourReached(lastTick, now, 8)).toBe(true);
   });
 });
