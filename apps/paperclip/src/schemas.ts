@@ -150,10 +150,13 @@ export type DecisionResolve = z.infer<typeof DecisionResolve>;
 // ---------- Captures -----------------------------------------------------
 
 // What the user actually says. Always natural language; never "create a goal".
+// `kind` lets the caller pin the resulting goal kind (and skip the classifier
+// for that decision) — useful when the user knows what they want.
 export const CaptureCreate = z
   .object({
     raw_content: z.string().min(1).max(8_000),
     source: CaptureSource.default("text"),
+    kind: GoalKind.optional(),
     metadata: z.record(z.unknown()).optional(),
   })
   .strict();

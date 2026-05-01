@@ -1,6 +1,7 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
-import { detectMode, emit } from "../format.js";
+import { flagInt, flagString } from "../argv.js";
+import { detectMode, emit, relative, trunc } from "../format.js";
 
 type Briefing = {
   id: string;
@@ -12,6 +13,31 @@ type Briefing = {
 
 export async function runBriefing(args: ParsedArgs, client: Client): Promise<number> {
   const sub = args.positional[0];
+  const mode = detectMode(args.flags);
+
+  if (sub === "list") {
+    const kind = flagString(args.flags, "kind", "");
+    const limit = flagInt(args.flags, "limit", 10);
+    const params: Record<string, string | number | boolean | undefined> = { limit };
+    if (kind) params.kind = kind;
+    const rows = await client.get<Briefing[]>("/api/briefing", params);
+    if (mode === "json") {
+      emit("json", rows);
+      return 0;
+    }
+    if (rows.length === 0) {
+      emit("pretty", "no briefings.");
+      return 0;
+    }
+    const lines = [`briefings · ${rows.length} most recent${kind ? ` (kind=${kind})` : ""}`];
+    for (const b of rows) {
+      const head = (b.summary_md ?? "").split("\n").find((l) => l.trim()) ?? "";
+      lines.push(`  ${b.id.slice(0, 8)} ${b.kind.padEnd(10)} ${trunc(head.replace(/^#+\s*/, ""), 70)}  ${relative(b.generated_at)}`);
+    }
+    emit("pretty", lines.join("\n"));
+    return 0;
+  }
+
   let data: Briefing;
   if (sub === "generate") {
     data = await client.post<Briefing>("/api/briefing/generate", {
@@ -20,7 +46,6 @@ export async function runBriefing(args: ParsedArgs, client: Client): Promise<num
   } else {
     data = await client.get<Briefing>("/api/briefing/today");
   }
-  const mode = detectMode(args.flags);
   if (mode === "json") {
     emit("json", data);
     return 0;

@@ -1,5 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
+import { flagString } from "../argv.js";
 import { detectMode, emit } from "../format.js";
 
 type CaptureResp = {
@@ -10,16 +11,22 @@ type CaptureResp = {
   created_at: string;
 };
 
+const VALID_KINDS = new Set(["ephemeral", "standing", "routine", "decision"]);
+
 export async function runCapture(args: ParsedArgs, client: Client): Promise<number> {
   const text = args.positional.join(" ").trim();
   if (!text) {
-    process.stderr.write("usage: bc capture <text>\n");
+    process.stderr.write("usage: bc capture <text> [--kind=ephemeral|standing|routine|decision]\n");
     return 2;
   }
-  const data = await client.post<CaptureResp>("/api/capture", {
-    raw_content: text,
-    source: "text",
-  });
+  const kind = flagString(args.flags, "kind", "");
+  if (kind && !VALID_KINDS.has(kind)) {
+    process.stderr.write(`invalid --kind: ${kind} (must be one of ${[...VALID_KINDS].join("|")})\n`);
+    return 2;
+  }
+  const body: Record<string, unknown> = { raw_content: text, source: "text" };
+  if (kind) body.kind = kind;
+  const data = await client.post<CaptureResp>("/api/capture", body);
   const mode = detectMode(args.flags);
   if (mode === "json") {
     emit("json", data);

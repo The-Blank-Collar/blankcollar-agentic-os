@@ -211,7 +211,10 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
     // failure so the demo always works offline. Both produce the same Intent
     // shape.
     const llmIntent = await classifyWithHermes(parsed.data.raw_content);
-    const intent = llmIntent ?? classify(parsed.data.raw_content);
+    const baseIntent = llmIntent ?? classify(parsed.data.raw_content);
+    // Caller-pinned kind wins over the classifier — the user knows what
+    // they want; we just respect it.
+    const intent = parsed.data.kind ? { ...baseIntent, kind: parsed.data.kind } : baseIntent;
 
     const result = await withOrgScope(scope.org_id, async (client) => {
       // Pass the source through to the goal's metadata so downstream

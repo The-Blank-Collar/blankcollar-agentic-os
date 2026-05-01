@@ -5,7 +5,8 @@ USAGE
 
 COMMANDS
   health                   probe / surface every backend service
-  capture <text>           toss natural language at the assistant
+  capture <text> [--kind=ephemeral|standing|routine|decision]
+                           toss natural language at the assistant; --kind pins it
   inbox                    show what wants you (decisions, drafts, blocked, ...)
   inbox --summary          counts per kind + urgent count (no items)
   inbox ack <goal_id>      mark a draft / routine output as seen
@@ -23,6 +24,7 @@ COMMANDS
   kr set <kr_id> <value> [--unit=X]   update a KR's current value
   kr rm <kr_id>            delete a KR
   briefing                 today's editorial briefing
+  briefing list [--kind=daily|weekly|on_demand] [--limit=N]   past briefings
   agents                   list active agents
   agent <id>               show one agent's live state + recent runs
   agent <id> --stats       + lifetime run rollup (totals, success rate, avg)
