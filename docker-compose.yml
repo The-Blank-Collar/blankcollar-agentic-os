@@ -167,6 +167,7 @@ services:
       - "${PAPERCLIP_PORT:-3000}:80"
     volumes:
       - ./brand:/app/brand:ro
+      - ./packages/skills:/app/packages/skills:ro
     depends_on:
       postgres:
         condition: service_healthy

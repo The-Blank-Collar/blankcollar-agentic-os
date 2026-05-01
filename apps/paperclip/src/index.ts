@@ -19,10 +19,16 @@ import { healthRoutes } from "./routes/health.js";
 import { heartbeatRoutes } from "./routes/heartbeat.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { keyResultRoutes } from "./routes/keyresults.js";
+import { knowledgeRoutes } from "./routes/knowledge.js";
+import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
+import { routineRoutes } from "./routes/routines.js";
 import { runRoutes } from "./routes/runs.js";
+import { selfImprovementRoutes } from "./routes/self_improvement.js";
+import { skillRoutes } from "./routes/skills.js";
 import { uiRoutes } from "./routes/ui.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { syncSkillRegistry } from "./skills/registry.js";
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -57,6 +63,11 @@ async function main(): Promise<void> {
   await app.register(inboxRoutes);
   await app.register(heartbeatRoutes);
   await app.register(brainRoutes);
+  await app.register(skillRoutes);
+  await app.register(routineRoutes);
+  await app.register(onboardingRoutes);
+  await app.register(selfImprovementRoutes);
+  await app.register(knowledgeRoutes);
   await app.register(runRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
@@ -85,6 +96,18 @@ async function main(): Promise<void> {
     await ensureDefaultAgents({ info: (msg) => app.log.info(msg) });
   } catch (err) {
     app.log.error({ err }, "default-agents bootstrap failed");
+  }
+
+  // Skills registry sync — reads packages/skills/manifests/ from disk and
+  // upserts every shared manifest into ops.skill.
+  try {
+    await syncSkillRegistry({
+      info: (msg) => app.log.info(msg),
+      warn: (msg) => app.log.warn(msg),
+      error: (err, msg) => app.log.error({ err }, msg),
+    });
+  } catch (err) {
+    app.log.error({ err }, "skills registry sync failed");
   }
 
   if (config.workerEnabled) {

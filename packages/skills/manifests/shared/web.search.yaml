@@ -1,0 +1,21 @@
+id: web.search
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Search the web
+description: |
+  Runs a web search via Oxylabs AI Studio (when OXYLABS_API_KEY is set) or
+  DuckDuckGo Instant Answer (anonymous fallback). Normalises results into
+  `{title, url, snippet}` and writes them as a `document` memory.
+inputs:
+  query:
+    type: string
+    required: true
+  max_results:
+    type: integer
+    default: 10
+side_effects: read
+permissions:
+  required_role: any
+  approval_under: 0

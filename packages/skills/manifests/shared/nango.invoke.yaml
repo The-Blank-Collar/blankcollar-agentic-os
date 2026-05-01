@@ -1,0 +1,32 @@
+id: nango.invoke
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Call any Nango-connected service
+description: |
+  Proxy through self-hosted Nango to 400+ services (Slack, Notion, GitHub,
+  HubSpot, Google Workspace, Salesforce, Linear, etc). Use this when no
+  dedicated skill exists for the integration you need.
+inputs:
+  provider_config_key:
+    type: string
+    required: true
+  connection_id:
+    type: string
+    required: true
+  endpoint:
+    type: string
+    required: true
+  method:
+    type: string
+    enum: [GET, POST, PUT, PATCH, DELETE]
+    default: GET
+  params:
+    type: object
+  body:
+    type: object
+side_effects: external
+permissions:
+  required_role: department_lead
+  approval_under: 0

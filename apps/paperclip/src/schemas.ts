@@ -155,6 +155,149 @@ export const CaptureCreate = z
   .strict();
 export type CaptureCreate = z.infer<typeof CaptureCreate>;
 
+// ---------- Skills (Capabilities pillar) ---------------------------------
+
+export const SkillScope = z.enum(["personal", "company", "shared"]);
+export type SkillScope = z.infer<typeof SkillScope>;
+
+export const SideEffects = z.enum(["read", "write", "external"]);
+export type SideEffects = z.infer<typeof SideEffects>;
+
+export const SkillManifest = z
+  .object({
+    id: z.string().min(1).max(120),
+    version: z.number().int().min(1).default(1),
+    scope: SkillScope.default("shared"),
+    mode_aware: z.boolean().default(false),
+    agent_kind: z.string().min(1).max(50),
+    title: z.string().min(1).max(200),
+    description: z.string().max(2_000).optional(),
+    inputs: z.record(z.unknown()).default({}),
+    side_effects: SideEffects.default("read"),
+    permissions: z
+      .object({
+        required_role: RoleKind.optional(),
+        approval_under: z.number().nonnegative().optional(),
+      })
+      .strict()
+      .default({}),
+  })
+  .strict();
+export type SkillManifest = z.infer<typeof SkillManifest>;
+
+export const SkillListQuery = z
+  .object({
+    scope: SkillScope.optional(),
+    agent_kind: z.string().optional(),
+    enabled: z.coerce.boolean().optional(),
+  })
+  .strict();
+export type SkillListQuery = z.infer<typeof SkillListQuery>;
+
+// ---------- Routine triggers (Cadence pillar) ----------------------------
+
+export const RoutineTriggerKind = z.enum(["schedule", "event", "api"]);
+export type RoutineTriggerKind = z.infer<typeof RoutineTriggerKind>;
+
+export const RoutineTriggerCreate = z
+  .object({
+    trigger_kind: RoutineTriggerKind,
+    // For event triggers: { action: "decision.approve", match: { ... } }
+    // For api triggers:   { endpoint_token: "secret-token" } (auto-generated if omitted)
+    // For schedule:       { cron_expr: "0 9 * * 1" }
+    trigger_spec: z.record(z.unknown()).default({}),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+export type RoutineTriggerCreate = z.infer<typeof RoutineTriggerCreate>;
+
+export const RoutineTriggerPatch = z
+  .object({
+    trigger_spec: z.record(z.unknown()).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+export type RoutineTriggerPatch = z.infer<typeof RoutineTriggerPatch>;
+
+// ---------- Onboarding ----------------------------------------------------
+
+export const OnboardingMode = z.enum(["single_user", "multi_user"]);
+export type OnboardingMode = z.infer<typeof OnboardingMode>;
+
+export const OnboardingStart = z
+  .object({
+    mode: OnboardingMode,
+    user_email: z.string().email().optional(),
+    user_name: z.string().max(120).optional(),
+  })
+  .strict();
+export type OnboardingStart = z.infer<typeof OnboardingStart>;
+
+export const OnboardingAnswer = z
+  .object({
+    question_id: z.string().min(1).max(40),
+    answer: z.string().min(1).max(4_000),
+  })
+  .strict();
+export type OnboardingAnswer = z.infer<typeof OnboardingAnswer>;
+
+// ---------- Audit / Level-Up reports -------------------------------------
+
+export const AuditReportKind = z.enum(["audit", "level_up"]);
+export type AuditReportKind = z.infer<typeof AuditReportKind>;
+
+export const AuditReportRunRequest = z
+  .object({
+    kind: AuditReportKind,
+    period_hours: z.number().int().min(1).max(24 * 90).default(24 * 7),
+    user_id: z.string().uuid().optional(), // multi-user: scope to one teammate
+  })
+  .strict();
+export type AuditReportRunRequest = z.infer<typeof AuditReportRunRequest>;
+
+// ---------- Knowledge wiki (Context pillar) ------------------------------
+
+export const KnowledgeScope = z.enum(["personal", "company", "shared"]);
+export type KnowledgeScope = z.infer<typeof KnowledgeScope>;
+
+export const KnowledgeDocCreate = z
+  .object({
+    slug: z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9][a-z0-9-_/.]*$/i, "slug must be url-safe"),
+    title: z.string().min(1).max(200),
+    scope: KnowledgeScope.default("company"),
+    hot: z.boolean().default(false),
+    content_md: z.string().min(1).max(200_000),
+    tags: z.array(z.string().max(40)).max(40).default([]),
+  })
+  .strict();
+export type KnowledgeDocCreate = z.infer<typeof KnowledgeDocCreate>;
+
+export const KnowledgeDocPatch = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    scope: KnowledgeScope.optional(),
+    hot: z.boolean().optional(),
+    content_md: z.string().min(1).max(200_000).optional(),
+    tags: z.array(z.string().max(40)).max(40).optional(),
+  })
+  .strict();
+export type KnowledgeDocPatch = z.infer<typeof KnowledgeDocPatch>;
+
+export const KnowledgeListQuery = z
+  .object({
+    scope: KnowledgeScope.optional(),
+    hot: z.coerce.boolean().optional(),
+    tag: z.string().max(40).optional(),
+    q: z.string().max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+export type KnowledgeListQuery = z.infer<typeof KnowledgeListQuery>;
+
 // ---------- Runs ----------------------------------------------------------
 
 export const RunDispatch = z

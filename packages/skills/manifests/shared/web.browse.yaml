@@ -1,0 +1,26 @@
+id: web.browse
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Browse a JS-rendered page
+description: |
+  Headless Chromium via Playwright. Use for SPAs, paywalled sites, or
+  anything that needs the DOM after JavaScript execution. Slower than
+  web.fetch — pick web.fetch first unless you actually need rendering.
+inputs:
+  url:
+    type: string
+    format: uri
+    required: true
+  wait_until:
+    type: string
+    enum: [load, domcontentloaded, networkidle]
+    default: domcontentloaded
+  screenshot:
+    type: boolean
+    default: false
+side_effects: read
+permissions:
+  required_role: any
+  approval_under: 0

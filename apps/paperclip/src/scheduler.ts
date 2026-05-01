@@ -29,6 +29,7 @@ import { composeBriefing } from "./briefing.js";
 import { config } from "./config.js";
 import { query, tx } from "./db.js";
 import { generatePlan } from "./plan.js";
+import { fireRoutineFromTrigger, matchesEvent, type TriggerRow } from "./routines/triggers.js";
 import type { Scope } from "./schemas.js";
 
 type Logger = {
@@ -204,7 +205,73 @@ export class Scheduler {
       }
     }
 
+    // Event-triggered routines — scan audit_log entries created since the
+    // last tick, match against enabled event triggers, fire matching ones.
+    try {
+      const eventFires = await this.fireEventTriggers(since, now, log);
+      if (eventFires > 0) log.info(`scheduler: fired ${eventFires} event-triggered routine(s)`);
+    } catch (err) {
+      log.error(err, "scheduler: event-trigger pass failed");
+    }
+
     return fired;
+  }
+
+  private async fireEventTriggers(since: Date, now: Date, log: Logger): Promise<number> {
+    // 1. Pull audit entries created in (since, now]. These are the events
+    //    that *might* match a trigger.
+    const { rows: events } = await query<{
+      id: string;
+      org_id: string | null;
+      action: string;
+      target_type: string | null;
+      target_id: string | null;
+      metadata: Record<string, unknown>;
+      created_at: string;
+    }>(
+      `SELECT id, org_id, action, target_type, target_id, metadata, created_at
+         FROM core.audit_log
+        WHERE created_at > $1 AND created_at <= $2
+        ORDER BY created_at ASC
+        LIMIT 500`,
+      [since.toISOString(), now.toISOString()],
+    );
+    if (events.length === 0) return 0;
+
+    // 2. Pull every enabled event trigger. At v0 scale (one operator) the
+    //    set is tiny; we scan in-memory.
+    const { rows: triggers } = await query<TriggerRow & { goal_org_id: string }>(
+      `SELECT t.id, t.goal_id, t.trigger_kind, t.trigger_spec,
+              t.enabled, t.last_fired_at, g.org_id AS goal_org_id
+         FROM ops.routine_trigger t
+         JOIN ops.goal g ON g.id = t.goal_id
+        WHERE t.trigger_kind = 'event'
+          AND t.enabled = true
+          AND g.status IN ('draft','active')`,
+    );
+    if (triggers.length === 0) return 0;
+
+    let fires = 0;
+    for (const ev of events) {
+      for (const tr of triggers) {
+        // Same-org constraint: an event in org A can't trigger a routine in org B.
+        if (ev.org_id && tr.goal_org_id && ev.org_id !== tr.goal_org_id) continue;
+        if (!matchesEvent(tr.trigger_spec, ev)) continue;
+
+        try {
+          await tx(async (client) => {
+            const r = await fireRoutineFromTrigger(client, tr, {
+              cause_event_id: ev.id,
+              cause_action: ev.action,
+            });
+            if (r.run_count > 0) fires++;
+          });
+        } catch (err) {
+          log.error(err, `scheduler: event-trigger ${tr.id} failed for event ${ev.id}`);
+        }
+      }
+    }
+    return fires;
   }
 
   private async generateMissingBriefings(log: Logger): Promise<void> {

@@ -1,0 +1,26 @@
+id: self.audit
+version: 1
+scope: shared
+mode_aware: true
+agent_kind: hermes
+title: Weekly self-audit
+description: |
+  Reviews the last week of decisions, runs, captures, and audit-log entries
+  to surface: unresolved decisions, dropped drafts, recurring blockers,
+  policy violations. Mode-aware: in single_user mode the audit is private;
+  in multi_user mode the audit covers the org and can be filtered per-user.
+  Output is persisted as an `ops.audit_report` row of kind=audit.
+inputs:
+  period_hours:
+    type: integer
+    default: 168
+  user_id:
+    type: string
+    format: uuid
+    description: |
+      Optional. In multi-user mode, scope the audit to a single teammate.
+      Ignored in single-user mode.
+side_effects: read
+permissions:
+  required_role: owner
+  approval_under: 0

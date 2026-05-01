@@ -1,0 +1,24 @@
+id: google.sheets.append_row
+version: 1
+scope: shared
+mode_aware: false
+agent_kind: openclaw
+title: Append a row to a Google Sheet
+description: |
+  Appends one row to a Sheets spreadsheet. Useful for capturing structured
+  data over time (CRM logs, expense tracking, lead lists).
+inputs:
+  spreadsheet_id:
+    type: string
+    required: true
+  range:
+    type: string
+    default: Sheet1!A:Z
+  values:
+    type: array
+    items: { type: string }
+    required: true
+side_effects: external
+permissions:
+  required_role: any
+  approval_under: 0

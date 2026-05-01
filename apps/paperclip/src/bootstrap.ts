@@ -236,6 +236,232 @@ const ADDITIVE_MIGRATIONS = [
                  OR current_setting('app.org_id', true) = ''
                  OR org_id IS NULL
                  OR org_id::text = current_setting('app.org_id', true));`,
+
+  // =========================================================================
+  // Four Cs — extension tables
+  // -------------------------------------------------------------------------
+  // Capabilities: ops.skill (the manifest registry — YAML on disk is the
+  //               source of truth, Postgres holds the discovered metadata
+  //               for fast queries + scope filters).
+  // Cadence:      ops.routine_trigger (event/api-triggered routines on top
+  //               of the existing kind=routine + cron_expr scheduler).
+  // Context:      ops.knowledge_doc + ops.knowledge_link (markdown wiki
+  //               with backlinks, scoped personal / company / shared).
+  // Onboarding:   ops.onboarding_profile (interview answers + derived
+  //               config, mode-aware).
+  // Self-improve: ops.audit_report (Audit + Level-Up skill outputs).
+  // =========================================================================
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.skill_scope AS ENUM ('personal', 'company', 'shared');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS ops.skill (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid REFERENCES core.organization(id) ON DELETE CASCADE,
+     slug            text NOT NULL,
+     version         integer NOT NULL DEFAULT 1,
+     scope           ops.skill_scope NOT NULL DEFAULT 'shared',
+     mode_aware      boolean NOT NULL DEFAULT false,
+     agent_kind      text NOT NULL,
+     title           text NOT NULL,
+     description     text,
+     manifest_path   text NOT NULL,
+     params_schema   jsonb NOT NULL DEFAULT '{}'::jsonb,
+     side_effects    text NOT NULL DEFAULT 'read',
+     required_role   core.role_kind,
+     approval_under  numeric,
+     enabled         boolean NOT NULL DEFAULT true,
+     created_at      timestamptz NOT NULL DEFAULT now(),
+     updated_at      timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS skill_scope_slug_uniq
+      ON ops.skill (COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid), slug, version);`,
+  `CREATE INDEX IF NOT EXISTS skill_org_scope_idx ON ops.skill (org_id, scope, enabled);`,
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.routine_trigger_kind AS ENUM ('schedule', 'event', 'api');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS ops.routine_trigger (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     goal_id       uuid NOT NULL REFERENCES ops.goal(id) ON DELETE CASCADE,
+     trigger_kind  ops.routine_trigger_kind NOT NULL,
+     -- schedule    : { "cron_expr": "0 9 * * 1" }    (mirrors goal.cron_expr; null for non-schedule)
+     -- event       : { "action": "decision.approve", "match": { "metadata.kind": "..." } }
+     -- api         : { "endpoint_token": "..." }     (the trigger fires when this token is hit)
+     trigger_spec  jsonb NOT NULL DEFAULT '{}'::jsonb,
+     enabled       boolean NOT NULL DEFAULT true,
+     last_fired_at timestamptz,
+     created_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS routine_trigger_goal_idx ON ops.routine_trigger (goal_id);`,
+  `CREATE INDEX IF NOT EXISTS routine_trigger_kind_idx ON ops.routine_trigger (trigger_kind, enabled);`,
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.onboarding_mode AS ENUM ('single_user', 'multi_user');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS ops.onboarding_profile (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     user_id       uuid REFERENCES core.user_account(id) ON DELETE CASCADE,
+     mode          ops.onboarding_mode NOT NULL,
+     -- Q&A in document form: [{ "id": "Q1", "question": "...", "answer": "...", "asked_at": "..." }]
+     answers       jsonb NOT NULL DEFAULT '[]'::jsonb,
+     -- Derived from answers: brand voice, default agents, suggested routines, skills.
+     derived       jsonb NOT NULL DEFAULT '{}'::jsonb,
+     completed_at  timestamptz,
+     created_at    timestamptz NOT NULL DEFAULT now(),
+     updated_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS onboarding_profile_org_user_uniq
+      ON ops.onboarding_profile (org_id, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::uuid));`,
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.audit_report_kind AS ENUM ('audit', 'level_up');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS ops.audit_report (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     user_id         uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     kind            ops.audit_report_kind NOT NULL,
+     period_start    timestamptz NOT NULL,
+     period_end      timestamptz NOT NULL,
+     summary_md      text NOT NULL,
+     findings        jsonb NOT NULL DEFAULT '[]'::jsonb,
+     suggestions     jsonb NOT NULL DEFAULT '[]'::jsonb,
+     applied         boolean NOT NULL DEFAULT false,
+     created_at      timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS audit_report_org_kind_idx
+      ON ops.audit_report (org_id, kind, created_at DESC);`,
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.knowledge_scope AS ENUM ('personal', 'company', 'shared');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS ops.knowledge_doc (
+     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id       uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     user_id      uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     slug         text NOT NULL,
+     title        text NOT NULL,
+     scope        ops.knowledge_scope NOT NULL DEFAULT 'company',
+     hot          boolean NOT NULL DEFAULT false,
+     content_md   text NOT NULL,
+     tags         text[] NOT NULL DEFAULT ARRAY[]::text[],
+     -- Pointer back to gbrain so semantic recall finds the doc too.
+     memory_id    uuid,
+     created_at   timestamptz NOT NULL DEFAULT now(),
+     updated_at   timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS knowledge_doc_slug_uniq
+      ON ops.knowledge_doc (org_id, scope, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::uuid), slug);`,
+  `CREATE INDEX IF NOT EXISTS knowledge_doc_hot_idx
+      ON ops.knowledge_doc (org_id, scope, hot) WHERE hot = true;`,
+  `CREATE INDEX IF NOT EXISTS knowledge_doc_tags_idx ON ops.knowledge_doc USING GIN (tags);`,
+
+  `CREATE TABLE IF NOT EXISTS ops.knowledge_link (
+     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     from_doc_id uuid NOT NULL REFERENCES ops.knowledge_doc(id) ON DELETE CASCADE,
+     to_doc_id   uuid NOT NULL REFERENCES ops.knowledge_doc(id) ON DELETE CASCADE,
+     anchor      text,
+     created_at  timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS knowledge_link_uniq
+      ON ops.knowledge_link (from_doc_id, to_doc_id, COALESCE(anchor, ''));`,
+  `CREATE INDEX IF NOT EXISTS knowledge_link_to_idx ON ops.knowledge_link (to_doc_id);`,
+
+  // RLS for the new tables — same permissive-when-unset policy as existing.
+  `ALTER TABLE ops.skill              ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.skill              FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.routine_trigger    ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.routine_trigger    FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.onboarding_profile ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.onboarding_profile FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.audit_report       ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.audit_report       FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.knowledge_doc      ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.knowledge_doc      FORCE  ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.knowledge_link     ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.knowledge_link     FORCE  ROW LEVEL SECURITY;`,
+
+  // Skills with scope='shared' have NULL org_id (global registry); allow them through.
+  `DROP POLICY IF EXISTS app_scope_org ON ops.skill;`,
+  `CREATE POLICY app_scope_org ON ops.skill
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.routine_trigger;`,
+  `CREATE POLICY app_scope_org ON ops.routine_trigger
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.routine_trigger.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.goal g
+                    WHERE g.id = ops.routine_trigger.goal_id
+                      AND g.org_id::text = current_setting('app.org_id', true)
+                 ));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.onboarding_profile;`,
+  `CREATE POLICY app_scope_org ON ops.onboarding_profile
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.audit_report;`,
+  `CREATE POLICY app_scope_org ON ops.audit_report
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.knowledge_doc;`,
+  `CREATE POLICY app_scope_org ON ops.knowledge_doc
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR scope = 'shared'
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `DROP POLICY IF EXISTS app_scope_org ON ops.knowledge_link;`,
+  `CREATE POLICY app_scope_org ON ops.knowledge_link
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.knowledge_doc d
+                    WHERE d.id = ops.knowledge_link.from_doc_id
+                      AND (d.scope = 'shared'
+                           OR d.org_id::text = current_setting('app.org_id', true))
+                 ))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR EXISTS (
+                   SELECT 1 FROM ops.knowledge_doc d
+                    WHERE d.id = ops.knowledge_link.from_doc_id
+                      AND d.org_id::text = current_setting('app.org_id', true)
+                 ));`,
 ];
 
 export async function applyAdditiveMigrations(
