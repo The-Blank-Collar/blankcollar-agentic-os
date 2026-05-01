@@ -151,8 +151,20 @@ services:
       # Stripe webhook receiver — returns 503 when STRIPE_WEBHOOK_SECRET unset.
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      # Direct LLM access for prose (briefings). Hermes still owns the agent
+      # loop; this is just a side door for editorial copy. Empty key = templated.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PAPERCLIP_LLM_MODEL: ${PAPERCLIP_LLM_MODEL:-claude-sonnet-4-6}
+      PAPERCLIP_LLM_MAX_TOKENS: ${PAPERCLIP_LLM_MAX_TOKENS:-800}
+      BRAND_DIR: ${BRAND_DIR:-/app/brand}
+      BRAND_NAME: ${BRAND_NAME:-blankcollar}
+      # Routine scheduler — fires kind=routine goals on their cron_expr.
+      PAPERCLIP_SCHEDULER_ENABLED: ${PAPERCLIP_SCHEDULER_ENABLED:-true}
+      PAPERCLIP_SCHEDULER_TICK_MS: ${PAPERCLIP_SCHEDULER_TICK_MS:-60000}
     ports:
       - "${PAPERCLIP_PORT:-3000}:80"
+    volumes:
+      - ./brand:/app/brand:ro
     depends_on:
       postgres:
         condition: service_healthy

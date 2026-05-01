@@ -71,10 +71,14 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] `GET /api/inbox` — decisions / blocked / drafts feed, urgency-ordered
 - [x] `GET /api/heartbeat` — 14-day system pulse (captures, runs, goals, activity)
 - [x] `GET /api/agents/:id/state` — live / idle / warn + current activity + sigil seed
-- [ ] Hermes-narrated briefings (swap-in for the templated renderer)
-- [ ] Scheduled daily briefing job (cron-like in-process scheduler)
-- [ ] Single-user `make personal` bootstrap (one user, one org, default agents, brand voice)
+- [x] `POST /api/goals/:id/resolve` — approve/decline a decision goal
+- [x] `GET /api/brain/graph` — synthesised nodes + edges for the constellation page
+- [x] Hermes-narrated briefings (Anthropic-direct, brand voice, templated fallback)
+- [x] In-process routine scheduler — fires `kind=routine` goals on `cron_expr`
+- [x] `make personal` — single-user bootstrap with personal org + default agents
 - [ ] RLS policies (belt-and-suspenders alongside in-code scope filters)
+- [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
+- [ ] Email-ingest service activation (POST inbound mail → /api/capture)
 
 ## Phase 4 — Goal Command Centre
 

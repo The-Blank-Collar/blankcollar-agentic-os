@@ -8,8 +8,10 @@ import { applyAdditiveMigrations, ensureDefaultAgents } from "./bootstrap.js";
 import { config } from "./config.js";
 import { close as closeDb } from "./db.js";
 import { worker } from "./queue/worker.js";
+import { scheduler } from "./scheduler.js";
 import { agentRoutes } from "./routes/agents.js";
 import { auditRoutes } from "./routes/audit.js";
+import { brainRoutes } from "./routes/brain.js";
 import { briefingRoutes } from "./routes/briefings.js";
 import { captureRoutes } from "./routes/captures.js";
 import { goalRoutes } from "./routes/goals.js";
@@ -54,6 +56,7 @@ async function main(): Promise<void> {
   await app.register(briefingRoutes);
   await app.register(inboxRoutes);
   await app.register(heartbeatRoutes);
+  await app.register(brainRoutes);
   await app.register(runRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
@@ -93,9 +96,20 @@ async function main(): Promise<void> {
     app.log.info("worker disabled (PAPERCLIP_WORKER_ENABLED=false)");
   }
 
+  if (config.schedulerEnabled) {
+    scheduler.start({
+      info: (msg) => app.log.info(msg),
+      warn: (msg) => app.log.warn(msg),
+      error: (err, msg) => app.log.error({ err }, msg),
+    });
+  } else {
+    app.log.info("scheduler disabled (PAPERCLIP_SCHEDULER_ENABLED=false)");
+  }
+
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info(`received ${signal}, shutting down`);
     try {
+      await scheduler.stop();
       await worker.stop();
       await app.close();
       await closeDb();

@@ -60,6 +60,13 @@ PATCH /goals/{id}      # title, description, kind, cron_expr, due_at,
 DELETE /goals/{id}     # soft archive
 ```
 
+```http
+POST /goals/{id}/resolve         # only valid for kind=decision goals
+{ "resolution": "approved" | "declined", "note?": "string" }
+→ 200 { ...goal }                # status moves to 'achieved' (approved) or 'archived' (declined)
+→ 409 { "error": "not_a_decision" | "already_resolved" }
+```
+
 ### Key results
 
 ```http
@@ -118,6 +125,46 @@ POST /briefing/generate
 { "kind": "daily" | "weekly" | "on_demand", "period_hours?": 24 }
 → 201 { ...briefing }
 ```
+
+When `ANTHROPIC_API_KEY` is set on Paperclip, the templated briefing is post-processed by Claude in brand voice (loaded from `/app/brand/{BRAND_NAME}.md`). The structured `sources` block stays unchanged — only `summary_md` becomes editorial. When the key is unset, briefings render via the deterministic template so the demo runs offline. The `sources.narrated` boolean tells the UI which path was taken.
+
+### Routines
+
+Goals with `kind=routine` carry a `cron_expr` and are fired automatically by Paperclip's in-process scheduler. v0 grammar is constrained to what the capture classifier produces:
+
+```
+M H D MON DOW
+```
+
+- `M` minute (0–59) or `*`
+- `H` hour (0–23) or `*`
+- `D` and `MON` must be `*` (day-of-month / month not supported in v0)
+- `DOW` day-of-week (0=Sunday … 6=Saturday) or `*`
+
+Examples: `0 9 * * 1` (Mondays at 9), `0 8 * * *` (daily at 8), `0 * * * *` (hourly). Each fire generates a plan from the routine's title/description and dispatches one run per subtask. Disable with `PAPERCLIP_SCHEDULER_ENABLED=false`.
+
+### Brain graph
+
+Synthesised nodes + edges for the design's constellation page. v0 derives from `ops.goal` + `ops.agent` + `ops.capture` + recent `ops.run`s; the Graphiti-canonical version (queryable `/graph` over Neo4j) lands later.
+
+```http
+GET /brain/graph?limit=80
+→ 200 {
+  "nodes": [
+    { "id", "kind": "person" | "agent" | "goal" | "capture" | "tool",
+      "label": "string", "metadata?": { ... } }
+  ],
+  "edges": [{ "from", "to", "kind": "owns" | "contributes" | "captures" | "ran" }],
+  "truncated": false,
+  "generated_at": "..."
+}
+```
+
+Edge kinds:
+- `owns` — person → goal (via `goal.owner_id`)
+- `contributes` — person/agent → goal (via `ops.goal_contributor`)
+- `ran` — agent → goal (recent run within 14 days)
+- `captures` — capture → goal (the capture that created it)
 
 ### Inbox
 

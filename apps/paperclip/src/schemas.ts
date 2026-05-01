@@ -130,6 +130,19 @@ export const BriefingListQuery = z
   .strict();
 export type BriefingListQuery = z.infer<typeof BriefingListQuery>;
 
+// ---------- Decisions ----------------------------------------------------
+
+export const DecisionResolution = z.enum(["approved", "declined"]);
+export type DecisionResolution = z.infer<typeof DecisionResolution>;
+
+export const DecisionResolve = z
+  .object({
+    resolution: DecisionResolution,
+    note: z.string().max(2_000).optional(),
+  })
+  .strict();
+export type DecisionResolve = z.infer<typeof DecisionResolve>;
+
 // ---------- Captures -----------------------------------------------------
 
 // What the user actually says. Always natural language; never "create a goal".

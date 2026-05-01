@@ -10,6 +10,7 @@
  */
 
 import { query } from "./db.js";
+import { narrate } from "./llm.js";
 
 export type BriefingKind = "daily" | "weekly" | "on_demand";
 
@@ -29,7 +30,7 @@ export type Briefing = {
   period_start: string;
   period_end: string;
   summary_md: string;
-  sources: BriefingSources;
+  sources: BriefingSources & Record<string, unknown>;
 };
 
 const KIND_HOURS: Record<BriefingKind, number> = {
@@ -113,7 +114,7 @@ export async function composeBriefing(
     audit_count: Number(audits.rows[0]?.ct ?? 0),
   };
 
-  const summary_md = renderTemplate({
+  const templated = renderTemplate({
     kind,
     activeGoals,
     decisions: decisions.rows,
@@ -126,7 +127,36 @@ export async function composeBriefing(
     hours,
   });
 
-  return { kind, period_start: sources.period_start, period_end: sources.period_end, summary_md, sources };
+  // Hermes-narrated upgrade: when ANTHROPIC_API_KEY is set, run the templated
+  // structure through the LLM in brand voice. The template stays as the
+  // fallback, and the structured `sources` block is unchanged either way.
+  const narrated = await narrate({
+    systemHint:
+      "You are writing a daily editorial briefing for a single user (the founder/operator). " +
+      "Open with a single short observation about today's posture (calm, busy, decision-heavy, etc.). " +
+      "Then keep the existing markdown sections (Wants you / Coming up / Moving on its own / In flight) " +
+      "but rewrite the items in a warmer, more editorial tone. Don't add facts. Don't drop facts. " +
+      "Cap the whole briefing at ~200 words.",
+    userPrompt:
+      "Here is today's briefing as a structured template. Rewrite it in editorial voice, " +
+      "preserving all facts and section headings. Return only the markdown.\n\n" +
+      "```\n" +
+      templated +
+      "\n```",
+  });
+
+  const summary_md = narrated ?? templated;
+
+  return {
+    kind,
+    period_start: sources.period_start,
+    period_end: sources.period_end,
+    summary_md,
+    sources: {
+      ...sources,
+      ...(narrated ? { narrated: true, template_summary_md: templated } : { narrated: false }),
+    } as BriefingSources & Record<string, unknown>,
+  };
 }
 
 function renderTemplate(s: {

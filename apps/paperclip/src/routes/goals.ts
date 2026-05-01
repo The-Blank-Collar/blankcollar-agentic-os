@@ -4,7 +4,7 @@ import { audit } from "../audit.js";
 import { query, tx } from "../db.js";
 import { generatePlan } from "../plan.js";
 import { resolveCallerScope } from "../scope.js";
-import { GoalCreate, GoalListQuery, GoalPatch, RunDispatch } from "../schemas.js";
+import { DecisionResolve, GoalCreate, GoalListQuery, GoalPatch, RunDispatch } from "../schemas.js";
 
 type GoalRow = {
   id: string;
@@ -202,6 +202,70 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!result) return reply.code(404).send({ error: "not_found" });
     return result;
+  });
+
+  // -- resolve a decision -------------------------------------------------
+  // Decision goals (kind=decision) accumulate in the inbox until the user
+  // approves or declines. Resolving moves the goal to a terminal state and
+  // logs the resolution + note for audit.
+  app.post<{ Params: { id: string } }>("/api/goals/:id/resolve", async (req, reply) => {
+    const parsed = DecisionResolve.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
+    }
+    const scope = await resolveCallerScope(req);
+    const result = await tx(async (client) => {
+      const { rows } = await client.query<GoalRow>(
+        `SELECT ${GOAL_COLUMNS} FROM ops.goal
+          WHERE id = $1 AND org_id = $2 FOR UPDATE`,
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return { kind: "not_found" as const };
+      const goal = rows[0]!;
+      if (goal.kind !== "decision") {
+        return { kind: "wrong_kind" as const, goal };
+      }
+      if (goal.status === "achieved" || goal.status === "archived") {
+        return { kind: "already_resolved" as const, goal };
+      }
+
+      const newStatus = parsed.data.resolution === "approved" ? "achieved" : "archived";
+      const mergedMeta = {
+        ...(goal.metadata ?? {}),
+        resolution: parsed.data.resolution,
+        resolution_note: parsed.data.note ?? null,
+        resolved_at: new Date().toISOString(),
+      };
+      const { rows: updated } = await client.query<GoalRow>(
+        `UPDATE ops.goal
+            SET status   = $2::ops.goal_status,
+                metadata = $3::jsonb,
+                updated_at = now()
+          WHERE id = $1
+          RETURNING ${GOAL_COLUMNS}`,
+        [goal.id, newStatus, JSON.stringify(mergedMeta)],
+      );
+      await audit(
+        {
+          scope,
+          action: parsed.data.resolution === "approved" ? "decision.approve" : "decision.decline",
+          target_type: "goal",
+          target_id: goal.id,
+          metadata: { note: parsed.data.note ?? null },
+        },
+        client,
+      );
+      return { kind: "ok" as const, goal: updated[0]! };
+    });
+
+    if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (result.kind === "wrong_kind") {
+      return reply.code(409).send({ error: "not_a_decision", current_kind: result.goal.kind });
+    }
+    if (result.kind === "already_resolved") {
+      return reply.code(409).send({ error: "already_resolved", current_status: result.goal.status });
+    }
+    return result.goal;
   });
 
   // -- plan ---------------------------------------------------------------

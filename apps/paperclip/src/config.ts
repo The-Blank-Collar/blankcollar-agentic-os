@@ -32,6 +32,21 @@ export const config = {
   supabaseJwtSecret: env.SUPABASE_JWT_SECRET ?? "",
   supabaseProjectUrl: env.SUPABASE_URL ?? "",
   authEnforce: env.PAPERCLIP_AUTH_ENFORCE === "true",
+
+  /**
+   * Direct LLM access for prose generation (briefings, plan synthesis).
+   * Stays empty by default — when unset, briefings render via the templated
+   * fallback so the demo runs offline. Hermes still owns the agent loop.
+   */
+  anthropicApiKey: env.ANTHROPIC_API_KEY ?? "",
+  anthropicModel: env.PAPERCLIP_LLM_MODEL ?? "claude-sonnet-4-6",
+  anthropicMaxTokens: Number(env.PAPERCLIP_LLM_MAX_TOKENS ?? 800),
+  brandDir: env.BRAND_DIR ?? "/app/brand",
+  brandName: env.BRAND_NAME ?? "blankcollar",
+
+  /** Routine scheduler — wakes periodically and fires due routines. */
+  schedulerEnabled: env.PAPERCLIP_SCHEDULER_ENABLED !== "false",
+  schedulerTickMs: Number(env.PAPERCLIP_SCHEDULER_TICK_MS ?? 60_000),
 } as const;
 
 export type Config = typeof config;

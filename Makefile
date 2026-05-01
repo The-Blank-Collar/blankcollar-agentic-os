@@ -109,6 +109,13 @@ paperclip-onboard: ## One-time setup for native paperclipai (rarely needed; onbo
 	@cd "$$HOME" && npx --yes paperclipai@latest onboard --yes
 
 # -----------------------------------------------------------------------------
+# Single-user mode
+# -----------------------------------------------------------------------------
+.PHONY: personal
+personal: ## Land in single-user mode. Usage: make personal NAME="Lior" EMAIL=lior@example.com
+	@NAME="$(NAME)" EMAIL="$(EMAIL)" PERSONAL_ORG_SLUG="$(PERSONAL_ORG_SLUG)" ./infra/scripts/personal.sh
+
+# -----------------------------------------------------------------------------
 # Supabase local-testing helpers — see docs/SUPABASE_LOCAL.md
 # -----------------------------------------------------------------------------
 .PHONY: user-add
