@@ -1,6 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
-import { detectMode, emit, trunc } from "../format.js";
+import { detectMode, emit, relative, trunc } from "../format.js";
 
 type Doc = {
   id: string;
@@ -33,7 +33,8 @@ export async function runKnowledgeList(args: ParsedArgs, client: Client): Promis
   const lines = [`knowledge · ${docs.length} doc${docs.length === 1 ? "" : "s"}`];
   for (const d of docs) {
     const flag = d.hot ? "★" : " ";
-    lines.push(`  ${flag} ${d.scope.padEnd(8)} ${d.slug.padEnd(30)} ${trunc(d.title, 50)}`);
+    const tags = d.tags.length > 0 ? `  [${d.tags.slice(0, 3).join(", ")}]` : "";
+    lines.push(`  ${flag} ${d.scope.padEnd(8)} ${d.slug.padEnd(28)} ${trunc(d.title, 40).padEnd(40)} ${relative(d.updated_at)}${tags}`);
   }
   emit("pretty", lines.join("\n"));
   return 0;

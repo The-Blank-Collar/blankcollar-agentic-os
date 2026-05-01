@@ -36,7 +36,7 @@ COMMANDS
   approvals --summary      counts per urgency + 7-day approve/decline rates
   approve <id> [note]      approve an agent's proposed action
   decline <id> [note]      decline an agent's proposed action
-  knowledge                list wiki docs
+  knowledge [--scope=X --hot --tag=Y --q=text]   list wiki docs (filtered)
   knowledge get <slug>     show one doc + backlinks
   channels                 connected providers + sentinel rows
   depts                    list departments + active goal counts
