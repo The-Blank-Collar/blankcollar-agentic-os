@@ -298,6 +298,31 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
           "UPDATE ops.approval SET run_id = $2 WHERE id = $1",
           [approval.id, runId],
         );
+      } else if (
+        approval.action_kind === "payment.charge" &&
+        approval.proposal &&
+        typeof approval.proposal === "object" &&
+        "payment_request_id" in approval.proposal
+      ) {
+        // Payment request approval: transition the linked ops.payment_request
+        // to 'approved' (so the connector picks it up) or 'declined'. The
+        // connector itself ships in a future cloud sprint.
+        const p = approval.proposal as { payment_request_id: string };
+        const newStatus = resolution === "approved" ? "approved" : "declined";
+        await client.query(
+          `UPDATE ops.payment_request
+              SET status = $2::ops.payment_status,
+                  decided_at = COALESCE(decided_at, now()),
+                  decided_reason = COALESCE(decided_reason, $3)
+            WHERE id = $1`,
+          [
+            p.payment_request_id,
+            newStatus,
+            resolution === "approved"
+              ? "approved by operator"
+              : (parsed.data.note ?? "declined by operator"),
+          ],
+        );
       }
 
       await audit(

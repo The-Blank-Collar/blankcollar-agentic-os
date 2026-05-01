@@ -64,7 +64,7 @@ export class Client {
   }
 
   async request<T = unknown>(args: {
-    method: "GET" | "POST" | "PATCH" | "DELETE";
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     path: string;
     query?: Record<string, string | number | boolean | undefined>;
     body?: unknown;
@@ -100,6 +100,9 @@ export class Client {
   }
   patch<T = unknown>(path: string, body?: unknown): Promise<T> {
     return this.request<T>({ method: "PATCH", path, body });
+  }
+  put<T = unknown>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>({ method: "PUT", path, body });
   }
   del<T = unknown>(path: string): Promise<T> {
     return this.request<T>({ method: "DELETE", path });

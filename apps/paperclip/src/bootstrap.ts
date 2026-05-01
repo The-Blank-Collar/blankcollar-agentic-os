@@ -528,6 +528,145 @@ const ADDITIVE_MIGRATIONS = [
   // additively so existing dev volumes don't need a wipe.
   `ALTER TYPE core.role_kind ADD VALUE IF NOT EXISTS 'agent';`,
 
+  // -- Phase 9: outbound payments safety primitives -----------------------
+  // Data models for the safety layer that gates every agent payment.
+  // Stripe connector + Finance Agent live in a future cloud sprint;
+  // this lays the locally-testable foundation.
+  `DO $$ BEGIN
+     CREATE TYPE ops.payment_status AS ENUM (
+       'pending','approved','executing','succeeded','failed','declined','expired','killed'
+     );
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `DO $$ BEGIN
+     CREATE TYPE ops.spending_period AS ENUM ('per_request','daily','weekly','monthly');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  // Singleton-per-org. enabled=false (master off) is the default — no
+  // payment can be requested until the operator flips it. kill_switch=true
+  // halts every payment regardless of other settings; only the operator
+  // can clear it.
+  `CREATE TABLE IF NOT EXISTS ops.payment_settings (
+     org_id              uuid PRIMARY KEY REFERENCES core.organization(id) ON DELETE CASCADE,
+     enabled             boolean NOT NULL DEFAULT false,
+     kill_switch         boolean NOT NULL DEFAULT false,
+     default_limit_cents bigint  NOT NULL DEFAULT 0,
+     default_period      ops.spending_period NOT NULL DEFAULT 'per_request',
+     approval_threshold  bigint  NOT NULL DEFAULT 0,
+     notify_email        text,
+     updated_at          timestamptz NOT NULL DEFAULT now()
+   );`,
+  `ALTER TABLE ops.payment_settings ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.payment_settings FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.payment_settings;`,
+  `CREATE POLICY app_scope_org ON ops.payment_settings
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.payment_settings;`,
+  `CREATE POLICY app_system_scope ON ops.payment_settings
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // Per-agent caps. Override the org default for a single agent_id.
+  // category lets an operator say "Hermes can spend $X/month, but only
+  // on category=research".
+  `CREATE TABLE IF NOT EXISTS ops.agent_spending_limit (
+     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id       uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     agent_id     uuid NOT NULL REFERENCES ops.agent(id) ON DELETE CASCADE,
+     limit_cents  bigint NOT NULL CHECK (limit_cents >= 0),
+     period       ops.spending_period NOT NULL DEFAULT 'monthly',
+     category     text,
+     created_at   timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS asl_agent_idx ON ops.agent_spending_limit (agent_id);`,
+  `ALTER TABLE ops.agent_spending_limit ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.agent_spending_limit FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.agent_spending_limit;`,
+  `CREATE POLICY app_scope_org ON ops.agent_spending_limit
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.agent_spending_limit;`,
+  `CREATE POLICY app_system_scope ON ops.agent_spending_limit
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // Every payment the system considers — pending, approved, declined,
+  // killed, executed. external_ref holds the connector's id (Stripe
+  // charge id, etc.) once executed; null until then.
+  `CREATE TABLE IF NOT EXISTS ops.payment_request (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     agent_id        uuid REFERENCES ops.agent(id) ON DELETE SET NULL,
+     goal_id         uuid REFERENCES ops.goal(id) ON DELETE SET NULL,
+     run_id          uuid REFERENCES ops.run(id)  ON DELETE SET NULL,
+     amount_cents    bigint NOT NULL CHECK (amount_cents > 0),
+     currency        text   NOT NULL DEFAULT 'USD',
+     vendor          text   NOT NULL,
+     category        text,
+     description     text   NOT NULL,
+     status          ops.payment_status NOT NULL DEFAULT 'pending',
+     approval_id     uuid REFERENCES ops.approval(id) ON DELETE SET NULL,
+     decided_reason  text,
+     external_ref    text,
+     created_at      timestamptz NOT NULL DEFAULT now(),
+     decided_at      timestamptz,
+     executed_at     timestamptz
+   );`,
+  `CREATE INDEX IF NOT EXISTS pr_org_status_idx ON ops.payment_request (org_id, status, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS pr_agent_idx      ON ops.payment_request (agent_id, created_at DESC);`,
+  `ALTER TABLE ops.payment_request ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.payment_request FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.payment_request;`,
+  `CREATE POLICY app_scope_org ON ops.payment_request
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.payment_request;`,
+  `CREATE POLICY app_system_scope ON ops.payment_request
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // Audit trail of every kill-switch flip — both directions. Lets us
+  // reconstruct "who turned it on at 03:14, who cleared it at 09:30".
+  `CREATE TABLE IF NOT EXISTS ops.kill_switch_event (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     active        boolean NOT NULL,
+     triggered_by  uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     reason        text,
+     created_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS kse_org_idx ON ops.kill_switch_event (org_id, created_at DESC);`,
+  `ALTER TABLE ops.kill_switch_event ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.kill_switch_event FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.kill_switch_event;`,
+  `CREATE POLICY app_scope_org ON ops.kill_switch_event
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.kill_switch_event;`,
+  `CREATE POLICY app_system_scope ON ops.kill_switch_event
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- ops.tool — MCP tool registry ----------------------------------------
   // Mirrors ops.skill's structure but for MCP tools: a discoverable tool
   // (name, transport, target, input_schema) that an agent can call. YAML

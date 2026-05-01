@@ -348,6 +348,53 @@ export type ApprovalListQuery = z.infer<typeof ApprovalListQuery>;
 export const PolicyEffect = z.enum(["allow", "approve", "deny"]);
 export type PolicyEffect = z.infer<typeof PolicyEffect>;
 
+// ---------- Payments (Phase 9 safety primitives) -------------------------
+
+export const SpendingPeriod = z.enum(["per_request", "daily", "weekly", "monthly"]);
+export type SpendingPeriod = z.infer<typeof SpendingPeriod>;
+
+export const PaymentSettingsPatch = z
+  .object({
+    enabled:             z.boolean().optional(),
+    default_limit_cents: z.number().int().min(0).max(1_000_000_000_000).optional(),
+    default_period:      SpendingPeriod.optional(),
+    approval_threshold:  z.number().int().min(0).max(1_000_000_000_000).optional(),
+    notify_email:        z.string().email().nullable().optional(),
+  })
+  .strict();
+export type PaymentSettingsPatch = z.infer<typeof PaymentSettingsPatch>;
+
+export const SpendingLimitCreate = z
+  .object({
+    agent_id:    z.string().uuid(),
+    limit_cents: z.number().int().min(0).max(1_000_000_000_000),
+    period:      SpendingPeriod.default("monthly"),
+    category:    z.string().min(1).max(80).nullable().optional(),
+  })
+  .strict();
+export type SpendingLimitCreate = z.infer<typeof SpendingLimitCreate>;
+
+export const PaymentRequestCreate = z
+  .object({
+    agent_id:     z.string().uuid().nullable().optional(),
+    goal_id:      z.string().uuid().nullable().optional(),
+    run_id:       z.string().uuid().nullable().optional(),
+    amount_cents: z.number().int().min(1).max(1_000_000_000_000),
+    currency:     z.string().length(3).default("USD"),
+    vendor:       z.string().min(1).max(200),
+    category:     z.string().min(1).max(80).nullable().optional(),
+    description:  z.string().min(1).max(2_000),
+  })
+  .strict();
+export type PaymentRequestCreate = z.infer<typeof PaymentRequestCreate>;
+
+export const KillSwitchToggle = z
+  .object({
+    reason: z.string().max(500).nullable().optional(),
+  })
+  .strict();
+export type KillSwitchToggle = z.infer<typeof KillSwitchToggle>;
+
 // ---------- Tool registry (MCP) -----------------------------------------
 
 export const ToolTransport = z.enum(["stdio", "http", "sse", "websocket"]);

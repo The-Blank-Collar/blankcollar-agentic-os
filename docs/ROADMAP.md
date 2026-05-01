@@ -156,10 +156,10 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 **Build order (strict, mirrors the design brief):**
 
 1. README update — Stripe Payments integration overview + safety design philosophy
-2. Data models — `PaymentSettings`, `PaymentRequest`, `AgentSpendingLimit`, `Approval` (extension), `TransactionLog`, `Vendor`, `Category`, `KillSwitchEvent`
-3. **Payment Settings backend** — enable/disable, limits, rules, per-agent controls, kill switch
-4. **Policy Engine** with hard enforcement (no agent or skill can override)
-5. **Stripe connector service** — Link Wallets + Issuing + MPP + SPT + Stripe Projects (May 2026 product set)
+2. ✅ **Data models** — `ops.payment_settings` (singleton-per-org), `ops.agent_spending_limit`, `ops.payment_request`, `ops.kill_switch_event`. Enums: `payment_status`, `spending_period`. RLS + system-scope siblings on all four. (Phase 9 sprint 21.)
+3. ✅ **Payment Settings backend** — `GET/PUT /api/payments/settings`, `GET/POST/DELETE /api/payments/limits`, `POST /api/payments/{kill,resume}`, `POST /api/payments/request`, `GET /api/payments/requests`. Decision tree: kill switch → enabled → per-agent cap + period rollup → policy engine → approval threshold → approved. Pending requests create an `ops.approval` (action_kind=`payment.charge`); approving transitions the payment_request to approved/declined.
+4. ✅ **Policy Engine** with hard enforcement — `ops.policy` engine ships in sprint 19; payment requests evaluate `action_kind="payment.charge"` before deciding.
+5. **Stripe connector service** — Link Wallets + Issuing + MPP + SPT + Stripe Projects (May 2026 product set). Picks up rows in `status='approved'` and executes them; updates to `executing → succeeded/failed` with `external_ref`. *(Cloud sprint — needs live Stripe.)*
 6. **Finance Agent** (LangGraph) — only handles payments, strictly follows policies
 7. **Approval workflow** — multi-channel notify, wait, execute, log
 8. **Graphiti integration** — scoped logging of every payment + decision

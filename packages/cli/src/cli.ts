@@ -27,6 +27,14 @@ import { runHelp } from "./commands/help.js";
 import { runInboxAck, runInboxList } from "./commands/inbox.js";
 import { runKnowledgeGet, runKnowledgeList } from "./commands/knowledge.js";
 import { runOnboard } from "./commands/onboard.js";
+import {
+  runPaymentsConfigure,
+  runPaymentsEnable,
+  runPaymentsKill,
+  runPaymentsLimits,
+  runPaymentsRequests,
+  runPaymentsStatus,
+} from "./commands/payments.js";
 import { runPoliciesList, runPolicyAdd, runPolicyRm, runPolicyTest } from "./commands/policies.js";
 import { runRoutinesList, runTriggerFire, runTriggersList } from "./commands/routines.js";
 import { runRunGet, runRunsList } from "./commands/runs.js";
@@ -158,6 +166,21 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
       case "depts":
       case "departments":
         return await runDepartments(args, client);
+
+      case "payments": {
+        const verb = args.positional[0];
+        const sub = { ...args, positional: args.positional.slice(1) };
+        if (verb === undefined || verb === "status")    return await runPaymentsStatus(sub, client);
+        if (verb === "enable")                          return await runPaymentsEnable(sub, client, true);
+        if (verb === "disable")                         return await runPaymentsEnable(sub, client, false);
+        if (verb === "configure" || verb === "config")  return await runPaymentsConfigure(sub, client);
+        if (verb === "kill" || verb === "resume")
+          return await runPaymentsKill({ ...sub, subcommand: verb }, client);
+        if (verb === "limits")                          return await runPaymentsLimits(sub, client);
+        if (verb === "requests")                        return await runPaymentsRequests(sub, client);
+        process.stderr.write("usage: bc payments (status|enable|disable|configure|kill|resume|limits|requests) ...\n");
+        return 2;
+      }
 
       case "policies":
         return await runPoliciesList(args, client);

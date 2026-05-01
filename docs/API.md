@@ -294,6 +294,71 @@ GET /departments
 
 Lists every department in the caller's org with a count of active+draft goals — backs the org-overview tab and `bc depts`.
 
+### Payments (outbound spend safety)
+
+Phase 9 backend prep: settings, per-agent spending caps, kill switch, payment-request lifecycle. The Stripe connector ships in a future cloud sprint — until then approved requests stay in `status='approved'` with no `external_ref`.
+
+```http
+GET /payments/settings
+→ 200 {
+  "enabled":              false,
+  "kill_switch":          false,
+  "default_limit_cents":  0,
+  "default_period":       "per_request" | "daily" | "weekly" | "monthly",
+  "approval_threshold":   0,
+  "notify_email":         null,
+  "updated_at":           "..."
+}
+
+PUT /payments/settings
+{ "enabled": true, "default_limit_cents": 5000, "default_period": "monthly", "approval_threshold": 10000 }
+```
+
+```http
+GET /payments/limits
+POST /payments/limits     { "agent_id": "<uuid>", "limit_cents": 2000, "period": "monthly", "category": "research" }
+DELETE /payments/limits/{id}
+```
+
+```http
+POST /payments/kill       { "reason": "..." }   → flips kill_switch ON, logs event
+POST /payments/resume     { "reason": "..." }   → flips kill_switch OFF, logs event
+```
+
+```http
+POST /payments/request
+{
+  "agent_id":     "<uuid>",     // optional
+  "amount_cents": 4500,
+  "currency":     "USD",
+  "vendor":       "Anthropic",
+  "category":     "research",   // optional
+  "description":  "API credits top-up"
+}
+→ 201 {
+  "id":             "<uuid>",
+  "status":         "approved" | "pending" | "declined" | "killed",
+  "decided_reason": "...",
+  "approval_id":    "<uuid>" | null,    // set when status=pending
+  "amount_cents":   4500,
+  ...
+}
+```
+
+Status decision tree (in order):
+1. `kill_switch=true` → `killed`.
+2. `enabled=false` → `declined`.
+3. Per-agent cap (or default) + period rollup: if `spent + amount > limit` → `declined`.
+4. Policy engine `(action_kind="payment.charge")`: `deny` → `declined`, `approve` → `pending`.
+5. `amount_cents >= approval_threshold` (when threshold > 0) → `pending`.
+6. Otherwise → `approved`.
+
+When `pending`, an `ops.approval` row is created (`action_kind="payment.charge"`, urgency=`urgent` if amount ≥ $1000). Approving it transitions the payment to `approved`; declining → `declined`.
+
+```http
+GET /payments/requests?status=pending&limit=50
+```
+
 ### Tools (MCP registry)
 
 YAML manifests in `packages/tools/manifests/{shared,company,personal}/` upsert into `ops.tool` on every Paperclip boot. The catalog is read-only at the API layer in v0; invocation lives behind a future MCP-client transport.

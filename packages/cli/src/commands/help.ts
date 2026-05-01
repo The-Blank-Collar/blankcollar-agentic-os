@@ -36,6 +36,16 @@ COMMANDS
   level-up                 propose changes from the latest audit
   approvals                list pending approvals
   approvals --summary      counts per urgency + 7-day approve/decline rates
+  payments                 outbound spend safety controls (Phase 9)
+  payments status          show settings + kill-switch state
+  payments enable|disable  master switch
+  payments configure [--limit=cents --threshold=cents --period=monthly --email=...]
+  payments kill [reason]   activate kill switch (halts all payments)
+  payments resume [reason] clear kill switch
+  payments limits          list per-agent caps
+  payments limits add <agent_id> --limit=<cents> [--period=monthly --category=...]
+  payments limits rm <id>  remove a per-agent cap
+  payments requests [--status=pending|approved|... --limit=N]
   policies                 list policy rules (role/agent/skill/action → effect)
   policy add --effect=allow|approve|deny [--role=R --agent=A --skill=S --action=K --priority=N --reason=...]
   policy rm <id>           remove a policy
