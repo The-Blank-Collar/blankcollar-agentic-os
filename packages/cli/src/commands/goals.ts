@@ -34,6 +34,13 @@ type GoalStats = {
   last_run_status: string | null;
 };
 
+type Dept = {
+  id: string;
+  slug: string;
+  name: string;
+  active_goal_count: number;
+};
+
 type GoalsSummary = {
   total: number;
   by_kind: { ephemeral: number; standing: number; routine: number; decision: number };
@@ -79,10 +86,28 @@ export async function runGoalsList(args: ParsedArgs, client: Client): Promise<nu
   const status = flagString(args.flags, "status", "active");
   const kind = args.flags.kind;
   const stalled = flagBool(args.flags, "stalled") ? flagInt(args.flags, "stalled", 7) : null;
+  const deptArg = flagString(args.flags, "dept", "");
+  let departmentId: string | undefined;
+  if (deptArg) {
+    // Accept either uuid or slug. uuids are 36 chars with dashes — anything
+    // else we look up via /api/departments.
+    if (/^[0-9a-f-]{36}$/i.test(deptArg)) {
+      departmentId = deptArg;
+    } else {
+      const depts = await client.get<Dept[]>("/api/departments");
+      const found = depts.find((d) => d.slug === deptArg);
+      if (!found) {
+        process.stderr.write(`unknown department: ${deptArg}\n`);
+        return 2;
+      }
+      departmentId = found.id;
+    }
+  }
   const goals = await client.get<Goal[]>("/api/goals", {
     status: status === "all" ? undefined : status,
     kind: typeof kind === "string" ? kind : undefined,
     stalled_for_days: stalled ?? undefined,
+    department_id: departmentId,
     limit: 50,
   });
   if (mode === "json") {

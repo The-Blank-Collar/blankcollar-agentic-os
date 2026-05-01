@@ -13,6 +13,7 @@ COMMANDS
   goals                    list active goals
   goals --summary          rollup: counts per kind / status + stalled
   goals --stalled[=N]      list goals with no run activity in N days (default 7)
+  goals --dept=<slug|uuid> filter to one department
   goal <id>                show one goal with KRs + contributors
   goal <id> --stats        + run rollup (totals, avg duration, last run)
   close <goal_id>          mark a goal achieved
@@ -37,6 +38,7 @@ COMMANDS
   knowledge                list wiki docs
   knowledge get <slug>     show one doc + backlinks
   channels                 connected providers + sentinel rows
+  depts                    list departments + active goal counts
   brain                    print the constellation graph (json only)
   runs --goal=<id>         list runs on a goal
   run <id> [--watch]       single run; --watch streams live status via SSE

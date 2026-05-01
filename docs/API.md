@@ -279,6 +279,21 @@ GET /inbox/summary
 
 Featherweight version of `/inbox` for the briefing rail and the mobile companion: just the integers needed to render badges. `urgent` is the sum of urgent approvals + decisions due within 48 h.
 
+### Departments
+
+```http
+GET /departments
+→ 200 [{
+  "id":                "<uuid>",
+  "slug":              "marketing",
+  "name":              "Marketing",
+  "created_at":        "...",
+  "active_goal_count": 6
+}]
+```
+
+Lists every department in the caller's org with a count of active+draft goals — backs the org-overview tab and `bc depts`.
+
 ### Whoami
 
 Resolved caller scope — org, role, department — for the status-bar rail and `bc whoami`.

@@ -12,7 +12,7 @@ type OrgRow = {
   created_at: string;
 };
 
-type DepartmentRow = { id: string; name: string };
+type DepartmentRow = { id: string; name: string; slug?: string };
 
 export async function orgRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { slug: string } }>("/api/orgs/by-slug/:slug", async (req, reply) => {
@@ -22,6 +22,38 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
     );
     if (rows.length === 0) return reply.code(404).send({ error: "not_found" });
     return rows[0];
+  });
+
+  // -- departments --------------------------------------------------------
+  // Lists every department in the caller's org, with goal counts so the
+  // frontend org-overview tab + bc depts can show the topology at a glance.
+  app.get("/api/departments", async (req) => {
+    const scope = await resolveCallerScope(req);
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<{
+        id: string;
+        slug: string;
+        name: string;
+        created_at: string;
+        goal_count: string;
+      }>(
+        `SELECT d.id, d.slug, d.name, d.created_at,
+                (SELECT COUNT(*)::text FROM ops.goal g
+                  WHERE g.department_id = d.id AND g.status IN ('active','draft'))
+                                                              AS goal_count
+           FROM core.department d
+          WHERE d.org_id = $1
+          ORDER BY d.name ASC`,
+        [scope.org_id],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        slug: r.slug,
+        name: r.name,
+        created_at: r.created_at,
+        active_goal_count: Number(r.goal_count ?? "0"),
+      }));
+    });
   });
 
   // -- whoami -------------------------------------------------------------
