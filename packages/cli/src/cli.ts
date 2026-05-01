@@ -27,6 +27,7 @@ import { runHelp } from "./commands/help.js";
 import { runInboxAck, runInboxList } from "./commands/inbox.js";
 import { runKnowledgeGet, runKnowledgeList } from "./commands/knowledge.js";
 import { runOnboard } from "./commands/onboard.js";
+import { runPoliciesList, runPolicyAdd, runPolicyRm, runPolicyTest } from "./commands/policies.js";
 import { runRoutinesList, runTriggerFire, runTriggersList } from "./commands/routines.js";
 import { runRunGet, runRunsList } from "./commands/runs.js";
 import { runSearch } from "./commands/search.js";
@@ -151,6 +152,18 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
       case "depts":
       case "departments":
         return await runDepartments(args, client);
+
+      case "policies":
+        return await runPoliciesList(args, client);
+      case "policy": {
+        const verb = args.positional[0];
+        const sub = { ...args, positional: args.positional.slice(1) };
+        if (verb === "add") return await runPolicyAdd(sub, client);
+        if (verb === "rm" || verb === "remove") return await runPolicyRm(sub, client);
+        if (verb === "test" || verb === "evaluate") return await runPolicyTest(sub, client);
+        process.stderr.write("usage: bc policy (add|rm|test) <args>\n");
+        return 2;
+      }
 
       case "runs":
         return await runRunsList(args, client);

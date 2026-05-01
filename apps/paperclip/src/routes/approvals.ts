@@ -265,6 +265,39 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
             JSON.stringify({ approval_id: approval.id, resolution, note: parsed.data.note }),
           ],
         );
+      } else if (
+        resolution === "approved" &&
+        approval.action_kind.startsWith("skill.") &&
+        approval.proposal &&
+        typeof approval.proposal === "object" &&
+        "skill" in approval.proposal &&
+        "agent_kind" in approval.proposal
+      ) {
+        // Policy-gated skill invocation: the original /api/skills/:slug/invoke
+        // call returned 202 with the approval_id but no run_id. On approve,
+        // we now queue the run from the cached proposal so the worker
+        // picks it up.
+        const p = approval.proposal as {
+          goal_id: string;
+          skill: string;
+          agent_kind: string;
+          inputs: Record<string, unknown>;
+        };
+        const { rows: runRows } = await client.query<{ id: string }>(
+          `INSERT INTO ops.run (goal_id, status, input)
+           VALUES ($1, 'queued', $2::jsonb)
+           RETURNING id`,
+          [
+            p.goal_id,
+            JSON.stringify({ skill: p.skill, agent_kind: p.agent_kind, inputs: p.inputs }),
+          ],
+        );
+        const runId = runRows[0]!.id;
+        // Backfill the run_id on the approval so the inbox can link to it.
+        await client.query(
+          "UPDATE ops.approval SET run_id = $2 WHERE id = $1",
+          [approval.id, runId],
+        );
       }
 
       await audit(

@@ -34,6 +34,10 @@ COMMANDS
   level-up                 propose changes from the latest audit
   approvals                list pending approvals
   approvals --summary      counts per urgency + 7-day approve/decline rates
+  policies                 list policy rules (role/agent/skill/action → effect)
+  policy add --effect=allow|approve|deny [--role=R --agent=A --skill=S --action=K --priority=N --reason=...]
+  policy rm <id>           remove a policy
+  policy test [--role=R --agent=A --skill=S --action=K]   dry-run the evaluator
   approve <id> [note]      approve an agent's proposed action
   decline <id> [note]      decline an agent's proposed action
   knowledge [--scope=X --hot --tag=Y --q=text]   list wiki docs (filtered)

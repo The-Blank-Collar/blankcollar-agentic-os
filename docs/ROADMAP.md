@@ -117,10 +117,10 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 
 **Goal:** add new capabilities by configuration, not code.
 
-- [ ] Skills catalog
-- [ ] MCP tool registry
-- [ ] Policy engine `(role, skill) → allow|approve|deny`
-- [ ] Approval inbox for human-in-the-loop tools
+- [x] Skills catalog (registry + manifests live in `packages/skills/`)
+- [ ] MCP tool registry — `ops.tool` table + manifest loader for local MCP servers
+- [x] **Policy engine `(role, agent_kind, skill_slug, action_kind) → allow|approve|deny`** — `ops.policy` table, evaluator, `/api/policies` CRUD + `/policies/evaluate` dry-run, wired into `/skills/:slug/invoke` (deny → 403, approve → 202 with approval row, allow → existing queue path). Approval-effect path round-trips: approving the resulting `ops.approval` queues the run from the cached proposal.
+- [x] Approval inbox for human-in-the-loop tools (in `/api/inbox`, surfaced as `item_kind=approval`)
 
 ## Phase 6 — Auth & Multi-Tenancy
 

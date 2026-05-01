@@ -24,6 +24,7 @@ import { keyResultRoutes } from "./routes/keyresults.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
+import { policyRoutes } from "./routes/policies.js";
 import { routineRoutes } from "./routes/routines.js";
 import { runRoutes } from "./routes/runs.js";
 import { searchRoutes } from "./routes/search.js";
@@ -70,6 +71,7 @@ async function main(): Promise<void> {
   await app.register(skillRoutes);
   await app.register(routineRoutes);
   await app.register(onboardingRoutes);
+  await app.register(policyRoutes);
   await app.register(selfImprovementRoutes);
   await app.register(knowledgeRoutes);
   await app.register(approvalRoutes);

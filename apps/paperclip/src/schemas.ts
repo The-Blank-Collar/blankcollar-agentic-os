@@ -343,6 +343,24 @@ export const ApprovalListQuery = z
   .strict();
 export type ApprovalListQuery = z.infer<typeof ApprovalListQuery>;
 
+// ---------- Policy ------------------------------------------------------
+
+export const PolicyEffect = z.enum(["allow", "approve", "deny"]);
+export type PolicyEffect = z.infer<typeof PolicyEffect>;
+
+export const PolicyCreate = z
+  .object({
+    role:        RoleKind.nullable().optional(),
+    agent_kind:  z.string().min(1).max(40).nullable().optional(),
+    skill_slug:  z.string().min(1).max(120).nullable().optional(),
+    action_kind: z.string().min(1).max(120).nullable().optional(),
+    effect:      PolicyEffect,
+    priority:    z.number().int().min(0).max(10_000).default(100),
+    reason:      z.string().max(500).nullable().optional(),
+  })
+  .strict();
+export type PolicyCreate = z.infer<typeof PolicyCreate>;
+
 // ---------- Runs ----------------------------------------------------------
 
 export const RunDispatch = z

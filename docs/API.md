@@ -294,6 +294,53 @@ GET /departments
 
 Lists every department in the caller's org with a count of active+draft goals — backs the org-overview tab and `bc depts`.
 
+### Policy engine
+
+Every skill invocation passes through the policy engine before queueing. Policies match on any combination of `(role, agent_kind, skill_slug, action_kind)` — null criteria are wildcards. Multiple matches: lowest `priority` wins, ties broken by specificity (fewer wildcards), then most-recent. No match → default `allow`.
+
+```http
+GET /policies
+→ 200 [{
+  "id":          "<uuid>",
+  "role":        "team_member" | null,
+  "agent_kind":  "openclaw"    | null,
+  "skill_slug":  "google.gmail.send" | null,
+  "action_kind": "skill.google.gmail.send" | null,
+  "effect":      "allow" | "approve" | "deny",
+  "priority":    100,
+  "reason":      "outbound email needs review",
+  "created_at":  "..."
+}]
+```
+
+```http
+POST /policies
+{
+  "effect":     "approve",
+  "skill_slug": "google.gmail.send",
+  "priority":   50,
+  "reason":     "outbound email needs review"
+}
+→ 201 { ...policy }
+```
+
+```http
+DELETE /policies/{id}
+→ 204
+→ 404 { "error": "not_found" }
+```
+
+```http
+POST /policies/evaluate
+{ "role": "team_member", "skill_slug": "google.gmail.send" }
+→ 200 { "effect": "approve" | "deny" | "allow", "matched": {...policy} | null }
+```
+
+Skill invoke wiring:
+- `effect=allow` → existing 201 `{ goal_id, run_id, status: "queued" }`.
+- `effect=deny` → 403 `{ error: "denied_by_policy", reason, policy_id }`. No goal/run created.
+- `effect=approve` → 202 `{ status: "pending_approval", approval_id, goal_id }`. Goal is created; run is *not* queued. The full invoke parameters are stored on the approval's `proposal` jsonb. When `POST /approvals/:id/approve` fires, the run is enqueued and the approval's `run_id` is backfilled. Decline → no run.
+
 ### Approvals summary
 
 ```http

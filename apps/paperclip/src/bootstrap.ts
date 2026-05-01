@@ -523,6 +523,49 @@ const ADDITIVE_MIGRATIONS = [
                  OR current_setting('app.org_id', true) = ''
                  OR org_id::text = current_setting('app.org_id', true));`,
 
+  // The worker writes audit rows with actor_role='agent', but the SQL
+  // `core.role_kind` enum was originally created without it. Patch it in
+  // additively so existing dev volumes don't need a wipe.
+  `ALTER TYPE core.role_kind ADD VALUE IF NOT EXISTS 'agent';`,
+
+  // -- ops.policy — (role, agent_kind, skill_slug, action_kind) → effect --
+  // The policy engine. Every skill invocation passes through evaluatePolicy
+  // before queueing. Multiple matching rows: lowest priority wins, ties
+  // broken by most-specific (fewest wildcards). No match → effect='allow'
+  // by default (callers add an explicit wildcard 'deny' for deny-by-default
+  // postures).
+  `DO $$ BEGIN
+     CREATE TYPE ops.policy_effect AS ENUM ('allow', 'approve', 'deny');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `CREATE TABLE IF NOT EXISTS ops.policy (
+     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id       uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     role         core.role_kind,
+     agent_kind   text,
+     skill_slug   text,
+     action_kind  text,
+     effect       ops.policy_effect NOT NULL,
+     priority     integer NOT NULL DEFAULT 100,
+     reason       text,
+     created_at   timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS policy_lookup_idx ON ops.policy (org_id, priority);`,
+  `ALTER TABLE ops.policy ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.policy FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.policy;`,
+  `CREATE POLICY app_scope_org ON ops.policy
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.policy;`,
+  `CREATE POLICY app_system_scope ON ops.policy
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- Phase B: privileged "system scope" sibling policy ------------------
   // Cross-org tasks (worker run-claim, scheduler routine scan, briefing
   // sweep, health counts) bind `app.system_scope = 'true'` via
