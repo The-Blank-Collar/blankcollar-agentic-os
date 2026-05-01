@@ -35,8 +35,14 @@ import { runTail } from "./commands/tail.js";
 import { runWhoami } from "./commands/whoami.js";
 import { emitError } from "./format.js";
 
+export const VERSION = "0.1.0";
+
 export async function main(argv: string[], clientOverride?: Client): Promise<number> {
   const args = parseArgv(argv);
+  if (args.flags.version || args.subcommand === "version") {
+    process.stdout.write(`bc ${VERSION}\n`);
+    return 0;
+  }
   if (!args.subcommand || args.flags.help || args.subcommand === "help") {
     return runHelp();
   }

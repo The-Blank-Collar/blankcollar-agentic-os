@@ -100,7 +100,6 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] **Stats + summary endpoints** — `GET /api/goals/summary` (kind/status rollup + stalled count), `GET /api/goals/:id/stats` (per-goal run rollup), `GET /api/agents/:id/stats` (per-agent lifetime rollup), `GET /api/activity` (org-wide chronological feed), `GET /api/inbox/summary`, `GET /api/approvals/summary`, `GET /api/whoami`, `GET /api/departments`, `GET /api/search`. All derived views over existing tables — no schema changes.
 - [x] **Stalled-goals filter** — `GET /api/goals?stalled_for_days=N` returns active/draft goals with no recent run activity; backs `bc goals --stalled[=N]`.
 - [ ] **withOrgScope Phase B flip** — privileged-role / SECURITY DEFINER for cross-org scans, then flip RLS unset branch to strict. Bounded follow-up.
-- [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
 
 ## Phase 4 — Goal Command Centre

@@ -57,6 +57,7 @@ COMMANDS
 GLOBAL FLAGS
   --json                   force raw JSON output
   --pretty                 force editorial output (default when stdout is a TTY)
+  --version                print the bc version and exit
 
 ENVIRONMENT
   BC_API_URL               base URL of the Paperclip API (default: http://localhost:3000)

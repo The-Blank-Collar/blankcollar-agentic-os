@@ -57,6 +57,14 @@ cli: ## Build + link the bc CLI globally (then `bc help` works)
 cli-test: ## Run the CLI's vitest suite
 	@cd packages/cli && npm install --silent && npm test
 
+.PHONY: gates
+gates: ## Static gates: typecheck + lint + tests across paperclip + cli
+	@echo "→ paperclip"
+	@cd apps/paperclip && npm install --silent && npm run typecheck && npm run lint && npm run test -- --reporter=basic
+	@echo "→ cli"
+	@cd packages/cli && npm install --silent && npm run typecheck && npm run lint && npm run test -- --reporter=basic
+	@echo "✓ all gates green"
+
 .PHONY: ps
 ps: ## Show running containers
 	$(COMPOSE) ps
