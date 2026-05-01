@@ -25,6 +25,9 @@ COMMANDS
   brain                    print the constellation graph (json only)
   runs --goal=<id>         list runs on a goal
   run <id> [--watch]       single run; --watch streams live status via SSE
+  routines                 list active kind=routine goals
+  triggers <goal_id>       list schedule/event/api triggers on a goal
+  fire <trigger_id>        manually fire a trigger (api triggers need --token)
   onboard --mode=<m>       start the interview (single_user | multi_user)
 
 GLOBAL FLAGS
