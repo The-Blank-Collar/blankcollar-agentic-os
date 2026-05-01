@@ -130,6 +130,66 @@ When `ANTHROPIC_API_KEY` is set on Paperclip, the templated briefing is post-pro
 
 The scheduler auto-generates a daily briefing for every active org once per UTC day at `PAPERCLIP_BRIEFING_HOUR_UTC` (default 8). Idempotent — orgs that already have today's briefing are skipped. Per-user / per-org timezone settings land in Phase 6.
 
+### Approvals
+
+Agents that propose a side-effecting action (send a payment, hire someone, send an email) create an approval row and pause. The user resolves; on approval the originating run is flipped to `succeeded`, on decline to `failed`. v0 stores the proposal cleanly so the UX exists ahead of the agent-side adoption work.
+
+```http
+POST /approvals
+{
+  "action_kind": "email.send" | "payment.charge" | "hire.extend_offer" | ...,
+  "proposal":   { ... },
+  "reason?":    "string",
+  "urgency":    "low" | "normal" | "urgent",
+  "goal_id?":   "<uuid>",
+  "run_id?":    "<uuid>",
+  "requesting_agent_id?": "<uuid>",
+  "expires_in_hours?": 24
+}
+→ 201 { ...approval row }
+```
+
+```http
+GET    /approvals?status=pending|resolved|all&urgency=low|normal|urgent&limit=20
+GET    /approvals/{id}
+POST   /approvals/{id}/approve   { "note?": "string" }
+POST   /approvals/{id}/decline   { "note?": "string" }
+```
+
+Pending approvals also surface in `/api/inbox` as `item_kind=approval` (above decisions in the urgency order).
+
+### Channels
+
+```http
+GET /channels
+→ 200 {
+  "channels": [{
+    "id":                  "<connection or sentinel id>",
+    "provider":            "slack" | "google" | "email" | "webhook" | ...,
+    "display":             "Slack" | "Google Workspace" | ...,
+    "connection_id":       "<nango>" | null,
+    "state":               "connected" | "disconnected",
+    "last_activity_at":    "<iso>" | null,
+    "recent_capture_count": <int>
+  }],
+  "generated_at": "<iso>"
+}
+```
+
+Sources: Nango `/connection` for OAuth-managed providers; the `email` and `webhook` channels are sentinel rows wired to the email-ingest service and `/api/webhooks/capture` respectively.
+
+### Webhooks
+
+```http
+POST /webhooks/stripe          (existing, HMAC via Stripe-Signature)
+POST /webhooks/capture
+Headers: X-BC-Signature: hmac-sha256=<hex>
+{ "raw_content": "<text>", "title?": "<string>", "metadata?": {...} }
+→ 201 { "capture_id", "goal_id", "intent" }
+```
+
+`/webhooks/capture` runs the same classifier as `/api/capture` (heuristic + LLM upgrade when `ANTHROPIC_API_KEY` is set) and persists with `source=webhook`. Returns `503` when `INBOUND_CAPTURE_WEBHOOK_SECRET` is unset.
+
 ### Routines
 
 Goals with `kind=routine` carry a `cron_expr` and are fired automatically by Paperclip's in-process scheduler. v0 grammar is constrained to what the capture classifier produces:

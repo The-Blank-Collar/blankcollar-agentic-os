@@ -81,6 +81,13 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] Scheduled daily briefing — auto-fires once per UTC day at `PAPERCLIP_BRIEFING_HOUR_UTC` per active org
 - [x] Inbox `routine_output` distinct from `draft` — UI can render "your Monday digest is ready" vs generic drafts
 - [x] Inbox dismissal — `POST /api/inbox/acknowledge/:goal_id` marks runs seen so items stop surfacing
+- [x] **Four Cs extension** — Skills Engine, Routines Engine (event/api triggers), Onboarding interview, Self-Improvement (Audit + Level-Up), Knowledge wiki, Google Workspace connectors (see `docs/INTEGRATION_PLAN.md`)
+- [x] Approval queue — `ops.approval` + `/api/approvals/*` + surface in inbox; agent ↔ human pause-and-decide protocol
+- [x] Webhook capture intake — `POST /api/webhooks/capture` HMAC-verified; arbitrary externals drop into the capture pipeline
+- [x] Channels presence — `GET /api/channels` over Nango connections + sentinel rows for email and webhook
+- [x] Hermes-driven capture classifier — LLM call when `ANTHROPIC_API_KEY` set, heuristic stays as fallback
+- [x] Brain graph TTL cache (30s) + `/api/health` enrichment (probes hermes/openclaw/workspace + counts)
+- [ ] Migrate every route to `withOrgScope()` and flip RLS unset branch to NONE — mechanical pass across ~14 handlers; one bounded session
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
 

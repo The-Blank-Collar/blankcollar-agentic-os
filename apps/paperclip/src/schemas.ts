@@ -298,6 +298,44 @@ export const KnowledgeListQuery = z
   .strict();
 export type KnowledgeListQuery = z.infer<typeof KnowledgeListQuery>;
 
+// ---------- Approvals (Phase 5 foundation) -------------------------------
+
+export const ApprovalUrgency = z.enum(["low", "normal", "urgent"]);
+export type ApprovalUrgency = z.infer<typeof ApprovalUrgency>;
+
+export const ApprovalResolution = z.enum(["approved", "declined", "expired"]);
+export type ApprovalResolution = z.infer<typeof ApprovalResolution>;
+
+export const ApprovalCreate = z
+  .object({
+    action_kind: z.string().min(1).max(120),
+    proposal: z.record(z.unknown()).default({}),
+    reason: z.string().max(2_000).optional(),
+    urgency: ApprovalUrgency.default("normal"),
+    goal_id: z.string().uuid().optional(),
+    run_id: z.string().uuid().optional(),
+    requesting_agent_id: z.string().uuid().optional(),
+    expires_in_hours: z.number().int().min(1).max(24 * 30).optional(),
+  })
+  .strict();
+export type ApprovalCreate = z.infer<typeof ApprovalCreate>;
+
+export const ApprovalResolve = z
+  .object({
+    note: z.string().max(2_000).optional(),
+  })
+  .strict();
+export type ApprovalResolve = z.infer<typeof ApprovalResolve>;
+
+export const ApprovalListQuery = z
+  .object({
+    status: z.enum(["pending", "resolved", "all"]).default("pending"),
+    urgency: ApprovalUrgency.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
+export type ApprovalListQuery = z.infer<typeof ApprovalListQuery>;
+
 // ---------- Runs ----------------------------------------------------------
 
 export const RunDispatch = z

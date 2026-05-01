@@ -163,6 +163,12 @@ services:
       PAPERCLIP_SCHEDULER_ENABLED: ${PAPERCLIP_SCHEDULER_ENABLED:-true}
       PAPERCLIP_SCHEDULER_TICK_MS: ${PAPERCLIP_SCHEDULER_TICK_MS:-60000}
       PAPERCLIP_BRIEFING_HOUR_UTC: ${PAPERCLIP_BRIEFING_HOUR_UTC:-8}
+      # Generic capture webhook (POST /api/webhooks/capture) — disabled when secret unset.
+      INBOUND_CAPTURE_WEBHOOK_SECRET: ${INBOUND_CAPTURE_WEBHOOK_SECRET:-}
+      # Nango proxy + provider config keys for Workspace connectors.
+      NANGO_URL: ${NANGO_URL:-http://nango:3003}
+      NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
+      NANGO_GOOGLE_PROVIDER_KEY: ${NANGO_GOOGLE_PROVIDER_KEY:-google}
     ports:
       - "${PAPERCLIP_PORT:-3000}:80"
     volumes:

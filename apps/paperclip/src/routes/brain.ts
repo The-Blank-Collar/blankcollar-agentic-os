@@ -50,11 +50,23 @@ export type BrainGraph = {
 };
 
 const DEFAULT_LIMIT = 80;
+const CACHE_TTL_MS = 30_000;
+
+const cache = new Map<string, { graph: BrainGraph; expires_at: number }>();
 
 export async function brainRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Querystring: { limit?: string } }>("/api/brain/graph", async (req) => {
+  app.get<{ Querystring: { limit?: string; refresh?: string } }>("/api/brain/graph", async (req) => {
     const scope = await resolveCallerScope(req);
     const limit = Math.min(Math.max(Number(req.query.limit ?? DEFAULT_LIMIT), 10), 200);
+    const refresh = req.query.refresh === "true";
+
+    const cacheKey = `${scope.org_id}:${limit}`;
+    if (!refresh) {
+      const cached = cache.get(cacheKey);
+      if (cached && cached.expires_at > Date.now()) {
+        return cached.graph;
+      }
+    }
 
     const [people, agents, goals, captures, contributors, runs] = await Promise.all([
       query<{ id: string; display_name: string | null; email: string }>(
@@ -187,6 +199,7 @@ export async function brainRoutes(app: FastifyInstance): Promise<void> {
       truncated,
       generated_at: new Date().toISOString(),
     };
+    cache.set(cacheKey, { graph, expires_at: Date.now() + CACHE_TTL_MS });
     return graph;
   });
 }

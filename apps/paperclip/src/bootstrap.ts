@@ -462,6 +462,58 @@ const ADDITIVE_MIGRATIONS = [
                     WHERE d.id = ops.knowledge_link.from_doc_id
                       AND d.org_id::text = current_setting('app.org_id', true)
                  ));`,
+
+  // =========================================================================
+  // Approval queue — Phase 5 foundation.
+  //
+  // Agents that want to take a side-effecting action (send an email, charge
+  // a card, hire someone) propose an approval row and wait. The user
+  // resolves via /api/approvals/:id/approve|decline. Resolution wakes the
+  // paused run (eventually — see docs/INTEGRATION_PLAN.md §8 for agent
+  // adoption notes; v0 stores the proposal cleanly so the UX exists even
+  // before agents pause-and-await).
+  // =========================================================================
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.approval_resolution AS ENUM ('approved', 'declined', 'expired');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `DO $$ BEGIN
+     CREATE TYPE ops.approval_urgency AS ENUM ('low', 'normal', 'urgent');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS ops.approval (
+     id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id                uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     goal_id               uuid REFERENCES ops.goal(id) ON DELETE SET NULL,
+     run_id                uuid REFERENCES ops.run(id)  ON DELETE SET NULL,
+     requesting_agent_id   uuid REFERENCES ops.agent(id) ON DELETE SET NULL,
+     action_kind           text NOT NULL,
+     proposal              jsonb NOT NULL DEFAULT '{}'::jsonb,
+     reason                text,
+     urgency               ops.approval_urgency NOT NULL DEFAULT 'normal',
+     expires_at            timestamptz,
+     resolution            ops.approval_resolution,
+     resolved_by_user_id   uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     resolved_at           timestamptz,
+     resolution_note       text,
+     created_at            timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS approval_org_pending_idx
+      ON ops.approval (org_id, urgency, created_at DESC)
+      WHERE resolution IS NULL;`,
+  `CREATE INDEX IF NOT EXISTS approval_run_idx ON ops.approval (run_id);`,
+
+  `ALTER TABLE ops.approval ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.approval FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.approval;`,
+  `CREATE POLICY app_scope_org ON ops.approval
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
 ];
 
 export async function applyAdditiveMigrations(

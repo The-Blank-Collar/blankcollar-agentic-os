@@ -19,6 +19,8 @@ import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
 import { query, tx } from "../db.js";
+import { config } from "../config.js";
+import { narrate } from "../llm.js";
 import { resolveCallerScope } from "../scope.js";
 import { CaptureCreate, type GoalKind } from "../schemas.js";
 
@@ -66,6 +68,62 @@ export function classify(raw: string): Intent {
   return { kind: "ephemeral", title };
 }
 
+/**
+ * LLM-driven classifier — used when ANTHROPIC_API_KEY is set on Paperclip.
+ *
+ * Returns null on any failure (no key, network error, malformed JSON) so
+ * callers always have the heuristic as a safety net. Output shape matches
+ * `Intent` exactly.
+ */
+export async function classifyWithHermes(raw: string): Promise<Intent | null> {
+  if (!config.anthropicApiKey) return null;
+
+  const response = await narrate({
+    systemHint:
+      "You classify natural-language captures into ONE of four kinds:\n" +
+      "  ephemeral — a one-off task (reply, follow up, draft, send)\n" +
+      "  standing  — a long-lived objective with a numeric target + horizon\n" +
+      "  routine   — a recurring task on a schedule\n" +
+      "  decision  — a single yes/no awaiting the user\n" +
+      "Return ONLY a JSON object on a single line with these keys:\n" +
+      '  {"kind":"ephemeral|standing|routine|decision","title":"<short title <= 200 chars>","cron_expr":"<cron string or null>","due_at":"<ISO 8601 or null>","target_value":"<string or null>"}\n' +
+      "No prose, no markdown, no code fences. If kind is routine, cron_expr must be set " +
+      "in the constrained form 'M H D MON DOW' with M and H as integers or *, D and MON " +
+      "as *, DOW as integer 0-6 or *.",
+    userPrompt: raw.slice(0, 4_000),
+  });
+  if (!response) return null;
+
+  // The narrate() helper sometimes returns whole-paragraph LLM output —
+  // pull the first JSON object out so a stray header doesn't break parse.
+  const match = response.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]) as Partial<Intent> & { kind?: string };
+    if (
+      parsed.kind === "ephemeral" ||
+      parsed.kind === "standing" ||
+      parsed.kind === "routine" ||
+      parsed.kind === "decision"
+    ) {
+      const title =
+        typeof parsed.title === "string" && parsed.title.length > 0
+          ? parsed.title.slice(0, 200)
+          : raw.slice(0, 197) + (raw.length > 200 ? "…" : "");
+      return {
+        kind: parsed.kind,
+        title,
+        cron_expr: typeof parsed.cron_expr === "string" ? parsed.cron_expr : undefined,
+        due_at: typeof parsed.due_at === "string" ? parsed.due_at : undefined,
+        target_value: typeof parsed.target_value === "string" ? parsed.target_value : undefined,
+      };
+    }
+  } catch {
+    // fall through to null
+  }
+  return null;
+}
+
 function inferCron(text: string): string {
   const t = text.toLowerCase();
   const dayMap: Record<string, number> = {
@@ -93,7 +151,11 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
-    const intent = classify(parsed.data.raw_content);
+    // Try Hermes-grade classification first; fall back to heuristic on any
+    // failure so the demo always works offline. Both produce the same Intent
+    // shape.
+    const llmIntent = await classifyWithHermes(parsed.data.raw_content);
+    const intent = llmIntent ?? classify(parsed.data.raw_content);
 
     const result = await tx(async (client) => {
       // Pass the source through to the goal's metadata so downstream
