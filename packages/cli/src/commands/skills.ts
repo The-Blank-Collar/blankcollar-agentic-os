@@ -1,5 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
+import { flagString } from "../argv.js";
 import { detectMode, emit, trunc } from "../format.js";
 
 type Skill = {
@@ -13,13 +14,21 @@ type Skill = {
 };
 
 export async function runSkills(args: ParsedArgs, client: Client): Promise<number> {
-  const skills = await client.get<Skill[]>("/api/skills");
+  const scope = flagString(args.flags, "scope", "");
+  const agentKind = flagString(args.flags, "agent", "");
+  const params: Record<string, string | number | boolean | undefined> = {};
+  if (scope) params.scope = scope;
+  if (agentKind) params.agent_kind = agentKind;
+
+  const skills = await client.get<Skill[]>("/api/skills", params);
   const mode = detectMode(args.flags);
   if (mode === "json") {
     emit("json", skills);
     return 0;
   }
-  const lines = [`skills · ${skills.length}`];
+  const filterTag =
+    scope || agentKind ? ` (${[scope && `scope=${scope}`, agentKind && `agent=${agentKind}`].filter(Boolean).join(", ")})` : "";
+  const lines = [`skills · ${skills.length}${filterTag}`];
   for (const s of skills) {
     lines.push(`  ${s.slug.padEnd(30)} ${s.scope.padEnd(10)} ${s.agent_kind.padEnd(10)} ${trunc(s.title, 50)}`);
   }

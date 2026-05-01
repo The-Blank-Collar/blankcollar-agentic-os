@@ -3,6 +3,52 @@ import type { ParsedArgs } from "../argv.js";
 import { flagString } from "../argv.js";
 import { detectMode, emit, relative, trunc } from "../format.js";
 
+type CronField = number | "*";
+
+/**
+ * Constrained cron parser — same grammar as Paperclip's scheduler.parseCron,
+ * duplicated here so the CLI doesn't have to import the server module.
+ *   M H * * DOW    where M, H, DOW are an integer or "*"
+ */
+function parseCron(expr: string): { minute: CronField; hour: CronField; dow: CronField } | null {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [m, h, d, mon, dow] = parts as [string, string, string, string, string];
+  if (d !== "*" || mon !== "*") return null;
+  const f = (raw: string, lo: number, hi: number): CronField | null => {
+    if (raw === "*") return "*";
+    if (!/^\d+$/.test(raw)) return null;
+    const n = Number(raw);
+    return n >= lo && n <= hi ? n : null;
+  };
+  const minute = f(m, 0, 59);
+  const hour = f(h, 0, 23);
+  const dwk = f(dow, 0, 6);
+  if (minute === null || hour === null || dwk === null) return null;
+  return { minute, hour, dow: dwk };
+}
+
+/** Walks forward minute by minute (up to 1 week) for the next firing instant. */
+export function nextCronFire(expr: string, from: Date = new Date()): Date | null {
+  const cron = parseCron(expr);
+  if (!cron) return null;
+  const t = new Date(from);
+  t.setUTCSeconds(0, 0);
+  t.setUTCMinutes(t.getUTCMinutes() + 1);
+  const limit = new Date(t.getTime() + 7 * 24 * 60 * 60_000);
+  while (t.getTime() <= limit.getTime()) {
+    if (
+      (cron.minute === "*" || cron.minute === t.getUTCMinutes()) &&
+      (cron.hour === "*" || cron.hour === t.getUTCHours()) &&
+      (cron.dow === "*" || cron.dow === t.getUTCDay())
+    ) {
+      return t;
+    }
+    t.setUTCMinutes(t.getUTCMinutes() + 1);
+  }
+  return null;
+}
+
 type Goal = {
   id: string;
   title: string;
@@ -42,7 +88,9 @@ export async function runRoutinesList(args: ParsedArgs, client: Client): Promise
   const lines = [`routines · ${goals.length}`];
   for (const g of goals) {
     const cron = g.cron_expr ? `cron ${g.cron_expr}` : "(no cron)";
-    lines.push(`  ${g.id.slice(0, 8)} ${cron.padEnd(18)} ${trunc(g.title, 60)}  updated ${relative(g.updated_at)}`);
+    const next = g.cron_expr ? nextCronFire(g.cron_expr) : null;
+    const nextLabel = next ? `next ${relative(next.toISOString())}` : `updated ${relative(g.updated_at)}`;
+    lines.push(`  ${g.id.slice(0, 8)} ${cron.padEnd(18)} ${trunc(g.title, 50).padEnd(50)} ${nextLabel}`);
   }
   emit("pretty", lines.join("\n"));
   return 0;

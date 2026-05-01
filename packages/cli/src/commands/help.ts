@@ -28,7 +28,7 @@ COMMANDS
   agents                   list active agents
   agent <id>               show one agent's live state + recent runs
   agent <id> --stats       + lifetime run rollup (totals, success rate, avg)
-  skills                   list available skills
+  skills [--scope=X --agent=Y]   list available skills (filtered)
   audit                    run a self-audit on the last 7 days
   level-up                 propose changes from the latest audit
   approvals                list pending approvals
@@ -40,7 +40,7 @@ COMMANDS
   brain                    print the constellation graph (json only)
   runs --goal=<id>         list runs on a goal
   run <id> [--watch]       single run; --watch streams live status via SSE
-  routines                 list active kind=routine goals
+  routines                 list active kind=routine goals + next cron fire
   triggers <goal_id>       list schedule/event/api triggers on a goal
   fire <trigger_id>        manually fire a trigger (api triggers need --token)
   search <query>           cross-corpus search across goals/captures/knowledge/agents
