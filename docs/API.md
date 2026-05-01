@@ -277,6 +277,25 @@ GET /inbox/summary
 
 Featherweight version of `/inbox` for the briefing rail and the mobile companion: just the integers needed to render badges. `urgent` is the sum of urgent approvals + decisions due within 48 h.
 
+### Search
+
+Cross-corpus search across goals / captures / knowledge / agents — one endpoint backing the ⌘K palette and the `bc search` CLI.
+
+```http
+GET /search?q=lark&kind=all&limit=20
+→ 200 [{
+  "kind":       "goal" | "capture" | "knowledge" | "agent",
+  "id":         "<uuid>",
+  "title":      "Close the Lark proposal",
+  "snippet":    "…the lark milestone draft is awaiting…",
+  "score":      11,
+  "created_at": "...",
+  "metadata":   { ... }
+}]
+```
+
+`kind=all` (default) interleaves all four corpora ordered by score then recency. Filter to one corpus with `kind=goal|capture|knowledge|agent`. `q` must be ≥ 2 chars (returns 400 otherwise). v0 is ILIKE-based; tsvector-rank arrives when any corpus crosses 10k rows per org.
+
 ### Heartbeat
 
 14-day system pulse for the design's sparkline rail and the Goal Detail timeline. v0 reports what we have data for; richer business KPIs (ARR, pipeline, margin) land when Stripe / CRM data is connected.

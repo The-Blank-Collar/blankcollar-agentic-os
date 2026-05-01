@@ -23,6 +23,7 @@ import { runKnowledgeGet, runKnowledgeList } from "./commands/knowledge.js";
 import { runOnboard } from "./commands/onboard.js";
 import { runRoutinesList, runTriggerFire, runTriggersList } from "./commands/routines.js";
 import { runRunGet, runRunsList } from "./commands/runs.js";
+import { runSearch } from "./commands/search.js";
 import { runSkillInvoke, runSkills } from "./commands/skills.js";
 import { emitError } from "./format.js";
 
@@ -125,6 +126,9 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runTriggersList(args, client);
       case "fire":
         return await runTriggerFire(args, client);
+
+      case "search":
+        return await runSearch(args, client);
 
       case "onboard":
         return await runOnboard(args, client);

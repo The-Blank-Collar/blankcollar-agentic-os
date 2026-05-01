@@ -29,6 +29,7 @@ COMMANDS
   routines                 list active kind=routine goals
   triggers <goal_id>       list schedule/event/api triggers on a goal
   fire <trigger_id>        manually fire a trigger (api triggers need --token)
+  search <query>           cross-corpus search across goals/captures/knowledge/agents
   onboard --mode=<m>       start the interview (single_user | multi_user)
 
 GLOBAL FLAGS

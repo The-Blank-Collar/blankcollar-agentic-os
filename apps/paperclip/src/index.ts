@@ -26,6 +26,7 @@ import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
 import { routineRoutes } from "./routes/routines.js";
 import { runRoutes } from "./routes/runs.js";
+import { searchRoutes } from "./routes/search.js";
 import { selfImprovementRoutes } from "./routes/self_improvement.js";
 import { skillRoutes } from "./routes/skills.js";
 import { uiRoutes } from "./routes/ui.js";
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
   await app.register(approvalRoutes);
   await app.register(channelRoutes);
   await app.register(runRoutes);
+  await app.register(searchRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
   await app.register(uiRoutes);
