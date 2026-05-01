@@ -87,6 +87,7 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] Channels presence — `GET /api/channels` over Nango connections + sentinel rows for email and webhook
 - [x] Hermes-driven capture classifier — LLM call when `ANTHROPIC_API_KEY` set, heuristic stays as fallback
 - [x] Brain graph TTL cache (30s) + `/api/health` enrichment (probes hermes/openclaw/workspace + counts)
+- [x] **`bc` CLI** — `packages/cli/`: terminal-side wrapper for every endpoint, editorial output for humans + JSON for pipes (`make cli`)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS unset branch to NONE — mechanical pass across ~14 handlers; one bounded session
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)

@@ -49,6 +49,14 @@ doctor: ## Health-check every service
 smoke: ## End-to-end exercise of the live API (capture, inbox, briefing, self-audit, knowledge, …)
 	./infra/scripts/smoke.sh
 
+.PHONY: cli
+cli: ## Build + link the bc CLI globally (then `bc help` works)
+	@cd packages/cli && npm install --silent && npm run build && npm link
+
+.PHONY: cli-test
+cli-test: ## Run the CLI's vitest suite
+	@cd packages/cli && npm install --silent && npm test
+
 .PHONY: ps
 ps: ## Show running containers
 	$(COMPOSE) ps

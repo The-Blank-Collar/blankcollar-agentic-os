@@ -358,6 +358,7 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Layered model, contracts.
 - [`docs/INTEGRATION_PLAN.md`](docs/INTEGRATION_PLAN.md) — Four Cs extension + how every new module wires into the existing pipeline.
+- [`packages/cli/README.md`](packages/cli/README.md) — `bc` command-line interface.
 - [`docs/ROLES.md`](docs/ROLES.md) — Role model + 3-layer enforcement.
 - [`docs/COMPANY_BRAIN.md`](docs/COMPANY_BRAIN.md) — gbrain + Qdrant + Postgres design.
 - [`docs/GRAPHITI.md`](docs/GRAPHITI.md) — Temporal knowledge graph (Neo4j) bridged from gbrain.
