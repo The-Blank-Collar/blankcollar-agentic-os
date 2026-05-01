@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     nango_url: str = Field(default="http://nango:3003", alias="NANGO_URL")
     nango_secret_key: str | None = Field(default=None, alias="NANGO_SECRET_KEY")
     nango_request_timeout_s: float = Field(default=30.0, alias="NANGO_REQUEST_TIMEOUT_S")
+    # Google Workspace skills (gmail.search, calendar.create_event, drive.search,
+    # docs.append, sheets.append_row) all proxy through Nango with this provider key.
+    # Override if your Nango config uses a different name.
+    nango_google_provider_key: str = Field(
+        default="google", alias="NANGO_GOOGLE_PROVIDER_KEY"
+    )
 
     # ----- Brand Foundation (design.md) — used to lint outbound email drafts. -----
     brand_dir: str = Field(default="/app/brand", alias="BRAND_DIR")

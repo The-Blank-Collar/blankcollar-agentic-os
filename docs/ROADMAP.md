@@ -89,6 +89,7 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] Brain graph TTL cache (30s) + `/api/health` enrichment (probes hermes/openclaw/workspace + counts)
 - [x] **`bc` CLI** — `packages/cli/`: terminal-side wrapper for every endpoint, editorial output for humans + JSON for pipes (`make cli`)
 - [x] **withOrgScope route migration (Phase A)** — every route handler now binds `app.org_id` for the duration of its DB access. No behaviour change yet (policies still permissive); foundation for Phase B.
+- [x] **OpenClaw Google Workspace connectors** — `apps/openclaw/app/google_workspace.py` + runner dispatch for `google.gmail.search` / `google.calendar.create_event` / `google.drive.search` / `google.docs.append` / `google.sheets.append_row`. Skills declared in Phase 3.5 now actually execute end-to-end through Nango.
 - [ ] **withOrgScope Phase B** — flip RLS unset branch to strict; migrate worker + scheduler to per-iteration `withOrgScope(goal.org_id, ...)`
 - [ ] Hermes-driven capture classifier (replaces v0 heuristic for nuanced parsing)
 - [ ] Migrate every route to `withOrgScope()` and flip RLS default to NONE (unset = block)
