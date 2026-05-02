@@ -205,5 +205,55 @@ if [[ -n "$FIRST_STDIO" ]]; then
   echo "  → ok=$PROBE_OK latency=${PROBE_LATENCY}ms"
 fi
 
+# 17. simulation dispatch — sends mode='simulation' to /dispatch-all on an
+# existing captured goal. Without a plan the endpoint returns 409 no_plan,
+# which still proves the route + body schema accept the mode field. With a
+# plan it returns the simulation report. Either is a pass for this smoke.
+step "dispatch simulation — wiring check on captured goal"
+SIM=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/goals/${EPH_GOAL}/dispatch-all" \
+  -H 'content-type: application/json' \
+  -d '{"mode":"simulation"}')
+SIM_BODY=$(echo "$SIM" | head -n -1)
+SIM_CODE=$(echo "$SIM" | tail -n 1)
+case "$SIM_CODE" in
+  200)
+    SIM_COUNT=$(echo "$SIM_BODY" | jq -r '.report.subtask_count // 0')
+    SIM_EXEC=$(echo "$SIM_BODY" | jq -r '.report.would_execute // 0')
+    SIM_MUT=$(echo "$SIM_BODY" | jq -r '.report.would_have_mutated // 0')
+    echo "  → simulation report: $SIM_COUNT subtasks ($SIM_EXEC exec / $SIM_MUT intercepted)"
+    ;;
+  409)
+    echo "  → 409 no_plan (expected — capture didn't generate a plan; route schema is wired)"
+    ;;
+  *)
+    echo "❌ unexpected status $SIM_CODE from POST /dispatch-all (mode=simulation)" >&2
+    echo "$SIM_BODY" >&2
+    exit 1
+    ;;
+esac
+
+# 18. run feedback — write + readback. We need a run id to attach to;
+# query for any run from this run of the smoke script. If none exists
+# (no dispatch happened), skip with a soft note.
+step "run feedback — write + readback"
+ANY_RUN=$(curl -s "${BASE}/api/runs?goal_id=${EPH_GOAL}" | jq -r '.[0].id // empty')
+if [[ -z "$ANY_RUN" ]]; then
+  echo "  → skipped (no runs on the captured goal yet)"
+else
+  FB=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/runs/${ANY_RUN}/feedback" \
+    -H 'content-type: application/json' \
+    -d '{"rating":4,"tags":["smoke","helpful"],"note":"recorded by smoke.sh"}')
+  FB_BODY=$(echo "$FB" | head -n -1)
+  FB_CODE=$(echo "$FB" | tail -n 1)
+  if [[ "$FB_CODE" -ne 201 ]]; then
+    echo "❌ POST /runs/$ANY_RUN/feedback returned $FB_CODE" >&2
+    echo "$FB_BODY" >&2
+    exit 1
+  fi
+  FB_LIST=$(curl -s "${BASE}/api/runs/${ANY_RUN}/feedback")
+  FB_COUNT=$(echo "$FB_LIST" | jq 'length')
+  echo "  → $FB_COUNT feedback row(s) on run ${ANY_RUN:0:8}"
+fi
+
 echo
 echo "✅ smoke passed — every Phase-3.5 surface responded as expected."

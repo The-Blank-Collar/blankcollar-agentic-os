@@ -82,6 +82,14 @@ POST /forget     { memory_id, reason }
 - The `bc_net` bridge network is the only path between services.
 - Future hosted product: Supabase JWTs validated at the Paperclip edge before any L1–L4 call.
 
+### Simulation + feedback (Phase 2.3)
+
+Two related primitives that together let the operator verify-before-running and rate-after-running:
+
+- **Simulation** — `POST /goals/:id/dispatch` and `/dispatch-all` accept `mode: "simulation"`. No real run is queued; instead `simulateDispatch()` (in `apps/paperclip/src/runs/simulate.ts`) classifies each subtask using `ops.skill.side_effects`. Read-only subtasks are reported as `would-execute`; write/external subtasks as `would-have-mutated`. Default-deny on unknown skills — safer to refuse than risk an unclassified execution. The audit log gets a single `run.simulate` row tagged on the goal.
+- **Feedback** — `POST /runs/:id/feedback` writes a row to `ops.run_feedback` (rating 1-5, tags, free-form note). Multiple entries per run; the audit/level-up loop reads from this table when surfacing patterns ("Hermes consistently rated low on `wrong-tone` tag for vendor emails").
+- **`ops.run.mode`** — every run row records whether it ran live or as a simulation (default `'live'`). Future "commit-this-simulation" flow can re-create runs with the cached plan; for now the column is informational.
+
 ### MCP tool gateway
 
 Tools (Slack, GitHub, Postgres, web fetch, …) are exposed via the **Model Context Protocol** — JSON-RPC 2.0 over stdio (or HTTP/SSE/WS). YAML manifests in `packages/tools/manifests/` are the source of truth; on every Paperclip boot, `syncToolRegistry()` mirrors them into `ops.tool`. Each tool declares its `transport`, `target` command, env-var requirements, and input schema.

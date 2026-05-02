@@ -574,19 +574,86 @@ POST /goals/{id}/plan
 
 ```http
 POST /goals/{id}/dispatch
-{ "subtask_index": 0, "agent_id": "<uuid|optional>" }
-→ 201 { "run_id": "<uuid>", "status": "queued" }
+{ "subtask_index": 0, "agent_id": "<uuid|optional>", "mode": "live" | "simulation" }
+→ 201 { "run_id": "<uuid>", "status": "queued" }                    // live
+→ 200 { "mode": "simulation", "report": {...} }                     // simulation
 ```
 
 ```http
-GET /runs/{id}
-→ 200 { "id", "status", "input", "output?", "error?", "started_at", "finished_at" }
+POST /goals/{id}/dispatch-all
+{ "mode": "live" | "simulation" }
+→ 201 { "run_ids": [...], "queued": <int> }                         // live
+→ 200 { "mode": "simulation", "report": {...} }                     // simulation
 ```
+
+#### Simulation report shape (Phase 2.3.b)
+
+```jsonc
+{
+  "mode": "simulation",
+  "report": {
+    "subtask_count": 3,
+    "would_execute": 2,
+    "would_have_mutated": 1,
+    "subtasks": [
+      {
+        "index": 0,
+        "title": "Look up Mira's last email",
+        "skill": "knowledge.lookup",
+        "side_effects": "read",
+        "outcome": "would-execute",
+        "reason": "read-only — would execute against real APIs",
+        "preview": { "query": "Mira deadline" }
+      },
+      {
+        "index": 1,
+        "title": "Send the apology email",
+        "skill": "email.send",
+        "side_effects": "external",
+        "outcome": "would-have-mutated",
+        "reason": "external side-effect — intercepted (no real call)",
+        "preview": { "to": "mira@example.com", "subject": "Re: timeline update" }
+      }
+    ]
+  }
+}
+```
+
+Decision rules: skill `side_effects='read'` → `would-execute`. Skill `side_effects` in `{write, external}` → `would-have-mutated`. No skill, or skill missing from `ops.skill` → `would-have-mutated` (default-deny — safer to refuse than risk unclassified execution).
+
+```http
+GET /runs/{id}
+→ 200 { "id", "status", "mode", "input", "output?", "error?", "started_at", "finished_at" }
+```
+
+`mode` is `"live"` for ordinary runs and is recorded as `"simulation"` only on rows that came from a future "commit-this-simulation" path (deferred). All current real runs have `mode='live'`.
 
 ```http
 POST /runs/{id}/cancel
 → 200 { "status": "cancelled" }
 ```
+
+#### Run feedback (Phase 2.3.a)
+
+```http
+POST /runs/{id}/feedback
+{ "rating": 4, "tags": ["wrong-tone","helpful"], "note": "..." }
+→ 201 { ...feedback row... }
+→ 404 { "error": "not_found" }
+```
+
+```http
+GET /runs/{id}/feedback
+→ 200 [{ id, run_id, rating, tags[], note, created_at }, ...]
+```
+
+```http
+DELETE /runs/feedback/{id}
+→ 204
+→ 404 { "error": "not_found" }
+```
+
+Multiple feedback entries per run are allowed. Common tags (convention only — anything goes): `wrong-tone`, `missing-fact`, `hallucinated`, `too-long`, `too-short`, `off-topic`, `perfect`, `helpful`.
 
 ### Agents
 

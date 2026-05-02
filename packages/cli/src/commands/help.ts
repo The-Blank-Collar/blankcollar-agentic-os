@@ -63,6 +63,10 @@ COMMANDS
   brain --summary          counts per node/edge kind
   runs --goal=<id>         list runs on a goal
   run <id> [--watch]       single run; --watch streams live status via SSE
+  dispatch <goal_id> [--subtask=N] [--simulate]
+                           queue runs from the goal's plan; --simulate
+                           previews which subtasks would execute vs.
+                           be intercepted (no real side-effects fire)
   feedback <run_id> --rating=1..5 [--tag=X --tags=a,b,c --note="..."]
                            rate a finished run (canned tags: wrong-tone,
                            missing-fact, hallucinated, too-long, perfect, …)
