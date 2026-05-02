@@ -6,6 +6,7 @@ import {
   GoalListQuery,
   GoalPatch,
   RunDispatch,
+  RunFeedbackCreate,
   Scope,
 } from "../src/schemas.js";
 
@@ -79,6 +80,38 @@ describe("RunDispatch", () => {
     expect(RunDispatch.safeParse({ subtask_index: 0 }).success).toBe(true);
     expect(RunDispatch.safeParse({ subtask_index: -1 }).success).toBe(false);
     expect(RunDispatch.safeParse({ subtask_index: 1.5 }).success).toBe(false);
+  });
+  it("defaults mode to 'live'", () => {
+    expect(RunDispatch.parse({ subtask_index: 0 }).mode).toBe("live");
+  });
+  it("accepts mode='simulation'", () => {
+    expect(RunDispatch.parse({ subtask_index: 0, mode: "simulation" }).mode).toBe("simulation");
+  });
+  it("rejects unknown modes", () => {
+    expect(RunDispatch.safeParse({ subtask_index: 0, mode: "wat" }).success).toBe(false);
+  });
+});
+
+describe("RunFeedbackCreate", () => {
+  it("clamps rating to 1..5", () => {
+    expect(RunFeedbackCreate.safeParse({ rating: 0 }).success).toBe(false);
+    expect(RunFeedbackCreate.safeParse({ rating: 6 }).success).toBe(false);
+    expect(RunFeedbackCreate.safeParse({ rating: 3 }).success).toBe(true);
+  });
+  it("rejects fractional ratings", () => {
+    expect(RunFeedbackCreate.safeParse({ rating: 3.5 }).success).toBe(false);
+  });
+  it("defaults tags to empty array", () => {
+    const r = RunFeedbackCreate.parse({ rating: 4 });
+    expect(r.tags).toEqual([]);
+  });
+  it("caps tag count at 10", () => {
+    const tooMany = Array.from({ length: 11 }, (_, i) => `tag${i}`);
+    expect(RunFeedbackCreate.safeParse({ rating: 4, tags: tooMany }).success).toBe(false);
+  });
+  it("caps note length at 2000 chars", () => {
+    const long = "x".repeat(2_001);
+    expect(RunFeedbackCreate.safeParse({ rating: 4, note: long }).success).toBe(false);
   });
 });
 

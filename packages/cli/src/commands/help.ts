@@ -63,6 +63,10 @@ COMMANDS
   brain --summary          counts per node/edge kind
   runs --goal=<id>         list runs on a goal
   run <id> [--watch]       single run; --watch streams live status via SSE
+  feedback <run_id> --rating=1..5 [--tag=X --tags=a,b,c --note="..."]
+                           rate a finished run (canned tags: wrong-tone,
+                           missing-fact, hallucinated, too-long, perfect, …)
+  feedback <run_id> --list   list every feedback entry on a run
   routines                 list active kind=routine goals + next cron fire
   triggers <goal_id>       list schedule/event/api triggers on a goal
   fire <trigger_id>        manually fire a trigger (api triggers need --token)

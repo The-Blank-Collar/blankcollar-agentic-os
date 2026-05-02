@@ -789,6 +789,41 @@ const ADDITIVE_MIGRATIONS = [
        WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
   ]),
 
+  // -- ops.run_feedback — Phase 2.3.a -------------------------------------
+  // Per-run feedback from the operator: rating (1-5), tags (canned + free),
+  // optional free-form note. Multiple entries per run allowed (operator may
+  // refine an initial gut-rating after re-reading the output). Feeds the
+  // future audit/level-up surfacing.
+  `CREATE TABLE IF NOT EXISTS ops.run_feedback (
+     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     run_id      uuid NOT NULL REFERENCES ops.run(id) ON DELETE CASCADE,
+     org_id      uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     user_id     uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     rating      integer NOT NULL CHECK (rating >= 1 AND rating <= 5),
+     tags        text[] NOT NULL DEFAULT ARRAY[]::text[],
+     note        text,
+     created_at  timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS run_feedback_run_idx
+      ON ops.run_feedback (run_id, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS run_feedback_org_idx
+      ON ops.run_feedback (org_id, created_at DESC);`,
+  `ALTER TABLE ops.run_feedback ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.run_feedback FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.run_feedback;`,
+  `CREATE POLICY app_scope_org ON ops.run_feedback
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.run_feedback;`,
+  `CREATE POLICY app_system_scope ON ops.run_feedback
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- ops.tool_call_log — Phase 2.2 --------------------------------------
   // One row per MCP tool invocation. Mirrors ops.llm_call_log's shape.
   // Recorded by the MCP client wrapper on every invoke (success or error).

@@ -17,6 +17,7 @@ import { runBriefing } from "./commands/briefing.js";
 import { runCapture } from "./commands/capture.js";
 import { runChannels } from "./commands/channels.js";
 import { runDepartments } from "./commands/depts.js";
+import { runFeedback } from "./commands/feedback.js";
 import { runGoalStatus } from "./commands/goal-status.js";
 import { runGoalGet, runGoalResolve, runGoalsList } from "./commands/goals.js";
 import { runHealth } from "./commands/health.js";
@@ -208,6 +209,8 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runRunsList(args, client);
       case "run":
         return await runRunGet(args, client);
+      case "feedback":
+        return await runFeedback(args, client);
 
       case "routines":
         return await runRoutinesList(args, client);

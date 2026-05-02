@@ -446,13 +446,31 @@ export type PolicyCreate = z.infer<typeof PolicyCreate>;
 
 // ---------- Runs ----------------------------------------------------------
 
+export const RunMode = z.enum(["live", "simulation"]);
+export type RunMode = z.infer<typeof RunMode>;
+
 export const RunDispatch = z
   .object({
     subtask_index: z.number().int().min(0),
     agent_id: z.string().uuid().optional(),
+    /** Phase 2.3.b: when 'simulation', no real runs are queued — the
+     *  endpoint returns a "would have done" report instead. */
+    mode: RunMode.default("live"),
   })
   .strict();
 export type RunDispatch = z.infer<typeof RunDispatch>;
+
+export const RunFeedbackCreate = z
+  .object({
+    rating: z.number().int().min(1).max(5),
+    /** Canned + free tags. Convention: lowercase-hyphen.
+     *  Common tags: wrong-tone, missing-fact, hallucinated, too-long,
+     *  too-short, off-topic, perfect, helpful. */
+    tags: z.array(z.string().min(1).max(40)).max(10).default([]),
+    note: z.string().max(2_000).optional(),
+  })
+  .strict();
+export type RunFeedbackCreate = z.infer<typeof RunFeedbackCreate>;
 
 // ---------- Agents --------------------------------------------------------
 

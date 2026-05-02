@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
 import { withOrgScope } from "../db.js";
+import { RunFeedbackCreate } from "../schemas.js";
 import { resolveCallerScope } from "../scope.js";
 
 type RunRow = {
@@ -219,5 +220,116 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ error: "not_cancellable_or_not_found" });
     }
     return result;
+  });
+
+  // -- feedback (Phase 2.3.a) --------------------------------------------
+  // Per-run rating (1-5) + tags + free-form note. Multiple feedback entries
+  // per run are allowed (operator may refine after re-reading).
+
+  type FeedbackRow = {
+    id: string;
+    run_id: string;
+    org_id: string;
+    user_id: string | null;
+    rating: number;
+    tags: string[];
+    note: string | null;
+    created_at: string;
+  };
+  const FEEDBACK_COLUMNS = "id, run_id, org_id, user_id, rating, tags, note, created_at";
+
+  app.post<{ Params: { id: string } }>(
+    "/api/runs/:id/feedback",
+    async (req, reply) => {
+      const parsed = RunFeedbackCreate.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
+      }
+      const scope = await resolveCallerScope(req);
+      const result = await withOrgScope(scope.org_id, async (client) => {
+        // Confirm the run belongs to this org (via the run→goal join).
+        const { rows: own } = await client.query<{ id: string }>(
+          `SELECT r.id FROM ops.run r
+             JOIN ops.goal g ON g.id = r.goal_id
+            WHERE r.id = $1 AND g.org_id = $2`,
+          [req.params.id, scope.org_id],
+        );
+        if (own.length === 0) return { kind: "not_found" as const };
+
+        const { rows } = await client.query<FeedbackRow>(
+          `INSERT INTO ops.run_feedback
+             (run_id, org_id, user_id, rating, tags, note)
+           VALUES ($1, $2, $3, $4, $5::text[], $6)
+           RETURNING ${FEEDBACK_COLUMNS}`,
+          [
+            req.params.id,
+            scope.org_id,
+            null, // Phase 6: scope.user_id once auth is wired
+            parsed.data.rating,
+            parsed.data.tags,
+            parsed.data.note ?? null,
+          ],
+        );
+        const fb = rows[0]!;
+        await audit(
+          {
+            scope,
+            action: "run.feedback",
+            target_type: "run",
+            target_id: req.params.id,
+            metadata: {
+              feedback_id: fb.id,
+              rating: fb.rating,
+              tags: fb.tags,
+              has_note: Boolean(fb.note),
+            },
+          },
+          client,
+        );
+        return { kind: "ok" as const, feedback: fb };
+      });
+      if (result.kind === "not_found") return reply.code(404).send({ error: "not_found" });
+      return reply.code(201).send(result.feedback);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>("/api/runs/:id/feedback", async (req) => {
+    const scope = await resolveCallerScope(req);
+    return withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<FeedbackRow>(
+        `SELECT ${FEEDBACK_COLUMNS}
+           FROM ops.run_feedback
+          WHERE run_id = $1 AND org_id = $2
+          ORDER BY created_at DESC`,
+        [req.params.id, scope.org_id],
+      );
+      return rows;
+    });
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/runs/feedback/:id", async (req, reply) => {
+    const scope = await resolveCallerScope(req);
+    const result = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<{ id: string; run_id: string }>(
+        `DELETE FROM ops.run_feedback
+          WHERE id = $1 AND org_id = $2
+          RETURNING id, run_id`,
+        [req.params.id, scope.org_id],
+      );
+      if (rows.length === 0) return undefined;
+      await audit(
+        {
+          scope,
+          action: "run.feedback.delete",
+          target_type: "run_feedback",
+          target_id: rows[0]!.id,
+          metadata: { run_id: rows[0]!.run_id },
+        },
+        client,
+      );
+      return rows[0];
+    });
+    if (!result) return reply.code(404).send({ error: "not_found" });
+    return reply.code(204).send();
   });
 }
