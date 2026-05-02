@@ -892,6 +892,70 @@ const ADDITIVE_MIGRATIONS = [
      USING      (current_setting('app.system_scope', true) = 'true')
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 
+  // -- ops.upstream_source — Phase 2.5 -----------------------------------
+  // Registered external URLs that the scheduler periodically re-fetches
+  // into ops.document. One source owns one sliding document slot
+  // (last_document_id); when the fetched content's hash differs from the
+  // last successful pull, the linked document is replaced atomically.
+  // Sources that fail consecutive_failures >= 5 times auto-disable.
+  // Defined AFTER ops.document so the FK on last_document_id can resolve
+  // on a fresh database.
+  `CREATE TABLE IF NOT EXISTS ops.upstream_source (
+     id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id                   uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     scope                    ops.skill_scope NOT NULL DEFAULT 'company',
+     name                     text NOT NULL,
+     source_url               text NOT NULL,
+     tags                     text[] NOT NULL DEFAULT ARRAY[]::text[],
+     refresh_interval_seconds integer NOT NULL DEFAULT 86400
+                              CHECK (refresh_interval_seconds >= 60),
+     last_pulled_at           timestamptz,
+     last_content_hash        text,
+     last_document_id         uuid REFERENCES ops.document(id) ON DELETE SET NULL,
+     last_status              text,
+     last_error               text,
+     consecutive_failures     integer NOT NULL DEFAULT 0,
+     enabled                  boolean NOT NULL DEFAULT true,
+     created_at               timestamptz NOT NULL DEFAULT now(),
+     updated_at               timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS upstream_source_org_url_uniq
+      ON ops.upstream_source (org_id, source_url);`,
+  `CREATE INDEX IF NOT EXISTS upstream_source_due_idx
+      ON ops.upstream_source (org_id, last_pulled_at)
+      WHERE enabled = true;`,
+  `ALTER TABLE ops.upstream_source ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.upstream_source FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.upstream_source;`,
+  `CREATE POLICY app_scope_org ON ops.upstream_source
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.upstream_source;`,
+  `CREATE POLICY app_system_scope ON ops.upstream_source
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // ops.document gets an upstream_source_id column linking back to the
+  // source that produced it (NULL for ad-hoc / `bc doc add` ingests).
+  // Existing dedupe (UNIQUE on org_id + content_hash) is relaxed to
+  // ad-hoc-only via a partial index; a separate partial unique ensures
+  // one document per upstream source.
+  `ALTER TABLE ops.document
+     ADD COLUMN IF NOT EXISTS upstream_source_id uuid
+       REFERENCES ops.upstream_source(id) ON DELETE SET NULL;`,
+  `DROP INDEX IF EXISTS document_hash_uniq;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS document_hash_adhoc_uniq
+      ON ops.document (org_id, content_hash)
+      WHERE upstream_source_id IS NULL;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS document_upstream_source_uniq
+      ON ops.document (org_id, upstream_source_id)
+      WHERE upstream_source_id IS NOT NULL;`,
+
   // -- ops.run_feedback — Phase 2.3.a -------------------------------------
   // Per-run feedback from the operator: rating (1-5), tags (canned + free),
   // optional free-form note. Multiple entries per run allowed (operator may

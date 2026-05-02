@@ -39,6 +39,7 @@ import { withOrgScope, withSystemScope } from "./db.js";
 import { generatePlan } from "./plan.js";
 import { fireRoutineFromTrigger, matchesEvent, type TriggerRow } from "./routines/triggers.js";
 import type { Scope } from "./schemas.js";
+import { pullDueUpstreamSources } from "./upstream/pull.js";
 
 type Logger = {
   info: (msg: string) => void;
@@ -233,6 +234,24 @@ export class Scheduler {
       if (eventFires > 0) log.info(`scheduler: fired ${eventFires} event-triggered routine(s)`);
     } catch (err) {
       log.error(err, "scheduler: event-trigger pass failed");
+    }
+
+    // Upstream knowledge auto-pull — scan ops.upstream_source for rows
+    // whose last_pulled_at is older than refresh_interval_seconds, fetch
+    // each, replace the linked document on content change. Sequential
+    // (one fetch at a time) so we don't fork dozens of concurrent
+    // outbound HTTP calls.
+    try {
+      const summary = await withSystemScope(async (client) => {
+        return pullDueUpstreamSources(client);
+      });
+      if (summary.scanned > 0) {
+        log.info(
+          `scheduler: upstream pull — ${summary.ok} ok / ${summary.unchanged} unchanged / ${summary.failed} failed (scanned ${summary.scanned})`,
+        );
+      }
+    } catch (err) {
+      log.error(err, "scheduler: upstream pull pass failed");
     }
 
     return fired;
