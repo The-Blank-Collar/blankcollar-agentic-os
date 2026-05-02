@@ -106,6 +106,24 @@ const ADDITIVE_MIGRATIONS = [
      ADD COLUMN IF NOT EXISTS acknowledged_at timestamptz;`,
   `CREATE INDEX IF NOT EXISTS run_unacknowledged_idx
       ON ops.run (goal_id, finished_at DESC) WHERE acknowledged_at IS NULL;`,
+  // Phase 2.3.b: ops.run.mode lets the dispatcher record whether a run is
+  // 'live' (default — actually executes side-effects) or 'simulation'
+  // (read-only preview of what a live run would have done). Defaults to
+  // 'live' so existing rows + dispatchers behave unchanged.
+  `ALTER TABLE ops.run
+     ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'live';`,
+  `DO $$ BEGIN
+     ALTER TABLE ops.run ADD CONSTRAINT run_mode_chk
+       CHECK (mode IN ('live', 'simulation'));
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  // Phase 2.3.b: ops.skill keeps a side_effects column (already added in
+  // the table definition); we'll rely on its values 'read' | 'write' |
+  // 'external' to decide which subtasks to skip in simulation mode.
+  // ops.tool also gets an optional side_effects column — manifests can
+  // declare it; missing means 'unknown' (treated as side-effecting in
+  // simulation, refused with a clear message).
+  `ALTER TABLE ops.tool
+     ADD COLUMN IF NOT EXISTS side_effects text;`,
 
   // -- Row-Level Security (Phase 3.5) ------------------------------------
   // Belt-and-suspenders alongside the in-code resolveCallerScope() filters.

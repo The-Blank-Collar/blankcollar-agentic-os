@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { audit } from "../audit.js";
 import { withOrgScope } from "../db.js";
 import { generatePlan } from "../plan.js";
+import { simulateDispatch } from "../runs/simulate.js";
 import { resolveCallerScope } from "../scope.js";
 import { DecisionResolve, GoalCreate, GoalListQuery, GoalPatch, RunDispatch } from "../schemas.js";
 
@@ -338,9 +339,32 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       }
       const subtask = plan.subtasks[parsed.data.subtask_index];
       if (!subtask) return { kind: "out_of_range" as const };
+
+      // Simulation: never queue a real run; classify the subtask + return.
+      // The audit row records that a simulation happened so operators can
+      // see "what was simulated and when" alongside live dispatches.
+      if (parsed.data.mode === "simulation") {
+        const report = await simulateDispatch(client, scope.org_id, [subtask]);
+        await audit(
+          {
+            scope,
+            action: "run.simulate",
+            target_type: "goal",
+            target_id: goal.id,
+            metadata: {
+              subtask_index: parsed.data.subtask_index,
+              would_execute: report.would_execute,
+              would_have_mutated: report.would_have_mutated,
+            },
+          },
+          client,
+        );
+        return { kind: "simulated" as const, report };
+      }
+
       const { rows: runRows } = await client.query<{ id: string }>(
-        `INSERT INTO ops.run (goal_id, agent_id, status, input)
-         VALUES ($1, $2, 'queued', $3::jsonb)
+        `INSERT INTO ops.run (goal_id, agent_id, status, input, mode)
+         VALUES ($1, $2, 'queued', $3::jsonb, 'live')
          RETURNING id`,
         [goal.id, parsed.data.agent_id ?? null, JSON.stringify({ subtask })],
       );
@@ -367,12 +391,19 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
     }
     if (result.kind === "out_of_range") return reply.code(400).send({ error: "subtask_index_out_of_range" });
+    if (result.kind === "simulated") {
+      return reply.code(200).send({ mode: "simulation", report: result.report });
+    }
     return reply.code(201).send({ run_id: result.runId, status: "queued" });
   });
 
   // -- dispatch all (run plan) -------------------------------------------
-  app.post<{ Params: { id: string } }>("/api/goals/:id/dispatch-all", async (req, reply) => {
+  // Body: { mode?: 'live' | 'simulation' } (default 'live').
+  app.post<{ Params: { id: string }; Body: { mode?: "live" | "simulation" } }>(
+    "/api/goals/:id/dispatch-all",
+    async (req, reply) => {
     const scope = await resolveCallerScope(req);
+    const mode = req.body?.mode === "simulation" ? "simulation" : "live";
     const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<GoalRow>(
         "SELECT * FROM ops.goal WHERE id = $1 AND org_id = $2",
@@ -384,11 +415,31 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       if (!plan || !Array.isArray(plan.subtasks) || plan.subtasks.length === 0) {
         return { kind: "no_plan" as const };
       }
+
+      if (mode === "simulation") {
+        const report = await simulateDispatch(client, scope.org_id, plan.subtasks);
+        await audit(
+          {
+            scope,
+            action: "run.simulate",
+            target_type: "goal",
+            target_id: goal.id,
+            metadata: {
+              source: "dispatch-all",
+              would_execute: report.would_execute,
+              would_have_mutated: report.would_have_mutated,
+            },
+          },
+          client,
+        );
+        return { kind: "simulated" as const, report };
+      }
+
       const ids: string[] = [];
       for (const st of plan.subtasks) {
         const { rows: runRows } = await client.query<{ id: string }>(
-          `INSERT INTO ops.run (goal_id, status, input)
-           VALUES ($1, 'queued', $2::jsonb) RETURNING id`,
+          `INSERT INTO ops.run (goal_id, status, input, mode)
+           VALUES ($1, 'queued', $2::jsonb, 'live') RETURNING id`,
           [goal.id, JSON.stringify({ subtask: st })],
         );
         const runId = runRows[0]!.id;
@@ -414,6 +465,10 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
     if (result.kind === "no_plan") {
       return reply.code(409).send({ error: "no_plan", hint: "POST /api/goals/{id}/plan first" });
     }
+    if (result.kind === "simulated") {
+      return reply.code(200).send({ mode: "simulation", report: result.report });
+    }
     return reply.code(201).send({ run_ids: result.ids, queued: result.ids.length });
-  });
+  },
+  );
 }
