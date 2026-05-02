@@ -421,6 +421,30 @@ export const DocumentMarkdownCreate = z
   .strict();
 export type DocumentMarkdownCreate = z.infer<typeof DocumentMarkdownCreate>;
 
+// ---------- Upstream sources (Phase 2.5) --------------------------------
+
+export const UpstreamSourceCreate = z
+  .object({
+    name:                     z.string().min(1).max(200),
+    source_url:               z.string().url().max(2_000),
+    scope:                    SkillScope.default("company"),
+    tags:                     z.array(z.string().min(1).max(40)).max(20).default([]),
+    refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).default(86_400),
+  })
+  .strict();
+export type UpstreamSourceCreate = z.infer<typeof UpstreamSourceCreate>;
+
+export const UpstreamSourcePatch = z
+  .object({
+    name:                     z.string().min(1).max(200).optional(),
+    scope:                    SkillScope.optional(),
+    tags:                     z.array(z.string().min(1).max(40)).max(20).optional(),
+    refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).optional(),
+    enabled:                  z.boolean().optional(),
+  })
+  .strict();
+export type UpstreamSourcePatch = z.infer<typeof UpstreamSourcePatch>;
+
 // ---------- Tool registry (MCP) -----------------------------------------
 
 export const ToolTransport = z.enum(["stdio", "http", "sse", "websocket"]);

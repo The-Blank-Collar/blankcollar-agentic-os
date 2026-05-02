@@ -9,6 +9,8 @@ import {
   RunDispatch,
   RunFeedbackCreate,
   Scope,
+  UpstreamSourceCreate,
+  UpstreamSourcePatch,
 } from "../src/schemas.js";
 
 describe("Scope", () => {
@@ -155,5 +157,52 @@ describe("DocumentMarkdownCreate", () => {
   it("accepts force=true", () => {
     const r = DocumentMarkdownCreate.parse({ title: "X", content_md: "y", force: true });
     expect(r.force).toBe(true);
+  });
+});
+
+describe("UpstreamSourceCreate", () => {
+  const ok = { name: "Anthropic prompt caching", source_url: "https://docs.anthropic.com/x" };
+  it("requires name + source_url", () => {
+    expect(UpstreamSourceCreate.safeParse({}).success).toBe(false);
+    expect(UpstreamSourceCreate.safeParse({ name: "x" }).success).toBe(false);
+    expect(UpstreamSourceCreate.safeParse({ source_url: "https://x" }).success).toBe(false);
+  });
+  it("rejects malformed source_url", () => {
+    expect(UpstreamSourceCreate.safeParse({ ...ok, source_url: "not a url" }).success).toBe(false);
+  });
+  it("defaults scope/tags/refresh_interval_seconds", () => {
+    const r = UpstreamSourceCreate.parse(ok);
+    expect(r.scope).toBe("company");
+    expect(r.tags).toEqual([]);
+    expect(r.refresh_interval_seconds).toBe(86_400);
+  });
+  it("rejects refresh_interval below 60s (would hammer external sites)", () => {
+    expect(
+      UpstreamSourceCreate.safeParse({ ...ok, refresh_interval_seconds: 30 }).success,
+    ).toBe(false);
+  });
+  it("rejects refresh_interval above 30 days", () => {
+    expect(
+      UpstreamSourceCreate.safeParse({ ...ok, refresh_interval_seconds: 30 * 24 * 3_600 + 1 }).success,
+    ).toBe(false);
+  });
+  it("caps tag count at 20", () => {
+    const tooMany = Array.from({ length: 21 }, (_, i) => `t${i}`);
+    expect(UpstreamSourceCreate.safeParse({ ...ok, tags: tooMany }).success).toBe(false);
+  });
+});
+
+describe("UpstreamSourcePatch", () => {
+  it("accepts partial updates", () => {
+    expect(UpstreamSourcePatch.safeParse({ enabled: false }).success).toBe(true);
+    expect(UpstreamSourcePatch.safeParse({ refresh_interval_seconds: 3600 }).success).toBe(true);
+  });
+  it("rejects unknown fields (strict)", () => {
+    expect(
+      UpstreamSourcePatch.safeParse({ enabled: false, source_url: "x" }).success,
+    ).toBe(false);
+  });
+  it("respects the same interval bounds", () => {
+    expect(UpstreamSourcePatch.safeParse({ refresh_interval_seconds: 30 }).success).toBe(false);
   });
 });
