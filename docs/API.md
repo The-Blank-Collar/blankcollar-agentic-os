@@ -404,6 +404,49 @@ DELETE /documents/{id}
 → 404 { "error": "not_found" }
 ```
 
+### Upstream sources (Phase 2.5)
+
+Registered URLs that the scheduler periodically re-fetches into `ops.document`. One source owns one sliding document slot via `last_document_id`. See `docs/INGESTION.md#upstream-auto-pull-phase-25` for the operator walkthrough.
+
+```http
+POST /upstream
+{
+  "name":                     "Prompt caching",
+  "source_url":               "https://docs.anthropic.com/...",
+  "scope":                    "company",            // personal | company | shared
+  "tags":                     ["anthropic"],
+  "refresh_interval_seconds": 86400                 // 60 ≤ x ≤ 30 days
+}
+→ 201 { ...source }
+→ 409 { "error": "duplicate_source_url", "existing_id": "<uuid>" }
+```
+
+```http
+GET /upstream?enabled=true&tag=anthropic
+→ 200 [{ id, name, source_url, scope, tags, refresh_interval_seconds,
+         last_pulled_at, last_status, last_error, last_document_id,
+         consecutive_failures, enabled, created_at, updated_at }]
+
+GET /upstream/{id}
+→ 200 { ...source }
+→ 404 { "error": "not_found" }
+
+PATCH /upstream/{id}
+{ "name"?, "scope"?, "tags"?, "refresh_interval_seconds"?, "enabled"? }
+→ 200 { ...source }                                 // re-enabling resets consecutive_failures
+
+POST /upstream/{id}/pull
+→ 200 { "source_id", "outcome": { ...PullOutcome } }
+       // PullOutcome:
+       //   { status: "ok",        document_id, chunk_count, latency_ms }
+       //   { status: "unchanged", document_id, latency_ms }
+       //   { status: "failed",    error, latency_ms }
+
+DELETE /upstream/{id}
+→ 204                                               // also deletes linked document + chunks
+→ 404 { "error": "not_found" }
+```
+
 ### Tools (MCP registry)
 
 YAML manifests in `packages/tools/manifests/{shared,company,personal}/` upsert into `ops.tool` on every Paperclip boot. The catalog is read-only at the API layer in v0; invocation lives behind a future MCP-client transport.

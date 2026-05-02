@@ -19,6 +19,7 @@ import { runChannels } from "./commands/channels.js";
 import { runDepartments } from "./commands/depts.js";
 import { runDispatch } from "./commands/dispatch.js";
 import { runDoc, runDocs } from "./commands/docs.js";
+import { runUpstream } from "./commands/upstream.js";
 import { runFeedback } from "./commands/feedback.js";
 import { runGoalStatus } from "./commands/goal-status.js";
 import { runGoalGet, runGoalResolve, runGoalsList } from "./commands/goals.js";
@@ -220,6 +221,9 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runDocs(args, client);
       case "doc":
         return await runDoc(args, client);
+
+      case "upstream":
+        return await runUpstream(args, client);
 
       case "routines":
         return await runRoutinesList(args, client);

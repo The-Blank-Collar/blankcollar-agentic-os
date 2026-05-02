@@ -120,6 +120,50 @@ For now, chunks land in Postgres immediately and are keyword-searchable via the 
 | Re-uploading does nothing | Same content_hash already in your org. Use `--force` to replace. |
 | Searches return nothing despite recent ingest | Search is keyword-based today; check exact-token match. Use `bc doc <id>` to confirm chunks exist. |
 
+## Upstream auto-pull (Phase 2.5)
+
+`bc doc add --url=...` is one-shot. For sources you want kept fresh — your tools' docs, internal services, anything that drifts — register them as **upstream sources**. The scheduler refreshes each on its own interval; the linked document is replaced atomically when the content changes (sha256-compared). Failures auto-disable a source after 5 consecutive misses.
+
+```bash
+# Register
+bc upstream add https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching \
+    --name="Prompt caching" --tags=anthropic --interval=86400
+
+# Inspect
+bc upstream                        # list
+bc upstream <id>                   # full state (last_pulled_at, error, …)
+
+# Refresh now (synchronous)
+bc upstream pull <id>
+
+# Manage
+bc upstream disable <id>           # stop refreshing
+bc upstream enable <id>             # resume; resets failure counter
+bc upstream remove <id>             # stop tracking + delete linked doc
+```
+
+### How the refresh decides what to do
+
+For each due source the worker:
+
+1. Fetches the URL (15s timeout, follows redirects, sniffs `<title>`).
+2. Hashes the resulting text.
+3. **Same hash + has a linked doc** → `last_pulled_at` is bumped to now, `last_status='unchanged'`. No document write.
+4. **Different hash (or first pull)** → atomic replace: delete the old linked document (chunks cascade), insert a new `ops.document` row + chunks, point `last_document_id` at the new id, reset failure counter.
+5. **Fetch failed** → record `last_error`, increment `consecutive_failures`. After 5 in a row, set `enabled=false`. Operator clears the block by `bc upstream pull <id>` (resets the counter on success) or `bc upstream enable <id>` (resets immediately).
+
+### Defaults
+
+- `--interval=86400` (24 hours)
+- Minimum 60s, maximum 30 days
+- Refresh runs sequentially in the scheduler tick — no fan-out of outbound fetches
+
+### When *not* to register an upstream source
+
+- One-time / never-changing content → use `bc doc add` instead.
+- Internal-only URLs unreachable from the paperclip container → keep ad-hoc with `bc doc add --url=...` (CLI-side fetch runs from your machine, not the server).
+- Authenticated sources → not yet supported; auth headers per source come in a follow-up sprint.
+
 ## What's deferred
 
 - **PDF parsing** — needs `pdf-parse` or external service

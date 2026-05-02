@@ -81,6 +81,15 @@ COMMANDS
   docs search <query>      keyword search across chunks
   doc <id>                 show one document's metadata + chunk count
   doc remove <id>          delete a document (chunks cascade)
+  upstream                 list registered external sources for auto-refresh
+  upstream add <url> [--name=... --tags=a,b,c --interval=86400]
+                           track a URL; scheduler refreshes on the interval
+                           (default 24h, min 60s, max 30 days)
+  upstream pull <id>       refresh now (synchronous)
+  upstream enable <id>     re-enable an auto-disabled source
+  upstream disable <id>    stop the scheduler from pulling
+  upstream <id>            show full state (last_pulled_at, errors, …)
+  upstream remove <id>     stop tracking + delete linked document
   routines                 list active kind=routine goals + next cron fire
   triggers <goal_id>       list schedule/event/api triggers on a goal
   fire <trigger_id>        manually fire a trigger (api triggers need --token)

@@ -310,5 +310,37 @@ if [[ "$DEL_CODE" -ne 204 ]]; then
 fi
 echo "  → deleted ${DOC_ID:0:8}"
 
+# 20. upstream source registration (Phase 2.5) — register a publicly-fetchable
+# URL, list it, then remove. We don't trigger a pull here; the manual pull
+# would block on an outbound HTTP call to a real site, which makes the smoke
+# brittle. The scheduler-tick path is exercised by unit tests.
+step "upstream sources — register + list + remove"
+UP=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/upstream" \
+  -H 'content-type: application/json' \
+  -d '{
+    "name":"smoke upstream",
+    "source_url":"https://example.com/smoke-source",
+    "tags":["smoke"],
+    "refresh_interval_seconds":86400
+  }')
+UP_CODE=$(echo "$UP" | tail -n 1)
+UP_BODY=$(echo "$UP" | head -n -1)
+if [[ "$UP_CODE" -ne 201 ]]; then
+  echo "❌ POST /api/upstream returned $UP_CODE" >&2
+  echo "$UP_BODY" >&2
+  exit 1
+fi
+UP_ID=$(echo "$UP_BODY" | jq -r '.id')
+echo "  → registered ${UP_ID:0:8}"
+
+UP_LIST=$(curl -s "${BASE}/api/upstream")
+UP_COUNT=$(echo "$UP_LIST" | jq 'length')
+[[ "$UP_COUNT" -ge 1 ]] || { echo "❌ list expected ≥1 source" >&2; exit 1; }
+echo "  → list returns $UP_COUNT source(s)"
+
+UP_DEL=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${BASE}/api/upstream/${UP_ID}")
+[[ "$UP_DEL" -eq 204 ]] || { echo "❌ DELETE returned $UP_DEL" >&2; exit 1; }
+echo "  → deleted ${UP_ID:0:8}"
+
 echo
 echo "✅ smoke passed — every Phase-3.5 surface responded as expected."

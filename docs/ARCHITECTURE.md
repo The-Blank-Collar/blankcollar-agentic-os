@@ -82,6 +82,12 @@ POST /forget     { memory_id, reason }
 - The `bc_net` bridge network is the only path between services.
 - Future hosted product: Supabase JWTs validated at the Paperclip edge before any L1–L4 call.
 
+### Upstream knowledge auto-pull (Phase 2.5)
+
+`ops.upstream_source` declares a URL + refresh interval (60s – 30 days, default 24h). The scheduler tick wakes periodically, locks due rows with `FOR UPDATE SKIP LOCKED`, and runs `pullUpstreamSource()` sequentially. Each pull fetches the URL, hashes the body, compares to `last_content_hash`, and either no-ops (`status='unchanged'`) or atomically replaces the linked `ops.document` row + chunks. Five consecutive failures auto-disable the source until an operator pull resets the counter.
+
+The CLI `bc upstream add/list/pull/enable/disable/remove` mirrors `bc doc`. See `docs/INGESTION.md` for the operator playbook.
+
 ### Document ingestion (Phase 2.4)
 
 Three context surfaces in the brain, each different by intent:
