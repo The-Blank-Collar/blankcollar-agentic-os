@@ -2,7 +2,9 @@
 
 A phased plan from groundwork to public launch. Each phase ends with something demoable.
 
-## Phase 0 — Groundwork *(now)*
+> **Where we are right now:** Phases 0 → 3.5 complete; the local-first development pass (sprints 2.0 → 2.6) closed Phase 2 of the locked plan; Phase 3 (cloud migration) and Phase 4 (React UI) are next. See [`docs/STATUS.md`](STATUS.md) for the full inventory.
+
+## Phase 0 — Groundwork ✅
 
 **Goal:** anyone can clone the repo and have the whole stack running on their Mac in under 5 minutes.
 
@@ -57,7 +59,7 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [ ] Email send skill *(deferred to Phase 5 alongside the policy engine)*
 - [ ] WebSocket telemetry *(deferred — polling is sufficient for v0)*
 
-## Phase 3.5 — Backend Tightening (single-user first) ✅ in progress
+## Phase 3.5 — Backend Tightening (single-user first) ✅
 
 **Goal:** lock the API contract before the React console handoff. Soften the goal-first language without breaking the goal-first model.
 
