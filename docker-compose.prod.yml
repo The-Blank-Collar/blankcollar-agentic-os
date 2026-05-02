@@ -1,168 +1,119 @@
 # =============================================================================
-# Blank Collar — production overrides for Hostinger KVM 8.
+# Blank Collar — Agentic OS · production overlay (Hetzner + Coolify)
+# -----------------------------------------------------------------------------
+# Used in production on top of docker-compose.yml. Coolify ingests this file
+# directly and manages the public ingress + TLS via its own Caddy.
 #
-# Used together with the base compose:
+# To preview the production shape locally:
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# What this overlay does:
+#   1. Removes host-port mappings from every internal service so the only
+#      thing reachable from outside the host is paperclip on :3000 — and
+#      even that is fronted by Coolify's reverse proxy in production.
+#   2. Sets ENV=production on every app container so logging / error
+#      reporting can branch on it.
+#   3. Locks every service to `restart: unless-stopped`. (Most already are
+#      via the base compose's anchor; this is belt-and-suspenders.)
 #
-# What this file changes vs. local:
-#   - No service except Caddy binds a public host port. Everything else
-#     binds 127.0.0.1 only — reachable via the reverse proxy or via SSH
-#     tunnel for ops, never directly from the public internet.
-#   - Caddy fronts paperclip + nango with auto-TLS via Let's Encrypt.
-#   - Per-service CPU + memory caps sized for KVM 8 (8 vCPU, 32GB RAM).
-#   - ENV=production on every app so logs/log-level/error reporting can
-#     branch on it.
-#   - Json logging stays at info; bump to warn here only after we have
-#     remote log shipping.
+# What this overlay does NOT do:
+#   - Run its own Caddy / TLS terminator. Coolify handles that on the host.
+#   - Set hard `mem_limit` / `cpus` on each service. Hetzner CPX31 has
+#     8 GB RAM and `cloud-bootstrap.sh` adds 4 GB swap, so Linux + swap
+#     handles bursts without OOM kills. Add limits later if you observe
+#     real pressure (look at `docker stats` after a week of normal use).
+#   - Override image tags. Coolify rebuilds from this repo on every push
+#     to main; the image refs in the base compose are correct.
+#
+# Secrets:
+#   - .env on the server is managed by Coolify's encrypted env-var store.
+#     Never commit production values; never paste them into chat.
 # =============================================================================
 
 services:
-  # =========================================================================
-  # Caddy — TLS terminator + reverse proxy. The only host-bound service.
-  # =========================================================================
-  caddy:
-    image: caddy:2.8-alpine
-    container_name: bc_caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"   # HTTP/3
-    volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - bc_caddy_data:/data
-      - bc_caddy_config:/config
-    environment:
-      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-www.blankcollar.ai}
-      NANGO_PUBLIC_DOMAIN: ${NANGO_PUBLIC_DOMAIN:-nango.blankcollar.ai}
-      NANGO_UI_DOMAIN: ${NANGO_UI_DOMAIN:-nango-ui.blankcollar.ai}
-      ACME_EMAIL: ${ACME_EMAIL:-agent@blankcollar.ai}
-    depends_on:
-      paperclip:
-        condition: service_healthy
-      nango:
-        condition: service_started
-    networks: [bc_net]
-    mem_limit: 256m
-    cpus: 0.5
-
-  # ---- Internal-only services -------------------------------------------
-  # Override port mappings to bind only on localhost so they aren't reachable
-  # from the public internet. SSH tunnels still work for operator debugging:
-  #   ssh -L 5432:127.0.0.1:5432 user@vps
+  # ------------------------------------------------------------------------
+  # Databases — internal-only in prod. Only services on bc_net reach them.
+  # ------------------------------------------------------------------------
   postgres:
-    ports:
-      - "127.0.0.1:5432:5432"
-    mem_limit: 2g
-    cpus: 1.0
+    ports: !reset []
+    restart: unless-stopped
 
   qdrant:
-    ports:
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
-    mem_limit: 2g
-    cpus: 1.0
+    ports: !reset []
+    restart: unless-stopped
 
   neo4j:
-    ports:
-      - "127.0.0.1:7474:7474"
-      - "127.0.0.1:7687:7687"
-    mem_limit: 4g
-    cpus: 2.0
+    ports: !reset []
+    restart: unless-stopped
 
-  nango-db:
-    # No public port at all — only nango itself talks to it on bc_net.
-    mem_limit: 1g
-    cpus: 0.5
-
-  nango-redis:
-    # Same — internal-only.
-    mem_limit: 256m
-    cpus: 0.25
-
-  nango:
-    # Caddy fronts nango on its own subdomain (see Caddyfile).
-    ports:
-      - "127.0.0.1:3003:${NANGO_SERVER_PORT:-3003}"
-      - "127.0.0.1:3009:${NANGO_CONNECT_UI_PORT:-3009}"
-    environment:
-      # Override the in-cluster URLs to point at the public TLS endpoint —
-      # OAuth callbacks from Slack/Notion/etc. land here and need the
-      # public origin, not the internal one.
-      NANGO_SERVER_URL: https://${NANGO_PUBLIC_DOMAIN:-nango.blankcollar.ai}
-      NANGO_PUBLIC_SERVER_URL: https://${NANGO_PUBLIC_DOMAIN:-nango.blankcollar.ai}
-      # Lock down the dashboard once exposed.
-      FLAG_AUTH_ENABLED: ${NANGO_FLAG_AUTH_ENABLED:-true}
-    mem_limit: 2g
-    cpus: 1.0
-
+  # ------------------------------------------------------------------------
+  # Application services — all internal-only EXCEPT paperclip, which is
+  # what Coolify's reverse proxy routes the public traffic to.
+  # ------------------------------------------------------------------------
   paperclip:
-    ports:
-      - "127.0.0.1:3000:80"
+    # paperclip's container port stays at :80 (per the base compose);
+    # Coolify discovers it via container name + COOLIFY_FQDN inject.
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
-      # Enforce JWT in prod once SUPABASE_JWT_SECRET is wired.
-      PAPERCLIP_AUTH_ENFORCE: ${PAPERCLIP_AUTH_ENFORCE:-true}
-    mem_limit: 1g
-    cpus: 0.5
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Once Supabase is wired (Phase 6), flip this to true.
+      PAPERCLIP_AUTH_ENFORCE: ${PAPERCLIP_AUTH_ENFORCE:-false}
+    restart: unless-stopped
 
   hermes:
-    ports:
-      - "127.0.0.1:8001:80"
+    ports: !reset []
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
-    mem_limit: 1g
-    cpus: 0.5
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
 
   openclaw:
-    ports:
-      - "127.0.0.1:8002:80"
+    ports: !reset []
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
-    # Playwright + Chromium needs more memory than the others.
-    mem_limit: 2g
-    cpus: 1.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
 
   langgraph:
-    ports:
-      - "127.0.0.1:8005:80"
+    ports: !reset []
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
-    mem_limit: 1g
-    cpus: 0.5
-
-  graphiti:
-    ports:
-      - "127.0.0.1:8004:80"
-    environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENV: production
-    mem_limit: 1g
-    cpus: 0.5
+    restart: unless-stopped
 
   gbrain:
-    ports:
-      - "127.0.0.1:8003:80"
+    ports: !reset []
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
-    mem_limit: 1g
-    cpus: 0.5
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
+
+  graphiti:
+    ports: !reset []
+    environment:
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
 
   email-ingest:
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       ENV: production
-    mem_limit: 512m
-    cpus: 0.25
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    restart: unless-stopped
 
-volumes:
-  bc_caddy_data:
-    name: bc_caddy_data
-  bc_caddy_config:
-    name: bc_caddy_config
+  # ------------------------------------------------------------------------
+  # Nango — its own DB + Redis sidecars stay internal-only too.
+  # The OAuth callback URL needs to be the public host once a domain is
+  # wired (Phase 3b); for the IP-first deploy we pin the in-cluster URL.
+  # ------------------------------------------------------------------------
+  nango-db:
+    ports: !reset []
+    restart: unless-stopped
+
+  nango-redis:
+    ports: !reset []
+    restart: unless-stopped
+
+  nango:
+    ports: !reset []
+    restart: unless-stopped

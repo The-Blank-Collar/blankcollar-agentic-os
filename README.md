@@ -503,7 +503,8 @@ The full documentation set lives in [`docs/`](docs/). Use this map to find what 
 - [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — Logs, metrics, traces, audit log, cost.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Self-host + future hosted shape.
 - [`docs/PAPERCLIP_REAL.md`](docs/PAPERCLIP_REAL.md) — The upstream paperclipai command centre at :3100, alongside our custom orchestrator at :3000.
-- [`docs/HOSTINGER_DEPLOY.md`](docs/HOSTINGER_DEPLOY.md) — End-to-end production deploy on a Hostinger KVM 8.
+- [`docs/HETZNER_DEPLOY.md`](docs/HETZNER_DEPLOY.md) — Beginner-shaped Hetzner Cloud + Coolify playbook for production deploy.
+- [`docs/HOSTINGER_DEPLOY.md`](docs/HOSTINGER_DEPLOY.md) — Older reference for a Hostinger KVM 8 deploy (kept for archival; Hetzner is the recommended path).
 - [`docs/SUPABASE_LOCAL.md`](docs/SUPABASE_LOCAL.md) — Test Supabase auth against your local stack.
 - [`docs/STRIPE_LOCAL.md`](docs/STRIPE_LOCAL.md) — Test Stripe webhooks against your local stack.
 - [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md) — Volume snapshots, dumps, restore.

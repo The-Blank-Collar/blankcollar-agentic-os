@@ -276,7 +276,8 @@ Where to look for what:
 - **`docs/OBSERVABILITY.md`** — what we log, where it goes
 - **`docs/STRIPE.md` / `docs/STRIPE_LOCAL.md`** — payment webhooks (Phase 7 prep)
 - **`docs/SUPABASE_LOCAL.md`** — auth integration (Phase 6 prep)
-- **`docs/HOSTINGER_DEPLOY.md` / `docs/DEPLOYMENT.md`** — Phase 3 cloud notes
+- **`docs/HETZNER_DEPLOY.md`** — Beginner-shaped Hetzner Cloud + Coolify playbook (recommended path)
+- **`docs/HOSTINGER_DEPLOY.md` / `docs/DEPLOYMENT.md`** — Older Phase 3 cloud notes (archival)
 - **`docs/MARKETING.md` / `docs/USE_CASES.md` / `docs/VISION.md`** — narrative + sales context
 - **`docs/FAQ.md` / `docs/GLOSSARY.md` / `docs/COMPARISON.md`** — orientation
 - **`docs/BACKUP_RESTORE.md`** — data recovery
