@@ -613,6 +613,43 @@ GET /agents/{id}/state
 
 `status` is derived: `live` if there's a running run, `warn` if the most-recent terminal run failed, `idle` otherwise. `sigil_seed` is stable across requests so the visual identity is constant.
 
+### Tool invocation (Phase 2.2)
+
+Synchronous MCP tool invocation through paperclip. Spawns the registered subprocess, runs the JSON-RPC handshake, returns the result. Every call is logged to `ops.tool_call_log`.
+
+```http
+POST /tools/{slug}/invoke
+{
+  "input":      { "url": "https://example.com" },
+  "run_id":     "<uuid>" | null,        // optional — link to a run
+  "timeout_ms": 30000                   // optional, capped at 60000
+}
+→ 200 {
+  "slug":       "web.fetch",
+  "version":    1,
+  "output":     [...],                   // tool's MCP "content" array
+  "latency_ms": 870
+}
+→ 404 { "error": "tool_not_found" }
+→ 412 { "error": "missing_env_keys", "missing": ["PGHOST", ...] }
+→ 501 { "error": "transport_not_supported" }   // non-stdio
+→ 502 { "error": "tool_call_failed", "detail": "...", "stderr_tail": "..." }
+```
+
+```http
+POST /tools/{slug}/probe
+→ 200 {
+  "slug":        "web.fetch",
+  "ok":          true,
+  "latency_ms":  920,
+  "error":       null,
+  "stderr_tail": null,
+  "enabled":     true
+}
+```
+
+Probe runs the `initialize` handshake only. A successful probe of a previously auto-disabled tool flips it back to enabled; an unsuccessful probe of a currently enabled tool disables it.
+
 ### LLM call log (Phase 2.1.c)
 
 Every LLM call routed through Portkey is recorded in `ops.llm_call_log`. The Portkey dashboard already shows this — keeping a local copy means `bc tail`, `bc llm`, and the future console can render cost/latency without leaving paperclip, and it's a forensic backup if Portkey is unreachable.

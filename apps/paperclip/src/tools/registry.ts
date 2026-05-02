@@ -7,6 +7,7 @@
  */
 
 import { withSystemScope } from "../db.js";
+import { probeStdioTool } from "./client.js";
 import { type LoadedTool, loadToolManifests } from "./loader.js";
 
 type Logger = {
@@ -29,6 +30,51 @@ export async function syncToolRegistry(log: Logger): Promise<number> {
   }
   log.info(`[tools] registry synced — ${upserts} shared tool(s) upserted into ops.tool`);
   return upserts;
+}
+
+/**
+ * Sequentially probe every enabled stdio tool in `ops.tool`. Tools that
+ * fail their `initialize` handshake get `enabled = false`; healthy tools
+ * stay as-is. Designed to run in the background after boot so it never
+ * blocks the listener.
+ *
+ * Safe to call repeatedly; idempotent. Skips tools already disabled.
+ */
+export async function probeRegisteredTools(log: Logger): Promise<{
+  probed: number;
+  ok: number;
+  disabled: number;
+}> {
+  const tools = await withSystemScope(async (client) => {
+    const { rows } = await client.query<{ id: string; slug: string; target: string }>(
+      `SELECT id, slug, target FROM ops.tool
+        WHERE transport = 'stdio'::ops.tool_transport
+          AND enabled = true`,
+    );
+    return rows;
+  });
+  let ok = 0;
+  let disabled = 0;
+  for (const t of tools) {
+    const result = await probeStdioTool({ command: t.target });
+    if (result.ok) {
+      ok++;
+      continue;
+    }
+    disabled++;
+    log.warn?.(
+      `[tools] probe failed for ${t.slug}: ${result.error ?? "(unknown)"} ` +
+        `— disabling automatically`,
+    );
+    await withSystemScope(async (client) => {
+      await client.query(
+        `UPDATE ops.tool SET enabled = false, updated_at = now() WHERE id = $1`,
+        [t.id],
+      );
+    });
+  }
+  log.info(`[tools] probe complete — ${ok} healthy / ${disabled} auto-disabled / ${tools.length} total`);
+  return { probed: tools.length, ok, disabled };
 }
 
 async function upsertShared(m: LoadedTool): Promise<void> {

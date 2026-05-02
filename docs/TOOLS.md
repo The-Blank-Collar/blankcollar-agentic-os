@@ -63,8 +63,39 @@ input_schema:                         # JSON-Schema-shaped object; the v0 client
 bc tools                              # list visible tools
 bc tools --transport=stdio            # filter
 bc tool web.fetch                     # detail view of one tool
+bc tool invoke web.fetch --input.url=https://example.com
+bc tool probe web.fetch               # liveness check (MCP initialize)
 ```
 
-## Where invocation lives (Phase 2.2)
+## Invocation (Phase 2.2 — shipped)
 
-The registry described here is the discovery surface. The MCP **client** that actually invokes a tool — spawning the stdio process or opening the HTTP/SSE/WebSocket connection — ships in Sprint 2.2 of the local-first plan. Until then, `ops.tool` is read-only from the agent's perspective.
+`POST /api/tools/:slug/invoke` runs the tool synchronously. v0 supports stdio transport only; HTTP / SSE / WebSocket return 501. Each invocation:
+
+1. Looks up the manifest in `ops.tool` (latest version, must be `enabled=true`).
+2. Validates that every entry in `env_keys` is set in the host process; returns 412 with the missing list otherwise.
+3. Spawns the `target` command as a fresh subprocess (e.g. `npx @modelcontextprotocol/server-fetch`).
+4. Runs the MCP handshake: `initialize` → `notifications/initialized` → `tools/call`.
+5. Reads the response, kills the subprocess, returns `{ output, latency_ms }`.
+6. Records the call to `ops.tool_call_log` (success or failure) and emits an audit row.
+
+Hard ceiling: 30s per call (override via `timeout_ms` body field, capped at 60s).
+
+The server-side MCP tool name defaults to the slug suffix (`web.fetch` → `fetch`). Override with the manifest's `tool_name` field when they differ.
+
+### Direct invocation does not pass through the policy engine
+
+When you (or the CLI) call `POST /api/tools/:slug/invoke`, no policy check fires — operator intent is implicit. Agent-initiated tool use happens through **skills**, which **do** go through the policy engine. So in practice: skills are the gated layer, tools are the building blocks skills compose from.
+
+## Liveness probing
+
+Each enabled stdio tool gets a non-blocking probe a few seconds after Paperclip boots. The probe runs the MCP `initialize` handshake (no `tools/call`), and on failure flips the row's `enabled` to `false`. This means a broken tool gets quietly disabled instead of erroring on every invocation.
+
+You can probe manually any time:
+
+```bash
+bc tool probe web.fetch
+```
+
+A probe that succeeds for a previously-disabled tool re-enables it.
+
+To opt out at boot (useful for tests or when you want a fast restart), set `PAPERCLIP_TOOL_PROBE_AT_BOOT=false`.

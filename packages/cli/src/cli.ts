@@ -42,7 +42,7 @@ import { runRunGet, runRunsList } from "./commands/runs.js";
 import { runSearch } from "./commands/search.js";
 import { runSkillInvoke, runSkills } from "./commands/skills.js";
 import { runTail } from "./commands/tail.js";
-import { runToolGet, runToolInvoke, runToolsList } from "./commands/tools.js";
+import { runToolGet, runToolInvoke, runToolProbe, runToolsList } from "./commands/tools.js";
 import { runWhoami } from "./commands/whoami.js";
 import { emitError } from "./format.js";
 
@@ -122,6 +122,10 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         if (args.positional[0] === "invoke") {
           const sub = { ...args, positional: args.positional.slice(1) };
           return await runToolInvoke(sub, client);
+        }
+        if (args.positional[0] === "probe") {
+          const sub = { ...args, positional: args.positional.slice(1) };
+          return await runToolProbe(sub, client);
         }
         return await runToolGet(args, client);
       }

@@ -37,7 +37,7 @@ import { toolRoutes } from "./routes/tools.js";
 import { uiRoutes } from "./routes/ui.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { syncSkillRegistry } from "./skills/registry.js";
-import { syncToolRegistry } from "./tools/registry.js";
+import { probeRegisteredTools, syncToolRegistry } from "./tools/registry.js";
 
 async function main(): Promise<void> {
   // Fail-fast on missing required env (Portkey keys, etc.) before opening
@@ -140,6 +140,25 @@ async function main(): Promise<void> {
     });
   } catch (err) {
     app.log.error({ err }, "tools registry sync failed");
+  }
+
+  // Background probe of every stdio tool — non-blocking, fire-and-forget.
+  // Sequential so we don't fork dozens of npx processes at once. Any tool
+  // that fails the MCP `initialize` handshake gets enabled=false until
+  // the operator fixes + bumps the manifest version. Skipped when the
+  // env var explicitly opts out (useful for tests + smoke runs).
+  if (process.env.PAPERCLIP_TOOL_PROBE_AT_BOOT !== "false") {
+    void (async () => {
+      try {
+        await probeRegisteredTools({
+          info: (msg) => app.log.info(msg),
+          warn: (msg) => app.log.warn(msg),
+          error: (err, msg) => app.log.error({ err }, msg),
+        });
+      } catch (err) {
+        app.log.error({ err }, "tools probe failed");
+      }
+    })();
   }
 
   if (config.workerEnabled) {

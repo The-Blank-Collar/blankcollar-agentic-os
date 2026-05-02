@@ -25,6 +25,7 @@ import {
   type InvokeStdioToolDeps,
   type InvokeStdioToolResult,
   invokeStdioTool,
+  probeStdioTool,
 } from "../tools/client.js";
 import { recordToolCall } from "../tools/log.js";
 
@@ -218,6 +219,66 @@ export async function toolRoutes(
       version: tool.version,
       output: result.output,
       latency_ms: result.latency_ms,
+    };
+  });
+
+  // -- probe --------------------------------------------------------------
+  // Liveness check: spawns the subprocess and runs the MCP `initialize`
+  // handshake only. Re-enables a previously auto-disabled tool if the
+  // probe now succeeds, so operators can fix a tool's env / install and
+  // bring it back without restarting paperclip.
+  app.post<{ Params: { slug: string } }>("/api/tools/:slug/probe", async (req, reply) => {
+    const scope = await resolveCallerScope(req);
+    const tool = await withOrgScope(scope.org_id, async (client) => {
+      const { rows } = await client.query<ToolRow>(
+        `SELECT ${TOOL_COLUMNS} FROM ops.tool
+          WHERE slug = $1
+            AND (org_id IS NULL OR org_id = $2)
+          ORDER BY version DESC LIMIT 1`,
+        [req.params.slug, scope.org_id],
+      );
+      return rows[0] ?? null;
+    });
+    if (!tool) return reply.code(404).send({ error: "tool_not_found" });
+    if (tool.transport !== "stdio") {
+      return reply.code(501).send({
+        error: "transport_not_supported",
+        detail: `probe is implemented for stdio only; tool '${tool.slug}' uses '${tool.transport}'.`,
+      });
+    }
+    const probe = await probeStdioTool({ command: tool.target }, invokerDeps);
+    // If healthy and previously disabled, flip back to enabled.
+    if (probe.ok && !tool.enabled) {
+      await withOrgScope(scope.org_id, async (client) => {
+        await client.query(
+          `UPDATE ops.tool SET enabled = true, updated_at = now() WHERE id = $1`,
+          [tool.id],
+        );
+      });
+    }
+    // If unhealthy and currently enabled, disable it so list calls reflect reality.
+    if (!probe.ok && tool.enabled) {
+      await withOrgScope(scope.org_id, async (client) => {
+        await client.query(
+          `UPDATE ops.tool SET enabled = false, updated_at = now() WHERE id = $1`,
+          [tool.id],
+        );
+      });
+    }
+    await audit({
+      scope,
+      action: "tool.probe",
+      target_type: "tool",
+      target_id: tool.id,
+      metadata: { slug: tool.slug, ok: probe.ok, latency_ms: probe.latency_ms },
+    });
+    return {
+      slug: tool.slug,
+      ok: probe.ok,
+      latency_ms: probe.latency_ms,
+      error: probe.error,
+      stderr_tail: probe.stderr_tail,
+      enabled: probe.ok || (probe.ok === false ? false : tool.enabled),
     };
   });
 }

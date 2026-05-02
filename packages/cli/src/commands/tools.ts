@@ -100,6 +100,44 @@ export async function runToolInvoke(args: ParsedArgs, client: Client): Promise<n
   return 0;
 }
 
+type ProbeResp = {
+  slug: string;
+  ok: boolean;
+  latency_ms: number;
+  error: string | null;
+  stderr_tail: string | null;
+};
+
+export async function runToolProbe(args: ParsedArgs, client: Client): Promise<number> {
+  const slug = args.positional[0];
+  if (!slug) {
+    process.stderr.write("usage: bc tool probe <slug>\n");
+    return 2;
+  }
+  const out = await client.post<ProbeResp>(`/api/tools/${encodeURIComponent(slug)}/probe`, {});
+  const mode = detectMode(args.flags);
+  if (mode === "json") {
+    emit("json", out);
+    return 0;
+  }
+  if (out.ok) {
+    emit("pretty", `${out.slug}  ✓ healthy  ${out.latency_ms}ms`);
+    return 0;
+  }
+  const lines = [
+    `${out.slug}  ✗ unhealthy  ${out.latency_ms}ms`,
+    `  error: ${out.error ?? "(unknown)"}`,
+  ];
+  if (out.stderr_tail) {
+    lines.push("  stderr tail:");
+    for (const line of out.stderr_tail.split("\n").slice(-5)) {
+      if (line.trim()) lines.push(`    ${line}`);
+    }
+  }
+  emit("pretty", lines.join("\n"));
+  return 1;
+}
+
 export async function runToolGet(args: ParsedArgs, client: Client): Promise<number> {
   const slug = args.positional[0];
   if (!slug) {

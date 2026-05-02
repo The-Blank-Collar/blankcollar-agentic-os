@@ -119,7 +119,8 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 **Goal:** add new capabilities by configuration, not code.
 
 - [x] Skills catalog (registry + manifests live in `packages/skills/`)
-- [x] **MCP tool registry** — `ops.tool` table + YAML manifests in `packages/tools/manifests/{shared,company,personal}/` + boot-time `syncToolRegistry`. `GET /api/tools` + `GET /api/tools/:slug` + `bc tools` / `bc tool <slug>`. Invocation transport (stdio/http/sse/ws) is declared in the manifest; the actual MCP client wiring is a follow-up.
+- [x] **MCP tool registry** — `ops.tool` table + YAML manifests in `packages/tools/manifests/{shared,company,personal}/` + boot-time `syncToolRegistry`. `GET /api/tools` + `GET /api/tools/:slug` + `bc tools` / `bc tool <slug>`.
+- [x] **MCP tool invocation (Phase 2.2)** — stdio JSON-RPC 2.0 client (`apps/paperclip/src/tools/client.ts`), `POST /api/tools/:slug/invoke`, `POST /api/tools/:slug/probe`, `bc tool invoke`, `bc tool probe`. `ops.tool_call_log` records every call (input/output/latency/error). Background probe at boot auto-disables broken tools; manual probe re-enables them. HTTP/SSE/WS transports return 501 and are deferred.
 - [x] **Policy engine `(role, agent_kind, skill_slug, action_kind) → allow|approve|deny`** — `ops.policy` table, evaluator, `/api/policies` CRUD + `/policies/evaluate` dry-run, wired into `/skills/:slug/invoke` (deny → 403, approve → 202 with approval row, allow → existing queue path). Approval-effect path round-trips: approving the resulting `ops.approval` queues the run from the cached proposal.
 - [x] Approval inbox for human-in-the-loop tools (in `/api/inbox`, surfaced as `item_kind=approval`)
 

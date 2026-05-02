@@ -82,6 +82,18 @@ POST /forget     { memory_id, reason }
 - The `bc_net` bridge network is the only path between services.
 - Future hosted product: Supabase JWTs validated at the Paperclip edge before any L1–L4 call.
 
+### MCP tool gateway
+
+Tools (Slack, GitHub, Postgres, web fetch, …) are exposed via the **Model Context Protocol** — JSON-RPC 2.0 over stdio (or HTTP/SSE/WS). YAML manifests in `packages/tools/manifests/` are the source of truth; on every Paperclip boot, `syncToolRegistry()` mirrors them into `ops.tool`. Each tool declares its `transport`, `target` command, env-var requirements, and input schema.
+
+- **Discovery** — `GET /api/tools` and `GET /api/tools/:slug` return the registry.
+- **Invocation** — `POST /api/tools/:slug/invoke` spawns the subprocess, runs the MCP handshake, returns the result. v0 supports stdio only; HTTP/SSE/WS return 501. Each call is recorded in `ops.tool_call_log` (input, output, latency_ms, is_error, stderr_tail).
+- **Probing** — A non-blocking background probe runs after boot, exercising each enabled stdio tool's `initialize` handshake. Tools that fail are auto-disabled; manual `POST /api/tools/:slug/probe` re-enables them.
+- **Direct invocation skips policy** — operator intent is implicit. Agent tool use goes through skills, which **do** evaluate the policy engine.
+- **Each invocation is its own subprocess** — no connection pooling in v0. Cheap to reason about; the optimization comes when high-frequency tools justify it.
+
+See `docs/TOOLS.md` for the manifest format and the operator workflow.
+
 ### AI gateway (Portkey)
 
 Every LLM call from the TypeScript and Python services routes through **Portkey** — a single proxy that gives us logs, cost, latency, retries, and provider swaps in one place. Required at boot via `requireConfig()` (TS) / `require_runtime_config()` (Python). Anthropic credentials live in the Portkey dashboard, referenced by virtual keys; the codebase never sees raw provider keys after Phase 2.1.

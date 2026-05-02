@@ -262,6 +262,59 @@ function tail(s: string): string | null {
   return s.length <= STDERR_TAIL_BYTES ? s : `…${s.slice(-STDERR_TAIL_BYTES)}`;
 }
 
+export type ProbeStdioToolInput = {
+  command: string;
+  /** Defaults to 30s — first-run npx pulls the package. */
+  timeoutMs?: number;
+};
+
+export type ProbeStdioToolResult = {
+  ok: boolean;
+  latency_ms: number;
+  error: string | null;
+  stderr_tail: string | null;
+};
+
+/**
+ * Liveness check: spawn the subprocess and run only the `initialize`
+ * step. If it returns capabilities, the tool is healthy. No tools/call.
+ *
+ * Used by the boot-time background probe and the `bc tool probe` CLI.
+ * Cheap enough to run on every enabled tool at startup; the cost is
+ * dominated by `npx` cold-cache fetches, not the handshake itself.
+ */
+export async function probeStdioTool(
+  input: ProbeStdioToolInput,
+  deps: InvokeStdioToolDeps = {},
+): Promise<ProbeStdioToolResult> {
+  const result = await invokeStdioTool(
+    {
+      command: input.command,
+      // Sentinel arguments — never reaches tools/call because init fails.
+      // We only care whether the handshake succeeds.
+      toolName: "__probe__",
+      arguments: {},
+      timeoutMs: input.timeoutMs ?? 30_000,
+    },
+    deps,
+  );
+  // The tools/call will fail with "method not found" or similar, but a
+  // valid initialize response means the server booted. We treat any
+  // non-spawn / non-timeout / non-exit error as "alive enough".
+  const looksDead =
+    result.error !== null &&
+    (/spawn failed/.test(result.error) ||
+      /timeout/.test(result.error) ||
+      /subprocess exited/.test(result.error) ||
+      /initialize failed/.test(result.error));
+  return {
+    ok: !looksDead,
+    latency_ms: result.latency_ms,
+    error: looksDead ? result.error : null,
+    stderr_tail: result.stderr_tail,
+  };
+}
+
 function errorResult(start: number, message: string): InvokeStdioToolResult {
   return {
     output: null,

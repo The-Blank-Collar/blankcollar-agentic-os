@@ -34,6 +34,7 @@ COMMANDS
   tool <slug>              show one MCP tool's manifest
   tool invoke <slug> [--input.x=y ...] [--timeout=ms] [--run=<uuid>]
                            call the tool through the MCP gateway
+  tool probe <slug>        liveness check; auto-disables/enables based on result
   audit                    run a self-audit on the last 7 days
   level-up                 propose changes from the latest audit
   approvals                list pending approvals

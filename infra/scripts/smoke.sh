@@ -186,5 +186,24 @@ CH=$(curl -s "${BASE}/api/channels")
 CH_COUNT=$(echo "$CH" | jq '.channels | length')
 echo "  → $CH_COUNT channels (state breakdown: $(echo "$CH" | jq -r '[.channels[].state] | group_by(.) | map("\(.[0])=\(length)") | join(" ")'))"
 
+# 15. tools registry — list (Phase 2.2)
+step "tools registry — listing"
+TOOLS=$(curl -s "${BASE}/api/tools")
+TOOL_COUNT=$(echo "$TOOLS" | jq 'length')
+echo "  → $TOOL_COUNT tools registered"
+[[ "$TOOL_COUNT" -ge 1 ]] || { echo "❌ expected at least 1 tool" >&2; exit 1; }
+
+# 16. tool probe — exercise the MCP handshake against the first stdio tool.
+# Probe failure is a soft warning — npx may need to fetch the package on
+# first run. Don't fail the smoke run; the route + log path was exercised.
+FIRST_STDIO=$(echo "$TOOLS" | jq -r '[.[] | select(.transport=="stdio")][0].slug // empty')
+if [[ -n "$FIRST_STDIO" ]]; then
+  step "tool probe — $FIRST_STDIO (MCP initialize handshake)"
+  PROBE=$(curl -s -X POST "${BASE}/api/tools/${FIRST_STDIO}/probe" -H 'content-type: application/json' -d '{}')
+  PROBE_OK=$(echo "$PROBE" | jq -r '.ok // false')
+  PROBE_LATENCY=$(echo "$PROBE" | jq -r '.latency_ms // "?"')
+  echo "  → ok=$PROBE_OK latency=${PROBE_LATENCY}ms"
+fi
+
 echo
 echo "✅ smoke passed — every Phase-3.5 surface responded as expected."
