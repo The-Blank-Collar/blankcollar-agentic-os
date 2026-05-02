@@ -82,6 +82,15 @@ POST /forget     { memory_id, reason }
 - The `bc_net` bridge network is the only path between services.
 - Future hosted product: Supabase JWTs validated at the Paperclip edge before any L1–L4 call.
 
+### AI gateway (Portkey)
+
+Every LLM call from the TypeScript and Python services routes through **Portkey** — a single proxy that gives us logs, cost, latency, retries, and provider swaps in one place. Required at boot via `requireConfig()` (TS) / `require_runtime_config()` (Python). Anthropic credentials live in the Portkey dashboard, referenced by virtual keys; the codebase never sees raw provider keys after Phase 2.1.
+
+- **Paperclip** — `apps/paperclip/src/llm/gateway.ts`. Single function `chatComplete(input)`. Default routes to Anthropic via `PORTKEY_VIRTUAL_KEY_ANTHROPIC`; per-call `provider: "openrouter"` routes through OpenRouter via `PORTKEY_VIRTUAL_KEY_OPENROUTER` for models Anthropic doesn't host.
+- **Hermes / LangGraph** — `apps/hermes/app/llm.py`, `apps/langgraph/app/classifier.py`. Anthropic Python SDK with `base_url` + `x-portkey-*` default headers. Same wire format, same SDK; Portkey forwards.
+- **Graphiti** — uses graphiti-core's internal LLM client (deferred to Phase 2.1.b.2 follow-up — needs upstream support or base-url override).
+- **Local logging** — every paperclip call writes to `ops.llm_call_log` (org_id, run_id, provider, model, tokens_in/out, latency_ms, status, portkey_trace_id) so `bc llm` and the future console render cost/latency without leaving the system.
+
 ### Database scope helpers (`apps/paperclip/src/db.ts`)
 
 Every Paperclip route that touches tenant data runs through one of two transaction wrappers. They are the single source of truth for who can read/write what.

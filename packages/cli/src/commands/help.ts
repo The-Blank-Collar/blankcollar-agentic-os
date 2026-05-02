@@ -67,6 +67,8 @@ COMMANDS
   tail [--limit=N]         most recent runs across the org (default 20)
   heartbeat [--days=N]     14-day pulse: captures, runs, goals, activity
   logs [--action=X --target=Y --limit=N]   recent core.audit_log entries
+  llm [--limit=N --status=ok|error --provider=X]   recent LLM calls (Portkey-routed)
+  llm --summary [--hours=N]   rolled-up LLM cost/latency for the period
   whoami                   show your resolved scope (org, role, department)
   onboard --mode=<m>       start the interview (single_user | multi_user)
 

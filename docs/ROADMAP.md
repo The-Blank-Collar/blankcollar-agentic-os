@@ -101,6 +101,7 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] **Stalled-goals filter** — `GET /api/goals?stalled_for_days=N` returns active/draft goals with no recent run activity; backs `bc goals --stalled[=N]`.
 - [x] **withOrgScope Phase B foundation** — `withSystemScope()` helper + `app_system_scope` PERMISSIVE policy on every RLS-enabled table. Worker run-claim, scheduler scans (routines/event-triggers/per-user briefings/missing-briefings), and health counts now run under system scope. Webhook capture migrated to `withOrgScope`.
 - [ ] **withOrgScope Phase B flip** — tighten `app_scope_org` to drop the permissive-on-unset branch (`IS NULL OR = ''`). Requires a full callsite audit first; deferred until every route is provably scoped.
+- [x] **Portkey AI gateway (Phase 2.1.a/b/b.1/c)** — every LLM call from paperclip, hermes, langgraph routes through Portkey. `requireConfig()` (TS) and `require_runtime_config()` (Python) refuse to boot without `PORTKEY_API_KEY` + `PORTKEY_VIRTUAL_KEY_ANTHROPIC`. Optional `PORTKEY_VIRTUAL_KEY_OPENROUTER` lets per-call routing target OpenRouter for non-Anthropic models. `ops.llm_call_log` records every call (org_id, run_id, provider, model, tokens, latency_ms, status, portkey_trace_id). New `GET /api/llm/calls`, `GET /api/llm/summary`, `bc llm`, `bc llm --summary`. Direct Anthropic / Nexos / OpenAI client paths removed from paperclip, hermes, langgraph. Graphiti's internal LLM client stays direct (graphiti-core internals) → 2.1.b.2 follow-up.
 
 ## Phase 4 — Goal Command Centre
 

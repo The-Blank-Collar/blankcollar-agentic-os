@@ -184,7 +184,7 @@ export async function composeAudit(
     count: Number(auditTotal.rows[0]?.ct ?? 0),
   });
 
-  const summary_md = await renderAuditSummary(findings, periodHours);
+  const summary_md = await renderAuditSummary(findings, periodHours, orgId);
 
   return {
     kind: "audit",
@@ -274,7 +274,7 @@ export async function composeLevelUp(
     });
   }
 
-  const summary_md = await renderLevelUpSummary(suggestions);
+  const summary_md = await renderLevelUpSummary(suggestions, orgId);
 
   return {
     kind: "level_up",
@@ -330,7 +330,11 @@ export async function persistReport(
   });
 }
 
-async function renderAuditSummary(findings: AuditFinding[], hours: number): Promise<string> {
+async function renderAuditSummary(
+  findings: AuditFinding[],
+  hours: number,
+  orgId?: string,
+): Promise<string> {
   const window = hours >= 24 * 6 ? "this past week" : `the last ${hours} hours`;
   const lines = [
     `## Self-audit — ${window}`,
@@ -346,11 +350,15 @@ async function renderAuditSummary(findings: AuditFinding[], hours: number): Prom
       "Rewrite this self-audit summary in editorial voice, preserving every finding:\n\n```\n" +
       templated +
       "\n```",
+    context: orgId ? { orgId } : undefined,
   });
   return narrated ?? templated;
 }
 
-async function renderLevelUpSummary(suggestions: LevelUpSuggestion[]): Promise<string> {
+async function renderLevelUpSummary(
+  suggestions: LevelUpSuggestion[],
+  orgId?: string,
+): Promise<string> {
   const lines = ["## Level-up — what to change next week", ""];
   for (const s of suggestions) {
     lines.push(`- **${s.category}** — ${s.proposal}`);
@@ -364,6 +372,7 @@ async function renderLevelUpSummary(suggestions: LevelUpSuggestion[]): Promise<s
       "Rewrite this level-up plan in editorial voice, preserving every suggestion:\n\n```\n" +
       templated +
       "\n```",
+    context: orgId ? { orgId } : undefined,
   });
   return narrated ?? templated;
 }

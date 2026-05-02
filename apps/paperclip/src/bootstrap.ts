@@ -783,6 +783,48 @@ const ADDITIVE_MIGRATIONS = [
        USING      (current_setting('app.system_scope', true) = 'true')
        WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
   ]),
+
+  // -- ops.llm_call_log — Phase 2.1.c -------------------------------------
+  // One row per Portkey-routed LLM call. The gateway writes these on every
+  // response (success or failure). Mirrors what the Portkey dashboard
+  // already shows but keeps an in-system view so `bc tail`, `bc llm`, and
+  // the future console can render LLM cost/latency without leaving
+  // paperclip. Also our backup if Portkey is unreachable for queries.
+  `CREATE TABLE IF NOT EXISTS ops.llm_call_log (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid REFERENCES core.organization(id) ON DELETE SET NULL,
+     run_id          uuid REFERENCES ops.run(id) ON DELETE SET NULL,
+     provider        text NOT NULL,
+     model           text NOT NULL,
+     tokens_in       integer NOT NULL DEFAULT 0,
+     tokens_out      integer NOT NULL DEFAULT 0,
+     latency_ms      integer NOT NULL DEFAULT 0,
+     status          text NOT NULL,
+     error           text,
+     portkey_trace_id text,
+     created_at      timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS llm_call_log_org_idx
+      ON ops.llm_call_log (org_id, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS llm_call_log_run_idx
+      ON ops.llm_call_log (run_id, created_at DESC);`,
+  `ALTER TABLE ops.llm_call_log ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.llm_call_log FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.llm_call_log;`,
+  `CREATE POLICY app_scope_org ON ops.llm_call_log
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.llm_call_log;`,
+  `CREATE POLICY app_system_scope ON ops.llm_call_log
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 ];
 
 export async function applyAdditiveMigrations(

@@ -143,6 +143,7 @@ export async function composeBriefing(
       "```\n" +
       templated +
       "\n```",
+    context: { orgId },
   });
 
   const summary_md = narrated ?? templated;

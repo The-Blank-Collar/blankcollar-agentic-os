@@ -22,6 +22,7 @@ import { runGoalGet, runGoalResolve, runGoalsList } from "./commands/goals.js";
 import { runHealth } from "./commands/health.js";
 import { runHeartbeat } from "./commands/heartbeat.js";
 import { runKrAdd, runKrList, runKrRm, runKrSet } from "./commands/kr.js";
+import { runLlm } from "./commands/llm.js";
 import { runLogs } from "./commands/logs.js";
 import { runHelp } from "./commands/help.js";
 import { runInboxAck, runInboxList } from "./commands/inbox.js";
@@ -214,6 +215,8 @@ export async function main(argv: string[], clientOverride?: Client): Promise<num
         return await runHeartbeat(args, client);
       case "logs":
         return await runLogs(args, client);
+      case "llm":
+        return await runLlm(args, client);
       case "whoami":
         return await runWhoami(args, client);
 

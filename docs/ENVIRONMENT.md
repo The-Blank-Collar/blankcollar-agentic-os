@@ -55,12 +55,31 @@ Reference doc for every variable in `.env.example`. The example file is the sour
 | `GBRAIN_EMBED_MODEL` | `text-embedding-3-small`      | Default embedding model. Phase 1 will let you override per memory kind. |
 | `GBRAIN_EMBED_DIM`   | `1536`                        | Must match the model. Mismatched dim = silently broken recall. |
 
-## LLM providers (optional in Phase 0)
+## AI gateway — Portkey (required from Phase 2.1)
+
+Every LLM call from paperclip / hermes / langgraph routes through Portkey for unified observability + cost tracking + key management. **Required at boot** — services refuse to start without these set.
+
+| Variable                          | Default                       | Notes |
+|-----------------------------------|-------------------------------|-------|
+| `PORTKEY_API_KEY`                 | *(required)*                  | Your Portkey account key. Get one at https://app.portkey.ai/. |
+| `PORTKEY_VIRTUAL_KEY_ANTHROPIC`   | *(required)*                  | Portkey virtual key pointing at your Anthropic credentials. Created in the Portkey dashboard → "Virtual Keys" → add provider Anthropic. |
+| `PORTKEY_VIRTUAL_KEY_OPENROUTER`  | *(empty, optional)*           | Optional second virtual key — Portkey can also route to OpenRouter (hundreds of models). Per-call override via `provider: "openrouter"`. |
+| `PORTKEY_BASE_URL`                | `https://api.portkey.ai/v1`   | Override only for self-hosted Portkey or testing. |
+
+### Quick setup
+
+1. Sign up at https://app.portkey.ai/.
+2. **Settings → API Keys** → create a key. Copy it into `PORTKEY_API_KEY`.
+3. **Virtual Keys → Add** → choose **Anthropic**, paste your `sk-ant-...`, give it a name. Copy the resulting virtual-key string (looks like `vk-anth-...`) into `PORTKEY_VIRTUAL_KEY_ANTHROPIC`.
+4. *(Optional)* Repeat step 3 with provider **OpenRouter** + your OpenRouter key. Copy the resulting VK into `PORTKEY_VIRTUAL_KEY_OPENROUTER`.
+5. `make up` — paperclip + hermes + langgraph will boot.
+
+### Legacy
 
 | Variable            | Default | Notes |
 |---------------------|---------|-------|
-| `ANTHROPIC_API_KEY` | *(empty)* | Future agents and the embedding pipeline can use Claude. |
-| `OPENAI_API_KEY`    | *(empty)* | Default embedding provider in Phase 1 unless overridden. |
+| `ANTHROPIC_API_KEY` | *(empty)* | Read by graphiti (graphiti-core's internal LLM client). Not used by paperclip / hermes / langgraph after Phase 2.1 — they go through Portkey. Will be removed in Phase 2.1.b.2 follow-up. |
+| `OPENAI_API_KEY`    | *(empty)* | Same — read by graphiti + gbrain (embeddings). |
 
 ## pgAdmin (optional, `--profile tools`)
 

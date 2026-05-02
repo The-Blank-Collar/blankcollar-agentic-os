@@ -613,6 +613,44 @@ GET /agents/{id}/state
 
 `status` is derived: `live` if there's a running run, `warn` if the most-recent terminal run failed, `idle` otherwise. `sigil_seed` is stable across requests so the visual identity is constant.
 
+### LLM call log (Phase 2.1.c)
+
+Every LLM call routed through Portkey is recorded in `ops.llm_call_log`. The Portkey dashboard already shows this — keeping a local copy means `bc tail`, `bc llm`, and the future console can render cost/latency without leaving paperclip, and it's a forensic backup if Portkey is unreachable.
+
+```http
+GET /llm/calls?limit=50&status=ok|error&provider=anthropic|openrouter
+→ 200 [{
+  "id":               "<uuid>",
+  "run_id":           "<uuid>" | null,
+  "provider":         "anthropic" | "openrouter",
+  "model":            "claude-sonnet-4-6",
+  "tokens_in":        1240,
+  "tokens_out":       310,
+  "latency_ms":       870,
+  "status":           "ok" | "error",
+  "error":            null | "...",
+  "portkey_trace_id": "trc_..." | null,
+  "created_at":       "..."
+}]
+```
+
+```http
+GET /llm/summary?hours=24
+→ 200 {
+  "period_hours":   24,
+  "period_start":   "...",
+  "total":          42,
+  "tokens_in":      52480,
+  "tokens_out":     12140,
+  "avg_latency_ms": 870,
+  "errors":         1,
+  "by_model":       [{ "model": "claude-sonnet-4-6", "count": 42, "tokens_in": ..., "tokens_out": ... }],
+  "by_status":      [{ "status": "ok", "count": 41 }, { "status": "error", "count": 1 }]
+}
+```
+
+`hours` is capped at 720 (30 days). Backs `bc llm --summary`.
+
 ### Audit
 
 ```http

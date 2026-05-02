@@ -74,10 +74,14 @@ export function classify(raw: string): Intent {
  * callers always have the heuristic as a safety net. Output shape matches
  * `Intent` exactly.
  */
-export async function classifyWithHermes(raw: string): Promise<Intent | null> {
+export async function classifyWithHermes(
+  raw: string,
+  orgId?: string,
+): Promise<Intent | null> {
   // narrate() returns null on transient gateway failures; the heuristic
   // path is always available as a fallback in routes/captures.ts.
   const response = await narrate({
+    context: orgId ? { orgId } : undefined,
     systemHint:
       "You classify natural-language captures into ONE of four kinds:\n" +
       "  ephemeral — a one-off task (reply, follow up, draft, send)\n" +
@@ -209,7 +213,7 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
     // Try Hermes-grade classification first; fall back to heuristic on any
     // failure so the demo always works offline. Both produce the same Intent
     // shape.
-    const llmIntent = await classifyWithHermes(parsed.data.raw_content);
+    const llmIntent = await classifyWithHermes(parsed.data.raw_content, scope.org_id);
     const baseIntent = llmIntent ?? classify(parsed.data.raw_content);
     // Caller-pinned kind wins over the classifier — the user knows what
     // they want; we just respect it.

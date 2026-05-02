@@ -22,6 +22,7 @@ import { heartbeatRoutes } from "./routes/heartbeat.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { keyResultRoutes } from "./routes/keyresults.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
+import { llmRoutes } from "./routes/llm.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
 import { paymentRoutes } from "./routes/payments.js";
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
   await app.register(policyRoutes);
   await app.register(selfImprovementRoutes);
   await app.register(knowledgeRoutes);
+  await app.register(llmRoutes);
   await app.register(approvalRoutes);
   await app.register(channelRoutes);
   await app.register(runRoutes);
