@@ -1,6 +1,6 @@
 import type { Client } from "../api.js";
 import type { ParsedArgs } from "../argv.js";
-import { flagString } from "../argv.js";
+import { flagInt, flagString } from "../argv.js";
 import { detectMode, emit, trunc } from "../format.js";
 
 type Tool = {
@@ -37,6 +37,65 @@ export async function runToolsList(args: ParsedArgs, client: Client): Promise<nu
     const flag = t.enabled ? " " : "·";
     lines.push(`  ${flag} ${t.slug.padEnd(28)} ${t.scope.padEnd(8)} ${t.transport.padEnd(10)} ${trunc(t.name, 40)}`);
   }
+  emit("pretty", lines.join("\n"));
+  return 0;
+}
+
+type InvokeResp = {
+  slug: string;
+  version: number;
+  output: unknown;
+  latency_ms: number;
+};
+
+/**
+ * `bc tool invoke <slug> --input.x=y --input.url=https://...` calls the
+ * MCP tool through paperclip's POST /api/tools/:slug/invoke endpoint.
+ * The `--input.foo=bar` flags are folded into a single `input` object;
+ * numeric-looking values become numbers, "true"/"false" become booleans,
+ * everything else stays string.
+ */
+export async function runToolInvoke(args: ParsedArgs, client: Client): Promise<number> {
+  const slug = args.positional[0];
+  if (!slug) {
+    process.stderr.write("usage: bc tool invoke <slug> [--input.x=y ...] [--timeout=ms]\n");
+    return 2;
+  }
+  const input: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args.flags)) {
+    if (!k.startsWith("input.")) continue;
+    const key = k.slice("input.".length);
+    if (v === true) {
+      input[key] = true;
+    } else if (typeof v === "string") {
+      // Light coercion — most MCP tools take strings, but URLs sometimes need
+      // numbers (port, limit). Keep it predictable.
+      if (v === "true") input[key] = true;
+      else if (v === "false") input[key] = false;
+      else if (/^-?\d+(\.\d+)?$/.test(v)) input[key] = Number(v);
+      else input[key] = v;
+    }
+  }
+  const body: Record<string, unknown> = { input };
+  const timeoutMs = flagInt(args.flags, "timeout", -1);
+  if (timeoutMs > 0) body.timeout_ms = timeoutMs;
+  const runId = flagString(args.flags, "run", "");
+  if (runId) body.run_id = runId;
+
+  const out = await client.post<InvokeResp>(`/api/tools/${encodeURIComponent(slug)}/invoke`, body);
+  const mode = detectMode(args.flags);
+  if (mode === "json") {
+    emit("json", out);
+    return 0;
+  }
+  // Pretty: header line + indented JSON of the output.
+  const lines = [
+    `${out.slug} v${out.version}  ✓  ${out.latency_ms}ms`,
+    "",
+    typeof out.output === "string"
+      ? out.output
+      : JSON.stringify(out.output, null, 2),
+  ];
   emit("pretty", lines.join("\n"));
   return 0;
 }
