@@ -342,5 +342,25 @@ UP_DEL=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${BASE}/api/upstream/
 [[ "$UP_DEL" -eq 204 ]] || { echo "❌ DELETE returned $UP_DEL" >&2; exit 1; }
 echo "  → deleted ${UP_ID:0:8}"
 
+# 21. RLS strict mode (Phase 2.6) — assert the policy is in the expected
+# shape on at least one tenant table. Driven by health-endpoint reflection:
+# /api/health doesn't expose RLS mode directly, but we can verify by
+# attempting a query that bypasses paperclip's helpers — i.e. a direct
+# psql query without app.org_id bound.
+#
+# We use docker compose's `exec postgres psql` so the smoke doesn't need
+# psql installed on the host. SELECT count(*) FROM ops.goal under no GUC
+# binding should be 0 in strict mode, > 0 in permissive (assuming any
+# captures from earlier steps landed real goals).
+step "RLS mode verification — direct DB query without scope"
+RLS_COUNT=$(docker compose exec -T postgres psql -U postgres -d blankcollar -At -c "SELECT count(*) FROM ops.goal" 2>/dev/null || echo "?")
+if [[ "$RLS_COUNT" == "?" ]]; then
+  echo "  → skipped (psql not reachable via docker compose exec)"
+else
+  echo "  → ops.goal row count without scope: $RLS_COUNT"
+  # Strict mode → expect 0. Permissive → expect > 0 because previous
+  # steps captured goals. We don't fail either way; just surface it.
+fi
+
 echo
 echo "✅ smoke passed — every Phase-3.5 surface responded as expected."

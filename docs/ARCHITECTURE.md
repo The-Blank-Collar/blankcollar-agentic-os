@@ -134,7 +134,24 @@ Every Paperclip route that touches tenant data runs through one of two transacti
 - `withOrgScope(orgId, fn)` — binds the session GUC `app.org_id` for the duration of a transaction. Every RLS-enabled table has an `app_scope_org` policy that allows rows where `org_id = current_setting('app.org_id')`. Use this for **every user-facing request** — it's the tenant fence.
 - `withSystemScope(fn)` — binds `app.system_scope = 'true'`. A sibling `app_system_scope` PERMISSIVE policy on every RLS-enabled table allows the row through whenever this flag is set. Use **only** for cross-org engine tasks: the worker claiming queued runs, the scheduler scanning every org for due routines, the bootstrap sweeping orgs, the health-counts probe. Never call from a request handler.
 
-Anything that uses a bare `query()` or `tx()` without one of these helpers is a bug — it relies on the policy's permissive-on-unset branch (kept for backward compatibility) and will break the moment we tighten the policy in the strict-mode flip.
+A bare `query()` / `tx()` against a tenant table is a **bug**. After the Phase 2.6 strict flip (the default), unscoped queries on tenant tables return zero rows and writes fail. The compatibility escape hatch `PAPERCLIP_RLS_STRICT=false` reverts to the legacy permissive-on-unset behavior — use it only as a temporary mitigation if a callsite was missed during migration; never as a long-term posture.
+
+#### Strict policy shape (Phase 2.6)
+
+Two table groups, two policy shapes:
+
+- **Tables with NULL-able `org_id`** (`ops.skill`, `ops.tool`) — shared registry rows have `org_id = NULL` and are visible to every tenant:
+  ```sql
+  USING      (org_id IS NULL OR org_id::text = current_setting('app.org_id', true))
+  WITH CHECK (org_id IS NULL OR org_id::text = current_setting('app.org_id', true))
+  ```
+- **Tables with `NOT NULL` `org_id`** (the other 24 RLS-enabled tables) — the tightest possible form:
+  ```sql
+  USING      (org_id::text = current_setting('app.org_id', true))
+  WITH CHECK (org_id::text = current_setting('app.org_id', true))
+  ```
+
+The `app_system_scope` PERMISSIVE sibling policy is unchanged — it allows the row whenever `app.system_scope = 'true'`. Engine code (worker, scheduler, health probe) flows through `withSystemScope()` and the sibling lets it through.
 
 ## What's intentionally out of scope for Phase 0
 
