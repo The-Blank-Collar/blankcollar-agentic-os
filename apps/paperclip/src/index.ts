@@ -65,6 +65,14 @@ async function main(): Promise<void> {
   } else {
     app.log.info("auth=stub (Supabase not configured; demo-org owner for all callers)");
   }
+  if (config.rlsStrict) {
+    app.log.info("auth.rls=strict — unscoped queries on tenant tables return 0 rows");
+  } else {
+    app.log.warn(
+      "auth.rls=permissive — unscoped queries on tenant tables fall through. " +
+        "Set PAPERCLIP_RLS_STRICT=true (default) to lock down.",
+    );
+  }
 
   // webhookRoutes registers its own content-type parser; must be before the
   // route registrations that rely on the default JSON parser.

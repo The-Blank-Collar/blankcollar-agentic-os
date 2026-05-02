@@ -4,6 +4,7 @@
  */
 
 import { audit } from "./audit.js";
+import { config } from "./config.js";
 import { query, withOrgScope } from "./db.js";
 import { resolveCallerScope } from "./scope.js";
 
@@ -1076,6 +1077,75 @@ const ADDITIVE_MIGRATIONS = [
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 ];
 
+/**
+ * Phase 2.6 strict-RLS flip — when `config.rlsStrict` is true (the
+ * default after 2.6.c), each `app_scope_org` policy is re-created
+ * WITHOUT the legacy "permissive on unset GUC" branches. Unscoped
+ * queries against tenant tables then return zero rows / fail writes.
+ *
+ * Tables are split by org_id nullability. NULLABLE-org tables (skill +
+ * tool) keep an `org_id IS NULL` branch in the strict policy so shared
+ * registry rows remain visible to every tenant. NOT-NULL tables get
+ * the tightest form: `org_id = app.org_id` only.
+ *
+ * The companion `app_system_scope` PERMISSIVE policy stays unchanged —
+ * cross-org engine code (worker, scheduler, health probe) flows
+ * through `withSystemScope()` and the system-scope sibling.
+ */
+const STRICT_RLS_TABLES_NULLABLE_ORG = [
+  "ops.skill",
+  "ops.tool",
+];
+const STRICT_RLS_TABLES_REQUIRED_ORG = [
+  "ops.goal",
+  "ops.agent",
+  "ops.run",
+  "ops.key_result",
+  "ops.goal_contributor",
+  "ops.briefing",
+  "ops.capture",
+  "brain.memory",
+  "core.audit_log",
+  "ops.routine_trigger",
+  "ops.onboarding_profile",
+  "ops.audit_report",
+  "ops.knowledge_doc",
+  "ops.knowledge_link",
+  "ops.approval",
+  "ops.policy",
+  "ops.payment_settings",
+  "ops.agent_spending_limit",
+  "ops.payment_request",
+  "ops.kill_switch_event",
+  "ops.tool_call_log",
+  "ops.llm_call_log",
+  "ops.run_feedback",
+  "ops.document",
+  "ops.document_chunk",
+  "ops.upstream_source",
+];
+
+function buildStrictMigrations(): string[] {
+  const out: string[] = [];
+  for (const tbl of STRICT_RLS_TABLES_NULLABLE_ORG) {
+    out.push(
+      `DROP POLICY IF EXISTS app_scope_org ON ${tbl};`,
+      `CREATE POLICY app_scope_org ON ${tbl}
+         USING      (org_id IS NULL OR org_id::text = current_setting('app.org_id', true))
+         WITH CHECK (org_id IS NULL OR org_id::text = current_setting('app.org_id', true));`,
+    );
+  }
+  for (const tbl of STRICT_RLS_TABLES_REQUIRED_ORG) {
+    out.push(
+      `DROP POLICY IF EXISTS app_scope_org ON ${tbl};`,
+      `CREATE POLICY app_scope_org ON ${tbl}
+         USING      (org_id::text = current_setting('app.org_id', true))
+         WITH CHECK (org_id::text = current_setting('app.org_id', true));`,
+    );
+  }
+  return out;
+}
+
 export async function applyAdditiveMigrations(
   log: { info: (msg: string) => void },
 ): Promise<void> {
@@ -1083,6 +1153,21 @@ export async function applyAdditiveMigrations(
     await query(sql);
   }
   log.info(`bootstrap: additive migrations applied (${ADDITIVE_MIGRATIONS.length} statements)`);
+
+  if (config.rlsStrict) {
+    const strict = buildStrictMigrations();
+    for (const sql of strict) {
+      await query(sql);
+    }
+    log.info(
+      `bootstrap: RLS=strict — ${STRICT_RLS_TABLES_NULLABLE_ORG.length + STRICT_RLS_TABLES_REQUIRED_ORG.length} tables re-policied without permissive-on-unset (${strict.length} statements)`,
+    );
+  } else {
+    log.info(
+      "bootstrap: RLS=permissive — `app.org_id` IS NULL falls through to allow. " +
+        "Set PAPERCLIP_RLS_STRICT=true (default) to lock down.",
+    );
+  }
 }
 
 const DEFAULT_AGENTS: Array<{ kind: string; name: string; description: string }> = [

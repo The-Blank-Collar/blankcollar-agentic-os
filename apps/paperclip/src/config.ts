@@ -63,6 +63,19 @@ export const config = {
   schedulerTickMs: Number(env.PAPERCLIP_SCHEDULER_TICK_MS ?? 60_000),
 
   /**
+   * Phase 2.6 RLS strict flip. When true (the default), the RLS policy
+   * `app_scope_org` on every tenant table requires `app.org_id` to be
+   * bound — unscoped queries return zero rows and writes fail. When
+   * false, the legacy "permissive on unset" branches stay in the
+   * policies as a temporary escape hatch.
+   *
+   * Toggle via `PAPERCLIP_RLS_STRICT=false` if you need to revert
+   * without redeploying after upgrading. New installs should leave it
+   * at the default.
+   */
+  rlsStrict: env.PAPERCLIP_RLS_STRICT !== "false",
+
+  /**
    * Auto-generate a daily briefing for each org once per day, at this UTC
    * hour. Single-user installs will want this in their timezone (8am local
    * = 13:00 UTC for ET, etc.). Per-user timezone settings land in Phase 6.

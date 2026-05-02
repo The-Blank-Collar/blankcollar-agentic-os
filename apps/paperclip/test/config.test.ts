@@ -39,3 +39,38 @@ describe("requireConfig", () => {
     expect(() => requireConfig()).not.toThrow();
   });
 });
+
+describe("rlsStrict (Phase 2.6)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = { ...ORIG_ENV };
+  });
+  afterEach(() => {
+    process.env = { ...ORIG_ENV };
+  });
+
+  it("defaults to strict when PAPERCLIP_RLS_STRICT is unset", async () => {
+    delete process.env.PAPERCLIP_RLS_STRICT;
+    const { config } = await import("../src/config.js");
+    expect(config.rlsStrict).toBe(true);
+  });
+
+  it("defaults to strict when PAPERCLIP_RLS_STRICT is 'true'", async () => {
+    process.env.PAPERCLIP_RLS_STRICT = "true";
+    const { config } = await import("../src/config.js");
+    expect(config.rlsStrict).toBe(true);
+  });
+
+  it("falls back to permissive only on explicit 'false'", async () => {
+    process.env.PAPERCLIP_RLS_STRICT = "false";
+    const { config } = await import("../src/config.js");
+    expect(config.rlsStrict).toBe(false);
+  });
+
+  it("treats other values as strict (defensive default)", async () => {
+    process.env.PAPERCLIP_RLS_STRICT = "0";
+    const { config } = await import("../src/config.js");
+    // "0" is not the literal string "false" — strict wins.
+    expect(config.rlsStrict).toBe(true);
+  });
+});
