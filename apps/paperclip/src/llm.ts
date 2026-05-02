@@ -1,19 +1,21 @@
 /**
- * Thin Anthropic Messages client + brand-voice loader.
+ * Brand-voice loader + `narrate()` helper for synchronous prose paths
+ * (briefings, capture classifier).
  *
- * Only used for synchronous prose generation (briefings). Hermes still owns
- * the agent loop — it has its own Anthropic client, brand voice loading,
- * and recall integration. This is a *side door* for "render this structured
- * input as editorial copy in our voice," nothing more.
+ * The actual LLM call lives in `llm/gateway.ts` — this module is a thin
+ * convenience around it that prepends our brand voice and standard
+ * editorial guardrails to the system prompt. Errors swallow to null so
+ * callers always have a templated fallback path; the gateway logs and
+ * surfaces traces upstream.
  *
- * No SDK — one fetch call. Falls back to null when no API key, so callers
- * can ship a templated path for offline / unconfigured installs.
+ * Hermes still owns the agent loop with its own (Portkey-routed) client.
  */
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { config } from "./config.js";
+import { chatComplete, GatewayError } from "./llm/gateway.js";
 
 let cachedBrand: string | null | undefined;
 
@@ -35,12 +37,13 @@ export type NarrateInput = {
 };
 
 /**
- * Returns null when no API key is configured or the call fails — callers
- * must always have a templated fallback path.
+ * Returns null when the gateway call fails — callers must always have
+ * a templated fallback path. Hard configuration errors (PORTKEY_*) are
+ * caught at boot by requireConfig(), so a null here means a transient
+ * failure (rate limit, upstream 5xx, network) that the templated path
+ * should cover.
  */
 export async function narrate(input: NarrateInput): Promise<string | null> {
-  if (!config.anthropicApiKey) return null;
-
   const brand = await loadBrandVoice();
   const systemParts: string[] = [];
   if (brand) {
@@ -54,29 +57,16 @@ export async function narrate(input: NarrateInput): Promise<string | null> {
   const system = systemParts.join("\n\n");
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": config.anthropicApiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: config.anthropicModel,
-        max_tokens: config.anthropicMaxTokens,
-        system,
-        messages: [{ role: "user", content: input.userPrompt }],
-      }),
+    const result = await chatComplete({
+      system,
+      messages: [{ role: "user", content: input.userPrompt }],
     });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { content?: { type: string; text?: string }[] };
-    const text = (body.content ?? [])
-      .filter((b) => b.type === "text" && typeof b.text === "string")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-    return text || null;
-  } catch {
+    return result.text || null;
+  } catch (err) {
+    // GatewayError on transient upstream failures → null so the caller
+    // renders the templated path. Anything else also degrades to null
+    // (we never want a briefing endpoint to 500 on LLM trouble).
+    if (err instanceof GatewayError) return null;
     return null;
   }
 }

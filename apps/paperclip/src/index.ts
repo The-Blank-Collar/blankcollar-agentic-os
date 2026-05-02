@@ -5,7 +5,7 @@ import Fastify from "fastify";
 
 import { authPreHandler } from "./auth.js";
 import { applyAdditiveMigrations, ensureDefaultAgents } from "./bootstrap.js";
-import { config } from "./config.js";
+import { config, requireConfig } from "./config.js";
 import { close as closeDb } from "./db.js";
 import { worker } from "./queue/worker.js";
 import { scheduler } from "./scheduler.js";
@@ -39,6 +39,10 @@ import { syncSkillRegistry } from "./skills/registry.js";
 import { syncToolRegistry } from "./tools/registry.js";
 
 async function main(): Promise<void> {
+  // Fail-fast on missing required env (Portkey keys, etc.) before opening
+  // the listener. Clear error message > silent runtime null returns.
+  requireConfig();
+
   const app = Fastify({
     logger: {
       level: config.logLevel,

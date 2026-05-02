@@ -93,7 +93,10 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
         worker_enabled: config.workerEnabled,
         scheduler_enabled: config.schedulerEnabled,
         briefing_hour_utc: config.briefingHourUtc,
-        llm_configured: Boolean(config.anthropicApiKey),
+        // After Phase 2.1 every LLM call routes through Portkey;
+        // requireConfig() guarantees these are set if the service booted.
+        llm_gateway: "portkey",
+        llm_configured: Boolean(config.portkeyApiKey && config.portkeyVirtualKeyAnthropic),
       },
       counts,
     };

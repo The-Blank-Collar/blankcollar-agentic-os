@@ -19,7 +19,6 @@ import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
 import { withOrgScope } from "../db.js";
-import { config } from "../config.js";
 import { narrate } from "../llm.js";
 import { resolveCallerScope } from "../scope.js";
 import { CaptureCreate, type GoalKind } from "../schemas.js";
@@ -76,8 +75,8 @@ export function classify(raw: string): Intent {
  * `Intent` exactly.
  */
 export async function classifyWithHermes(raw: string): Promise<Intent | null> {
-  if (!config.anthropicApiKey) return null;
-
+  // narrate() returns null on transient gateway failures; the heuristic
+  // path is always available as a fallback in routes/captures.ts.
   const response = await narrate({
     systemHint:
       "You classify natural-language captures into ONE of four kinds:\n" +

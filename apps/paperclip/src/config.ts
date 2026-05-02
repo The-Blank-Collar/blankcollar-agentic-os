@@ -34,13 +34,22 @@ export const config = {
   authEnforce: env.PAPERCLIP_AUTH_ENFORCE === "true",
 
   /**
-   * Direct LLM access for prose generation (briefings, plan synthesis).
-   * Stays empty by default — when unset, briefings render via the templated
-   * fallback so the demo runs offline. Hermes still owns the agent loop.
+   * AI gateway — Portkey routes every LLM call through a single observable
+   * proxy. PORTKEY_API_KEY + PORTKEY_VIRTUAL_KEY_ANTHROPIC are required at
+   * boot (see requireConfig()); the legacy ANTHROPIC_API_KEY is no longer
+   * read at runtime — Anthropic credentials live in the Portkey dashboard,
+   * referenced by the virtual key.
    */
-  anthropicApiKey: env.ANTHROPIC_API_KEY ?? "",
-  anthropicModel: env.PAPERCLIP_LLM_MODEL ?? "claude-sonnet-4-6",
-  anthropicMaxTokens: Number(env.PAPERCLIP_LLM_MAX_TOKENS ?? 800),
+  portkeyApiKey: env.PORTKEY_API_KEY ?? "",
+  portkeyVirtualKeyAnthropic: env.PORTKEY_VIRTUAL_KEY_ANTHROPIC ?? "",
+  portkeyBaseUrl: env.PORTKEY_BASE_URL ?? "https://api.portkey.ai/v1",
+
+  /**
+   * Model + budget for the prose-generation side door (briefings, classifier).
+   * Hermes still owns the agent loop with its own model selection.
+   */
+  llmModel: env.PAPERCLIP_LLM_MODEL ?? "claude-sonnet-4-6",
+  llmMaxTokens: Number(env.PAPERCLIP_LLM_MAX_TOKENS ?? 800),
   brandDir: env.BRAND_DIR ?? "/app/brand",
   brandName: env.BRAND_NAME ?? "blankcollar",
 
@@ -57,3 +66,23 @@ export const config = {
 } as const;
 
 export type Config = typeof config;
+
+/**
+ * Hard-fail at boot if any required env is missing. The gateway and its
+ * downstream callers (briefings, capture classifier) all assume Portkey
+ * is configured — silent fallbacks would mask the problem.
+ *
+ * Called from index.ts before any route is registered.
+ */
+export function requireConfig(): void {
+  const missing: string[] = [];
+  if (!config.portkeyApiKey) missing.push("PORTKEY_API_KEY");
+  if (!config.portkeyVirtualKeyAnthropic) missing.push("PORTKEY_VIRTUAL_KEY_ANTHROPIC");
+  if (missing.length > 0) {
+    throw new Error(
+      `[config] required env var(s) not set: ${missing.join(", ")}. ` +
+        "Get a Portkey key at https://app.portkey.ai/, create an Anthropic " +
+        "virtual key, and set both in .env. See docs/ENVIRONMENT.md.",
+    );
+  }
+}
