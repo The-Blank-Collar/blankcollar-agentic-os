@@ -76,6 +76,10 @@ gates: ## Static gates: typecheck + lint + tests across paperclip + cli
 	@cd packages/cli && npm install --silent && npm run typecheck && npm run lint && npm run test -- --reporter=basic
 	@echo "✓ all gates green"
 
+.PHONY: setup-keys
+setup-keys: ## Interactively prompt for each API key → write to .env (hidden, no shell history)
+	@./infra/scripts/setup-keys.sh
+
 .PHONY: ps
 ps: ## Show running containers
 	$(COMPOSE) ps
