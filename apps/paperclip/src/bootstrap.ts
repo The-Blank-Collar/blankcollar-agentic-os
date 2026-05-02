@@ -807,6 +807,91 @@ const ADDITIVE_MIGRATIONS = [
        WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
   ]),
 
+  // -- ops.document + ops.document_chunk — Phase 2.4 ---------------------
+  // Long-form ingested content (markdown files, URLs, future PDFs/Docs).
+  // Distinct from ops.knowledge_doc (the curated wiki, no chunking) and
+  // brain.memory (free-form one-line memories).
+  //
+  //   ops.document        — one row per logical doc. Identity = content_hash.
+  //   ops.document_chunk  — N rows per doc, the searchable pieces.
+  //
+  // The chunker (apps/paperclip/src/documents/chunker.ts) populates
+  // document_chunk with text + char-range so the operator can navigate
+  // back to the exact passage.
+  `CREATE TABLE IF NOT EXISTS ops.document (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     scope           ops.skill_scope NOT NULL DEFAULT 'company',
+     title           text NOT NULL,
+     source_url      text,
+     source_filename text,
+     mime_type       text NOT NULL DEFAULT 'text/markdown',
+     content_hash    text NOT NULL,
+     tags            text[] NOT NULL DEFAULT ARRAY[]::text[],
+     char_count      integer NOT NULL DEFAULT 0,
+     chunk_count     integer NOT NULL DEFAULT 0,
+     ingested_at     timestamptz NOT NULL DEFAULT now(),
+     created_at      timestamptz NOT NULL DEFAULT now(),
+     updated_at      timestamptz NOT NULL DEFAULT now()
+   );`,
+  // Hash uniqueness scoped to org — same content can exist in two orgs.
+  `CREATE UNIQUE INDEX IF NOT EXISTS document_hash_uniq
+      ON ops.document (org_id, content_hash);`,
+  `CREATE INDEX IF NOT EXISTS document_org_ingested_idx
+      ON ops.document (org_id, ingested_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS document_tags_idx
+      ON ops.document USING GIN (tags);`,
+  `ALTER TABLE ops.document ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.document FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.document;`,
+  `CREATE POLICY app_scope_org ON ops.document
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.document;`,
+  `CREATE POLICY app_system_scope ON ops.document
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  `CREATE TABLE IF NOT EXISTS ops.document_chunk (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     document_id   uuid NOT NULL REFERENCES ops.document(id) ON DELETE CASCADE,
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     chunk_index   integer NOT NULL,
+     total_chunks  integer NOT NULL,
+     text          text NOT NULL,
+     char_start    integer NOT NULL,
+     char_end      integer NOT NULL,
+     memory_id     uuid,
+     created_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS document_chunk_pos_uniq
+      ON ops.document_chunk (document_id, chunk_index);`,
+  `CREATE INDEX IF NOT EXISTS document_chunk_org_idx
+      ON ops.document_chunk (org_id, created_at DESC);`,
+  // GIN trigram for ILIKE keyword search until vector embeddings land.
+  `CREATE INDEX IF NOT EXISTS document_chunk_text_gin
+      ON ops.document_chunk USING GIN (to_tsvector('english', text));`,
+  `ALTER TABLE ops.document_chunk ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.document_chunk FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.document_chunk;`,
+  `CREATE POLICY app_scope_org ON ops.document_chunk
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.document_chunk;`,
+  `CREATE POLICY app_system_scope ON ops.document_chunk
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- ops.run_feedback — Phase 2.3.a -------------------------------------
   // Per-run feedback from the operator: rating (1-5), tags (canned + free),
   // optional free-form note. Multiple entries per run allowed (operator may
