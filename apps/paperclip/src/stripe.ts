@@ -15,7 +15,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { audit } from "./audit.js";
-import { query, tx } from "./db.js";
+import { query, withOrgScope } from "./db.js";
 import { resolveCallerScope } from "./scope.js";
 
 const TOLERANCE_S = 5 * 60;
@@ -91,7 +91,11 @@ export async function recordStripeEvent(event: {
   type: string;
   payload: unknown;
 }): Promise<boolean> {
-  return await tx(async (client) => {
+  // Resolve the scope before opening the tx so withOrgScope can bind
+  // app.org_id for the duration — otherwise the audit() insert into
+  // core.audit_log would refuse under the Phase-2.6 strict RLS flip.
+  const scope = await resolveCallerScope();
+  return await withOrgScope(scope.org_id, async (client) => {
     const { rowCount } = await client.query(
       `
       INSERT INTO billing.stripe_event (id, type, payload)
@@ -101,7 +105,6 @@ export async function recordStripeEvent(event: {
       [event.id, event.type, JSON.stringify(event.payload)],
     );
     if ((rowCount ?? 0) > 0) {
-      const scope = await resolveCallerScope();
       await audit(
         {
           scope,

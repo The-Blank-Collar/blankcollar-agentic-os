@@ -5,7 +5,7 @@
 
 import type { FastifyInstance } from "fastify";
 
-import { query } from "../db.js";
+import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 
 const escape = (s: unknown): string =>
@@ -228,25 +228,28 @@ async function renderGoalsFragment(): Promise<string> {
 
 async function fetchGoalSummaries(): Promise<GoalSummary[]> {
   const scope = await resolveCallerScope();
-  const { rows } = await query<{
-    id: string;
-    title: string;
-    status: string;
-    department_name: string | null;
-    updated_at: string;
-    run_count: string;
-  }>(
-    `
-    SELECT g.id, g.title, g.status::text, d.name AS department_name, g.updated_at,
-           (SELECT count(*) FROM ops.run r WHERE r.goal_id = g.id) AS run_count
-    FROM ops.goal g
-    LEFT JOIN core.department d ON d.id = g.department_id
-    WHERE g.org_id = $1 AND g.status <> 'archived'
-    ORDER BY g.updated_at DESC
-    LIMIT 50
-    `,
-    [scope.org_id],
-  );
+  const rows = await withOrgScope(scope.org_id, async (client) => {
+    const { rows: r } = await client.query<{
+      id: string;
+      title: string;
+      status: string;
+      department_name: string | null;
+      updated_at: string;
+      run_count: string;
+    }>(
+      `
+      SELECT g.id, g.title, g.status::text, d.name AS department_name, g.updated_at,
+             (SELECT count(*) FROM ops.run r WHERE r.goal_id = g.id) AS run_count
+      FROM ops.goal g
+      LEFT JOIN core.department d ON d.id = g.department_id
+      WHERE g.org_id = $1 AND g.status <> 'archived'
+      ORDER BY g.updated_at DESC
+      LIMIT 50
+      `,
+      [scope.org_id],
+    );
+    return r;
+  });
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -259,10 +262,13 @@ async function fetchGoalSummaries(): Promise<GoalSummary[]> {
 
 async function renderGoalDetail(id: string): Promise<string | undefined> {
   const scope = await resolveCallerScope();
-  const { rows } = await query<GoalRow>(
-    "SELECT id, title, description, status, department_id, metadata, created_at, updated_at FROM ops.goal WHERE id = $1 AND org_id = $2",
-    [id, scope.org_id],
-  );
+  const rows = await withOrgScope(scope.org_id, async (client) => {
+    const { rows: r } = await client.query<GoalRow>(
+      "SELECT id, title, description, status, department_id, metadata, created_at, updated_at FROM ops.goal WHERE id = $1 AND org_id = $2",
+      [id, scope.org_id],
+    );
+    return r;
+  });
   if (rows.length === 0) return undefined;
   const goal = rows[0]!;
   const plan = (goal.metadata as { plan?: { subtasks: { index: number; title: string; description: string; agent_kind?: string }[] } } | null)
@@ -333,13 +339,16 @@ async function renderGoalDetail(id: string): Promise<string | undefined> {
 
 async function renderRunsFragment(goalId: string): Promise<string> {
   const scope = await resolveCallerScope();
-  const { rows } = await query<RunRow>(
-    `SELECT r.id, r.goal_id, r.status::text, r.input, r.output, r.error, r.started_at, r.finished_at
-     FROM ops.run r JOIN ops.goal g ON g.id = r.goal_id
-     WHERE r.goal_id = $1 AND g.org_id = $2
-     ORDER BY r.created_at DESC LIMIT 30`,
-    [goalId, scope.org_id],
-  );
+  const rows = await withOrgScope(scope.org_id, async (client) => {
+    const { rows: r } = await client.query<RunRow>(
+      `SELECT r.id, r.goal_id, r.status::text, r.input, r.output, r.error, r.started_at, r.finished_at
+       FROM ops.run r JOIN ops.goal g ON g.id = r.goal_id
+       WHERE r.goal_id = $1 AND g.org_id = $2
+       ORDER BY r.created_at DESC LIMIT 30`,
+      [goalId, scope.org_id],
+    );
+    return r;
+  });
   if (rows.length === 0) {
     return `<p class="empty">No runs yet — dispatch a subtask above.</p>`;
   }
