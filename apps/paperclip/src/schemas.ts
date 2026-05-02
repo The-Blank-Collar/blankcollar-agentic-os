@@ -395,6 +395,32 @@ export const KillSwitchToggle = z
   .strict();
 export type KillSwitchToggle = z.infer<typeof KillSwitchToggle>;
 
+// ---------- Document ingestion (Phase 2.4) ------------------------------
+
+export const DocumentMarkdownCreate = z
+  .object({
+    title:           z.string().min(1).max(500),
+    content_md:      z.string().min(1).max(1_000_000),
+    source_url:      z.string().url().max(2_000).nullable().optional(),
+    source_filename: z.string().min(1).max(255).nullable().optional(),
+    mime_type:       z.string().min(1).max(120).default("text/markdown"),
+    scope:           SkillScope.default("company"),
+    tags:            z.array(z.string().min(1).max(40)).max(20).default([]),
+    /**
+     * When true, an existing document with the same content_hash is
+     * deleted (cascading its chunks) and re-ingested. Useful for editing
+     * a doc and re-uploading the updated version. Without --force,
+     * an exact-content match returns the existing document_id.
+     */
+    force:           z.boolean().default(false),
+    /** Optional chunker tuning — defaults to 1500/150/50. */
+    target_chars:    z.number().int().min(200).max(8_000).optional(),
+    overlap_chars:   z.number().int().min(0).max(2_000).optional(),
+    min_chars:       z.number().int().min(0).max(2_000).optional(),
+  })
+  .strict();
+export type DocumentMarkdownCreate = z.infer<typeof DocumentMarkdownCreate>;
+
 // ---------- Tool registry (MCP) -----------------------------------------
 
 export const ToolTransport = z.enum(["stdio", "http", "sse", "websocket"]);

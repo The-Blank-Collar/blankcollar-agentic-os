@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AgentCreate,
+  DocumentMarkdownCreate,
   GoalCreate,
   GoalListQuery,
   GoalPatch,
@@ -119,5 +120,40 @@ describe("AgentCreate", () => {
   it("defaults config to empty object", () => {
     const r = AgentCreate.parse({ kind: "hermes", name: "Hermes — Marketing" });
     expect(r.config).toEqual({});
+  });
+});
+
+describe("DocumentMarkdownCreate", () => {
+  it("requires title and content_md", () => {
+    expect(DocumentMarkdownCreate.safeParse({}).success).toBe(false);
+    expect(DocumentMarkdownCreate.safeParse({ title: "x" }).success).toBe(false);
+  });
+  it("defaults mime_type, scope, tags, force", () => {
+    const r = DocumentMarkdownCreate.parse({ title: "X", content_md: "hello" });
+    expect(r.mime_type).toBe("text/markdown");
+    expect(r.scope).toBe("company");
+    expect(r.tags).toEqual([]);
+    expect(r.force).toBe(false);
+  });
+  it("rejects content_md > 1MB", () => {
+    const huge = "x".repeat(1_000_001);
+    expect(DocumentMarkdownCreate.safeParse({ title: "X", content_md: huge }).success).toBe(false);
+  });
+  it("rejects malformed source_url", () => {
+    expect(
+      DocumentMarkdownCreate.safeParse({
+        title: "X", content_md: "y", source_url: "not a url",
+      }).success,
+    ).toBe(false);
+  });
+  it("caps tag count at 20", () => {
+    const tooMany = Array.from({ length: 21 }, (_, i) => `t${i}`);
+    expect(
+      DocumentMarkdownCreate.safeParse({ title: "X", content_md: "y", tags: tooMany }).success,
+    ).toBe(false);
+  });
+  it("accepts force=true", () => {
+    const r = DocumentMarkdownCreate.parse({ title: "X", content_md: "y", force: true });
+    expect(r.force).toBe(true);
   });
 });
