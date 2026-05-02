@@ -9,6 +9,7 @@ const ORIG_ENV = { ...process.env };
 beforeAll(() => {
   process.env.PORTKEY_API_KEY = "pk-test-12345";
   process.env.PORTKEY_VIRTUAL_KEY_ANTHROPIC = "vk-anth-test";
+  process.env.PORTKEY_VIRTUAL_KEY_OPENROUTER = "vk-or-test";
   process.env.PORTKEY_BASE_URL = "https://api.portkey.ai/v1";
   process.env.PAPERCLIP_LLM_MODEL = "claude-sonnet-4-6";
   process.env.PAPERCLIP_LLM_MAX_TOKENS = "800";
@@ -141,6 +142,61 @@ describe("chatComplete (Portkey gateway)", () => {
       { fetchImpl },
     );
     expect(out.text).toBe("");
+  });
+
+  it("uses the Anthropic virtual key by default", async () => {
+    const { chatComplete } = await import("../src/llm/gateway.js");
+    const fetchImpl = makeFetch({
+      content: [{ type: "text", text: "ok" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    await chatComplete({ messages: [{ role: "user", content: "hi" }] }, { fetchImpl });
+    const headers = fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>;
+    expect(headers["x-portkey-virtual-key"]).toBe("vk-anth-test");
+  });
+
+  it("routes through OpenRouter when provider='openrouter' is passed", async () => {
+    const { chatComplete } = await import("../src/llm/gateway.js");
+    const fetchImpl = makeFetch({
+      content: [{ type: "text", text: "ok" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    await chatComplete(
+      {
+        messages: [{ role: "user", content: "hi" }],
+        provider: "openrouter",
+        model: "google/gemini-2.0-flash-exp",
+      },
+      { fetchImpl },
+    );
+    const headers = fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>;
+    expect(headers["x-portkey-virtual-key"]).toBe("vk-or-test");
+    const sent = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body));
+    expect(sent.model).toBe("google/gemini-2.0-flash-exp");
+  });
+
+  it("throws when provider='openrouter' but PORTKEY_VIRTUAL_KEY_OPENROUTER is unset", async () => {
+    // Temporarily clear the OpenRouter VK and re-import to pick up the change.
+    const orig = process.env.PORTKEY_VIRTUAL_KEY_OPENROUTER;
+    process.env.PORTKEY_VIRTUAL_KEY_OPENROUTER = "";
+    vi.resetModules();
+    try {
+      const { chatComplete, GatewayError } = await import("../src/llm/gateway.js");
+      const fetchImpl = makeFetch({
+        content: [{ type: "text", text: "x" }],
+        usage: { input_tokens: 0, output_tokens: 0 },
+      });
+      await expect(
+        chatComplete(
+          { messages: [{ role: "user", content: "hi" }], provider: "openrouter" },
+          { fetchImpl },
+        ),
+      ).rejects.toBeInstanceOf(GatewayError);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      process.env.PORTKEY_VIRTUAL_KEY_OPENROUTER = orig;
+      vi.resetModules();
+    }
   });
 
   it("falls back to x-trace-id when x-portkey-trace-id is absent", async () => {

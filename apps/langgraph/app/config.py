@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     portkey_virtual_key_anthropic: str | None = Field(
         default=None, alias="PORTKEY_VIRTUAL_KEY_ANTHROPIC"
     )
+    # Optional second virtual key — see Hermes config for context.
+    portkey_virtual_key_openrouter: str | None = Field(
+        default=None, alias="PORTKEY_VIRTUAL_KEY_OPENROUTER"
+    )
     portkey_base_url: str = Field(
         default="https://api.portkey.ai/v1", alias="PORTKEY_BASE_URL"
     )

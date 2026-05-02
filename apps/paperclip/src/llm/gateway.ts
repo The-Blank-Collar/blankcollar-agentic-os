@@ -26,6 +26,12 @@ export type ChatCompleteInput = {
   messages: ChatMessage[];
   model?: string;
   max_tokens?: number;
+  /**
+   * Override the Portkey virtual key for this call. Defaults to the
+   * configured Anthropic VK. Pass "openrouter" (or the literal VK string)
+   * to route through OpenRouter for models Anthropic doesn't host.
+   */
+  provider?: "anthropic" | "openrouter";
 };
 
 export type ChatCompleteResult = {
@@ -69,6 +75,23 @@ export async function chatComplete(
     );
   }
 
+  // Pick the virtual key for this call. Default: Anthropic. Per-call
+  // override lets callers route to OpenRouter for models Anthropic
+  // doesn't host (Gemini, Llama, etc.).
+  const provider = input.provider ?? "anthropic";
+  const virtualKey =
+    provider === "openrouter"
+      ? config.portkeyVirtualKeyOpenRouter
+      : config.portkeyVirtualKeyAnthropic;
+  if (!virtualKey) {
+    throw new GatewayError(
+      0,
+      null,
+      `gateway: provider="${provider}" requested but no Portkey virtual ` +
+        `key is configured for it. Set PORTKEY_VIRTUAL_KEY_${provider.toUpperCase()}.`,
+    );
+  }
+
   const url = `${config.portkeyBaseUrl.replace(/\/$/, "")}/messages`;
   const fetchImpl = opts.fetchImpl ?? fetch;
 
@@ -84,8 +107,10 @@ export async function chatComplete(
     headers: {
       "content-type": "application/json",
       "x-portkey-api-key": config.portkeyApiKey,
-      "x-portkey-virtual-key": config.portkeyVirtualKeyAnthropic,
+      "x-portkey-virtual-key": virtualKey,
       // Anthropic's wire requires this; Portkey forwards it through.
+      // OpenRouter accepts it harmlessly when the virtual key targets
+      // an OpenRouter provider (the header is ignored downstream).
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),

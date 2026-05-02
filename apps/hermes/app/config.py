@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     portkey_virtual_key_anthropic: str | None = Field(
         default=None, alias="PORTKEY_VIRTUAL_KEY_ANTHROPIC"
     )
+    # Optional — Portkey can also route to OpenRouter for models Anthropic
+    # doesn't host. Hermes' main reasoning loop stays on Anthropic; this
+    # field exists so per-task overrides become possible without an env churn.
+    portkey_virtual_key_openrouter: str | None = Field(
+        default=None, alias="PORTKEY_VIRTUAL_KEY_OPENROUTER"
+    )
     portkey_base_url: str = Field(
         default="https://api.portkey.ai/v1", alias="PORTKEY_BASE_URL"
     )

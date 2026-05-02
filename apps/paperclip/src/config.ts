@@ -42,6 +42,11 @@ export const config = {
    */
   portkeyApiKey: env.PORTKEY_API_KEY ?? "",
   portkeyVirtualKeyAnthropic: env.PORTKEY_VIRTUAL_KEY_ANTHROPIC ?? "",
+  // Optional second virtual key — Portkey can route requests to OpenRouter,
+  // which exposes hundreds of models (Llama, Mistral, Gemini, …) behind a
+  // single API. Default callers use the Anthropic VK; pass `virtualKey`
+  // to chatComplete() to route a specific call through OpenRouter instead.
+  portkeyVirtualKeyOpenRouter: env.PORTKEY_VIRTUAL_KEY_OPENROUTER ?? "",
   portkeyBaseUrl: env.PORTKEY_BASE_URL ?? "https://api.portkey.ai/v1",
 
   /**
