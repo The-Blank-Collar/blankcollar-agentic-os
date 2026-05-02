@@ -1,10 +1,11 @@
 """Classifier — decides which agent should handle a given subtask.
 
 Two modes:
-  1. LLM-driven (Nexos / Anthropic / OpenAI configured) — sends the
-     subtask to a small completion and returns the model's verdict.
-  2. Keyword-only (no LLM key) — pure-function pattern matching against
-     the subtask text. Deterministic and testable.
+  1. LLM-driven (Portkey configured) — sends the subtask to a small
+     completion and returns the model's verdict. Routes through the
+     AI gateway so every classification is logged + traced.
+  2. Keyword-only (no Portkey keys) — pure-function pattern matching
+     against the subtask text. Deterministic and testable.
 
 Returns one of: "openclaw" (web/tool actions), "hermes" (reasoning,
 drafting, summarising), or "finish" (no further work — return the input).
@@ -72,12 +73,8 @@ def _dict_text(d: dict) -> str:
 
 
 def llm_provider() -> str:
-    if settings.nexos_api_key:
-        return "nexos"
-    if settings.anthropic_api_key:
-        return "anthropic"
-    if settings.openai_api_key:
-        return "openai"
+    if settings.portkey_api_key and settings.portkey_virtual_key_anthropic:
+        return "portkey"
     return "none"
 
 
@@ -107,34 +104,27 @@ async def classify_with_llm(
     )
 
     try:
-        if provider in ("nexos", "openai"):
-            from openai import AsyncOpenAI  # noqa: WPS433
+        # Single path: Anthropic SDK routed through Portkey via base_url +
+        # x-portkey-* headers. Wire format unchanged.
+        from anthropic import AsyncAnthropic  # noqa: WPS433
 
-            api_key = settings.nexos_api_key or settings.openai_api_key
-            base_url = settings.nexos_base_url if provider == "nexos" else None
-            client = AsyncOpenAI(api_key=api_key, base_url=base_url) if base_url else AsyncOpenAI(api_key=api_key)
-            r = await client.chat.completions.create(
-                model=settings.nexos_model if provider == "nexos" else "gpt-4o-mini",
-                max_tokens=settings.classifier_max_tokens,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user},
-                ],
-            )
-            content = (r.choices[0].message.content or "").strip().lower()
-        else:  # anthropic
-            from anthropic import AsyncAnthropic  # noqa: WPS433
-
-            client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-            msg = await client.messages.create(
-                model=settings.classifier_model,
-                max_tokens=settings.classifier_max_tokens,
-                system=_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user}],
-            )
-            content = "".join(
-                getattr(b, "text", "") for b in msg.content
-            ).strip().lower()
+        client = AsyncAnthropic(
+            api_key="portkey-handles-this",
+            base_url=settings.portkey_base_url,
+            default_headers={
+                "x-portkey-api-key": settings.portkey_api_key or "",
+                "x-portkey-virtual-key": settings.portkey_virtual_key_anthropic or "",
+            },
+        )
+        msg = await client.messages.create(
+            model=settings.classifier_model,
+            max_tokens=settings.classifier_max_tokens,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user}],
+        )
+        content = "".join(
+            getattr(b, "text", "") for b in msg.content
+        ).strip().lower()
     except Exception as e:
         log.warning("classifier LLM call failed: %s", e)
         return None

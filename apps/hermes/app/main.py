@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 
 from app import __kind__, __version__
 from app.brain import brain
-from app.config import settings
+from app.config import require_runtime_config, settings
 from app.llm import LLM, make_llm
 from app.models import HealthResponse, RunRequest, RunStateResponse, RunStatus
 from app.runner import schedule_run
@@ -26,6 +26,9 @@ log = logging.getLogger("hermes")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("hermes starting version=%s model=%s env=%s", __version__, settings.model, settings.env)
+    # Boot guard — refuses to start without Portkey configured. Tests don't
+    # run lifespan, so test-only FakeLLM use stays unaffected.
+    require_runtime_config()
     llm: LLM = make_llm()
     app.state.llm = llm
     try:

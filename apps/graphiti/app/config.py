@@ -18,11 +18,27 @@ class Settings(BaseSettings):
     # LLM provider — graphiti uses an LLM to extract entities + relationships
     # from each ingested episode. Without a key we degrade gracefully:
     # /add returns {skipped: true, reason: "no_llm_configured"} instead of
-    # crashing. Set OPENAI_API_KEY (preferred) or ANTHROPIC_API_KEY to enable.
+    # crashing.
+    #
+    # Portkey routing for graphiti-core is a deferred follow-up (sprint
+    # 2.1.b.2) — the library constructs its own OpenAI client internally,
+    # so wiring Portkey through requires either patching the upstream or
+    # using OPENAI_BASE_URL pointed at Portkey's openai-compatible endpoint.
+    # For now graphiti continues to use direct provider keys; once the
+    # follow-up lands, OPENAI_API_KEY here will be replaced by the Portkey
+    # virtual key for OpenAI-compatible models.
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
-    nexos_api_key: str | None = Field(default=None, alias="NEXOS_API_KEY")
-    nexos_base_url: str = Field(default="https://api.nexos.ai/v1", alias="NEXOS_BASE_URL")
+    portkey_api_key: str | None = Field(default=None, alias="PORTKEY_API_KEY")
+    portkey_virtual_key_anthropic: str | None = Field(
+        default=None, alias="PORTKEY_VIRTUAL_KEY_ANTHROPIC"
+    )
+    portkey_virtual_key_openai: str | None = Field(
+        default=None, alias="PORTKEY_VIRTUAL_KEY_OPENAI"
+    )
+    portkey_base_url: str = Field(
+        default="https://api.portkey.ai/v1", alias="PORTKEY_BASE_URL"
+    )
     llm_model: str = Field(default="gpt-4o-mini", alias="GRAPHITI_LLM_MODEL")
     embedding_model: str = Field(
         default="text-embedding-3-small", alias="GRAPHITI_EMBEDDING_MODEL"

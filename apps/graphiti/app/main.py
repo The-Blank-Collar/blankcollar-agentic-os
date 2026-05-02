@@ -34,7 +34,8 @@ async def lifespan(app: FastAPI):
     if graph.llm_provider == "none":
         log.warning(
             "no LLM provider configured — /add will return skipped=true. "
-            "Set OPENAI_API_KEY (preferred) or ANTHROPIC_API_KEY or NEXOS_API_KEY to enable."
+            "Set OPENAI_API_KEY (preferred) or ANTHROPIC_API_KEY to enable. "
+            "Portkey routing for graphiti-core is a sprint 2.1.b.2 follow-up."
         )
     try:
         yield

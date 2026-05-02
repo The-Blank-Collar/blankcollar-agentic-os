@@ -14,11 +14,15 @@ log = logging.getLogger("graphiti.graph")
 
 
 def _llm_provider() -> str:
-    """Which LLM provider is configured. 'none' means /add will skip."""
+    """Which LLM provider is configured. 'none' means /add will skip.
+
+    NOTE: Portkey routing for graphiti-core is a Phase 2.1.b.2 follow-up;
+    the upstream library constructs its own OpenAI client internally, so
+    we still flag-check the direct provider keys here. Once the follow-up
+    lands, this becomes a simple `portkey or none` check.
+    """
     if settings.openai_api_key:
         return "openai"
-    if settings.nexos_api_key:
-        return "nexos"
     if settings.anthropic_api_key:
         return "anthropic"
     return "none"

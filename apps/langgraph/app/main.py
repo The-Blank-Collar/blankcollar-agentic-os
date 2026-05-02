@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from app import __kind__, __version__
 from app.adapter_client import downstream_health
 from app.classifier import llm_provider
-from app.config import settings
+from app.config import require_runtime_config, settings
 from app.models import HealthResponse, RunRequest, RunStateResponse, RunStatus
 from app.runner import schedule_run
 from app.state import runs
@@ -26,15 +26,13 @@ log = logging.getLogger("langgraph")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Boot guard — refuses to start without Portkey configured. Tests don't
+    # run lifespan, so the keyword-fallback path stays exercisable.
+    require_runtime_config()
     log.info(
         "langgraph starting version=%s classifier=%s",
         __version__, llm_provider(),
     )
-    if llm_provider() == "none":
-        log.warning(
-            "no LLM provider configured — classifier falls back to keyword rules. "
-            "Set NEXOS_API_KEY (preferred) / ANTHROPIC_API_KEY / OPENAI_API_KEY for smarter routing."
-        )
     try:
         yield
     finally:

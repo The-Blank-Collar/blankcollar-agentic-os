@@ -1,12 +1,16 @@
 """LLM providers for Hermes.
 
 Provider preference (first match wins):
-  1. Nexos.ai     — OpenAI-compatible, base https://api.nexos.ai/v1
-                     (Hostinger-issued credits; the production default).
-  2. Anthropic    — direct Claude API (handy for local dev).
-  3. FakeLLM      — deterministic offline fallback so the demo stays runnable.
+  1. Portkey (Anthropic-routed) — production default. Every call is logged
+     in the Portkey dashboard with cost + latency + trace_id.
+  2. FakeLLM — deterministic offline fallback used by tests and by any
+     dev environment that hasn't configured Portkey yet. The startup
+     guard in main.py refuses to boot a non-test process without
+     Portkey, so this branch should not fire in production.
 
-A loud INFO/WARNING line on startup says which one is active.
+The Anthropic Python SDK accepts a `base_url` argument; we point it at
+Portkey's gateway and add `x-portkey-*` headers so requests passthrough
+to Anthropic with full observability. Wire format is unchanged.
 """
 
 from __future__ import annotations
@@ -25,50 +29,40 @@ class LLM(Protocol):
     async def complete(self, *, system: str, user: str) -> str: ...
 
 
-# ---------- Nexos.ai (OpenAI-compatible) -----------------------------------
+# ---------- Portkey (Anthropic via the AI gateway) -------------------------
 
 
-class NexosLLM:
-    """Nexos.ai uses the OpenAI Chat Completions wire format. We use the
-    official `openai` SDK pointed at the Nexos base URL.
+class PortkeyLLM:
+    """Anthropic SDK client routed through Portkey.
 
-    Note: per Hostinger's nexos.ai guide, *do not* use the newer Responses API —
-    Nexos targets the classic Chat Completions endpoint.
+    Portkey accepts Anthropic-shaped payloads at /v1/messages with the
+    auth done via x-portkey-api-key + x-portkey-virtual-key headers. The
+    SDK's own api_key argument is unused on the Portkey side but the
+    SDK refuses to construct without one — we pass an explicit
+    placeholder so the auth path is unambiguous.
     """
 
-    name = "nexos"
+    name = "portkey"
 
-    def __init__(self, api_key: str, base_url: str, model: str, max_tokens: int) -> None:
-        from openai import AsyncOpenAI
-
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self._model = model
-        self._max_tokens = max_tokens
-
-    async def complete(self, *, system: str, user: str) -> str:
-        resp = await self._client.chat.completions.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        choice = resp.choices[0]
-        content = choice.message.content or ""
-        return content.strip()
-
-
-# ---------- Anthropic (direct) ---------------------------------------------
-
-
-class AnthropicLLM:
-    name = "anthropic"
-
-    def __init__(self, api_key: str, model: str, max_tokens: int) -> None:
+    def __init__(
+        self,
+        *,
+        portkey_api_key: str,
+        virtual_key: str,
+        base_url: str,
+        model: str,
+        max_tokens: int,
+    ) -> None:
         from anthropic import AsyncAnthropic as _Client
 
-        self._client = _Client(api_key=api_key)
+        self._client = _Client(
+            api_key="portkey-handles-this",
+            base_url=base_url,
+            default_headers={
+                "x-portkey-api-key": portkey_api_key,
+                "x-portkey-virtual-key": virtual_key,
+            },
+        )
         self._model = model
         self._max_tokens = max_tokens
 
@@ -90,12 +84,18 @@ class AnthropicLLM:
 
 
 class FakeLLM:
-    """No-key fallback. Returns a structured, deterministic stand-in."""
+    """No-key fallback. Returns a structured, deterministic stand-in.
+
+    Used by tests and by any pre-Portkey dev process that imports llm.py
+    directly. Production startups go through require_runtime_config()
+    which refuses to boot without Portkey, so this branch does not fire
+    in deployed environments.
+    """
 
     name = "fake"
 
     async def complete(self, *, system: str, user: str) -> str:
-        head = "FAKE-LLM (set NEXOS_API_KEY or ANTHROPIC_API_KEY for real answers)"
+        head = "FAKE-LLM (set PORTKEY_API_KEY + PORTKEY_VIRTUAL_KEY_ANTHROPIC for real answers)"
         sys_excerpt = (system[:160] + "…") if len(system) > 160 else system
         user_excerpt = (user[:240] + "…") if len(user) > 240 else user
         return (
@@ -107,29 +107,22 @@ class FakeLLM:
 
 
 def make_llm() -> LLM:
-    if settings.nexos_api_key:
+    if settings.portkey_api_key and settings.portkey_virtual_key_anthropic:
         log.info(
-            "hermes.llm=nexos base=%s model=%s",
-            settings.nexos_base_url,
-            settings.nexos_model,
+            "hermes.llm=portkey base=%s model=%s",
+            settings.portkey_base_url,
+            settings.model,
         )
-        return NexosLLM(
-            api_key=settings.nexos_api_key,
-            base_url=settings.nexos_base_url,
-            model=settings.nexos_model,
-            max_tokens=settings.max_tokens,
-        )
-
-    if settings.anthropic_api_key:
-        log.info("hermes.llm=anthropic model=%s", settings.model)
-        return AnthropicLLM(
-            api_key=settings.anthropic_api_key,
+        return PortkeyLLM(
+            portkey_api_key=settings.portkey_api_key,
+            virtual_key=settings.portkey_virtual_key_anthropic,
+            base_url=settings.portkey_base_url,
             model=settings.model,
             max_tokens=settings.max_tokens,
         )
 
     log.warning(
-        "hermes.llm=FAKE — set NEXOS_API_KEY or ANTHROPIC_API_KEY for real reasoning. "
-        "Service stays runnable; answers are deterministic stand-ins."
+        "hermes.llm=FAKE — set PORTKEY_API_KEY + PORTKEY_VIRTUAL_KEY_ANTHROPIC "
+        "for real reasoning. Service stays runnable; answers are deterministic stand-ins."
     )
     return FakeLLM()
