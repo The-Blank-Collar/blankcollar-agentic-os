@@ -82,6 +82,16 @@ POST /forget     { memory_id, reason }
 - The `bc_net` bridge network is the only path between services.
 - Future hosted product: Supabase JWTs validated at the Paperclip edge before any L1–L4 call.
 
+### Document ingestion (Phase 2.4)
+
+Three context surfaces in the brain, each different by intent:
+
+- **`ops.knowledge_doc`** — curated wiki entries (short, hand-written, link-rich).
+- **`brain.memory`** — free-form one-liners ("Mira's birthday is Sept 12") + vectors in Qdrant.
+- **`ops.document` + `ops.document_chunk`** — long-form ingested content (markdown files, URLs, future PDFs). Each doc is split by the deterministic paragraph-aware chunker into ~1500-char overlapping chunks. Per-org dedupe via `sha256(content_md)` makes re-ingestion safe + cheap; `force=true` replaces the prior copy. Keyword search (GIN tsvector) works today; vector search via gbrain is a planned follow-up.
+
+The CLI surfaces this via `bc doc add`, `bc docs`, `bc docs search`, `bc doc <id>`, and `bc doc remove`. See `docs/INGESTION.md` for the operator walkthrough.
+
 ### Simulation + feedback (Phase 2.3)
 
 Two related primitives that together let the operator verify-before-running and rate-after-running:

@@ -71,6 +71,16 @@ COMMANDS
                            rate a finished run (canned tags: wrong-tone,
                            missing-fact, hallucinated, too-long, perfect, …)
   feedback <run_id> --list   list every feedback entry on a run
+  doc add <file>           ingest a markdown / text file into the brain
+  doc add --url=<url>      fetch a URL, extract text, ingest
+                           common flags: --title=... --tags=a,b,c --scope=X
+                                         --force (re-ingest if hash matches)
+                                         --target-chars=N --overlap-chars=N
+                           defaults: target=1500, overlap=150, min=50 chars
+  docs                     list ingested documents (--scope --tag filters)
+  docs search <query>      keyword search across chunks
+  doc <id>                 show one document's metadata + chunk count
+  doc remove <id>          delete a document (chunks cascade)
   routines                 list active kind=routine goals + next cron fire
   triggers <goal_id>       list schedule/event/api triggers on a goal
   fire <trigger_id>        manually fire a trigger (api triggers need --token)

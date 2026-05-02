@@ -359,6 +359,51 @@ When `pending`, an `ops.approval` row is created (`action_kind="payment.charge"`
 GET /payments/requests?status=pending&limit=50
 ```
 
+### Documents (Phase 2.4)
+
+Long-form content ingestion. Distinct from `ops.knowledge_doc` (curated wiki) and `brain.memory` (one-line memories). Full operator walkthrough in `docs/INGESTION.md`.
+
+```http
+POST /documents/markdown
+{
+  "title":           "Meeting notes 2026-04-29",
+  "content_md":      "# Notes\n\n…",
+  "source_url":      "https://...",          // optional
+  "source_filename": "notes.md",             // optional
+  "mime_type":       "text/markdown",        // default
+  "scope":           "company",              // personal | company | shared
+  "tags":            ["q3","finance"],
+  "force":           false,                  // re-ingest if hash matches
+  "target_chars":    1500,                   // chunker tuning (optional)
+  "overlap_chars":   150,
+  "min_chars":       50
+}
+→ 201 { "document_id", "chunk_count", "deduplicated": false, "document": {...} }
+→ 200 { "document_id", "chunk_count", "deduplicated": true,  "document": {...} }    // dedupe match
+→ 400 { "error": "invalid_body", ... }
+```
+
+```http
+GET /documents?scope=company&tag=q3&limit=50
+→ 200 [{ id, title, source_url, source_filename, mime_type, tags[],
+         char_count, chunk_count, ingested_at, ... }]
+
+GET /documents/search?q=quarterly+target&limit=20
+→ 200 [{ chunk_id, document_id, chunk_index, total_chunks, text,
+         char_start, char_end, title, source_url, ingested_at }]
+
+GET /documents/{id}
+→ 200 { ...document }
+→ 404 { "error": "not_found" }
+
+GET /documents/{id}/chunks
+→ 200 [{ id, chunk_index, total_chunks, text, char_start, char_end, ... }]
+
+DELETE /documents/{id}
+→ 204
+→ 404 { "error": "not_found" }
+```
+
 ### Tools (MCP registry)
 
 YAML manifests in `packages/tools/manifests/{shared,company,personal}/` upsert into `ops.tool` on every Paperclip boot. The catalog is read-only at the API layer in v0; invocation lives behind a future MCP-client transport.

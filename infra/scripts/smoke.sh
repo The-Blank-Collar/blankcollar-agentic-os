@@ -255,5 +255,60 @@ else
   echo "  → $FB_COUNT feedback row(s) on run ${ANY_RUN:0:8}"
 fi
 
+# 19. document ingestion (Phase 2.4) — markdown blob + dedupe + force
+step "document ingestion — markdown blob"
+DOC_BODY=$(cat <<'EOF'
+{
+  "title":"smoke-doc",
+  "content_md":"# Smoke doc\n\nThis is a *short* markdown document used by the smoke test.\n\nIt has two paragraphs to exercise the chunker.",
+  "tags":["smoke","2.4"],
+  "scope":"company"
+}
+EOF
+)
+DOC=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/documents/markdown" \
+  -H 'content-type: application/json' \
+  -d "$DOC_BODY")
+DOC_HTTP_CODE=$(echo "$DOC" | tail -n 1)
+DOC_HTTP_BODY=$(echo "$DOC" | head -n -1)
+if [[ "$DOC_HTTP_CODE" -ne 201 && "$DOC_HTTP_CODE" -ne 200 ]]; then
+  echo "❌ POST /api/documents/markdown returned $DOC_HTTP_CODE" >&2
+  echo "$DOC_HTTP_BODY" >&2
+  exit 1
+fi
+DOC_ID=$(echo "$DOC_HTTP_BODY" | jq -r '.document_id')
+DOC_CHUNKS=$(echo "$DOC_HTTP_BODY" | jq -r '.chunk_count')
+DOC_DEDUP=$(echo "$DOC_HTTP_BODY" | jq -r '.deduplicated')
+echo "  → document ${DOC_ID:0:8}  chunks=$DOC_CHUNKS  deduplicated=$DOC_DEDUP"
+
+# Same blob again → must dedupe (200 + deduplicated=true)
+step "document ingestion — dedupe re-upload"
+DOC2=$(curl -s -X POST "${BASE}/api/documents/markdown" \
+  -H 'content-type: application/json' \
+  -d "$DOC_BODY")
+DOC2_DEDUP=$(echo "$DOC2" | jq -r '.deduplicated')
+DOC2_ID=$(echo "$DOC2" | jq -r '.document_id')
+if [[ "$DOC2_DEDUP" != "true" || "$DOC2_ID" != "$DOC_ID" ]]; then
+  echo "❌ expected re-upload to dedupe to the same id; got deduplicated=$DOC2_DEDUP id=$DOC2_ID" >&2
+  exit 1
+fi
+echo "  → re-upload deduplicated to ${DOC2_ID:0:8} (same id ✓)"
+
+# Search across chunks
+step "document search — keyword"
+SEARCH=$(curl -s "${BASE}/api/documents/search?q=smoke&limit=5")
+SEARCH_COUNT=$(echo "$SEARCH" | jq 'length')
+echo "  → $SEARCH_COUNT chunk(s) matched 'smoke'"
+[[ "$SEARCH_COUNT" -ge 1 ]] || { echo "❌ expected at least 1 search hit" >&2; exit 1; }
+
+# Cleanup: delete the smoke doc so re-runs stay deterministic
+step "document delete — cleanup"
+DEL_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${BASE}/api/documents/${DOC_ID}")
+if [[ "$DEL_CODE" -ne 204 ]]; then
+  echo "❌ DELETE /api/documents/${DOC_ID} returned $DEL_CODE" >&2
+  exit 1
+fi
+echo "  → deleted ${DOC_ID:0:8}"
+
 echo
 echo "✅ smoke passed — every Phase-3.5 surface responded as expected."
