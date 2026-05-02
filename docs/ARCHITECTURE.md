@@ -82,6 +82,15 @@ POST /forget     { memory_id, reason }
 - The `bc_net` bridge network is the only path between services.
 - Future hosted product: Supabase JWTs validated at the Paperclip edge before any L1–L4 call.
 
+### Database scope helpers (`apps/paperclip/src/db.ts`)
+
+Every Paperclip route that touches tenant data runs through one of two transaction wrappers. They are the single source of truth for who can read/write what.
+
+- `withOrgScope(orgId, fn)` — binds the session GUC `app.org_id` for the duration of a transaction. Every RLS-enabled table has an `app_scope_org` policy that allows rows where `org_id = current_setting('app.org_id')`. Use this for **every user-facing request** — it's the tenant fence.
+- `withSystemScope(fn)` — binds `app.system_scope = 'true'`. A sibling `app_system_scope` PERMISSIVE policy on every RLS-enabled table allows the row through whenever this flag is set. Use **only** for cross-org engine tasks: the worker claiming queued runs, the scheduler scanning every org for due routines, the bootstrap sweeping orgs, the health-counts probe. Never call from a request handler.
+
+Anything that uses a bare `query()` or `tx()` without one of these helpers is a bug — it relies on the policy's permissive-on-unset branch (kept for backward compatibility) and will break the moment we tighten the policy in the strict-mode flip.
+
 ## What's intentionally out of scope for Phase 0
 
 - Real agent code (Hermes/OpenClaw use placeholder containers).

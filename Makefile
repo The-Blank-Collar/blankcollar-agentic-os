@@ -49,6 +49,17 @@ doctor: ## Health-check every service
 smoke: ## End-to-end exercise of the live API (capture, inbox, briefing, self-audit, knowledge, …)
 	./infra/scripts/smoke.sh
 
+.PHONY: smoke-local
+smoke-local: ## Bring up the stack, wait for doctor, run smoke, tear down
+	@$(COMPOSE) up -d
+	@echo "→ waiting for stack to be healthy"
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12; do \
+	  if ./infra/scripts/doctor.sh >/dev/null 2>&1; then echo "✓ doctor green"; break; fi; \
+	  if [ $$i -eq 12 ]; then echo "✗ doctor never went green" >&2; $(COMPOSE) down; exit 1; fi; \
+	  sleep 5; \
+	done
+	@./infra/scripts/smoke.sh; rc=$$?; $(COMPOSE) down; exit $$rc
+
 .PHONY: cli
 cli: ## Build + link the bc CLI globally (then `bc help` works)
 	@cd packages/cli && npm install --silent && npm run build && npm link
