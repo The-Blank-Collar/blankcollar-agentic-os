@@ -1,0 +1,9 @@
+node_modules
+dist
+*.log
+.vite
+
+# Root .gitignore blanket-ignores `data/`; whitelist our design fixtures
+# folder so future files there get tracked automatically.
+!src/data/
+!src/data/**

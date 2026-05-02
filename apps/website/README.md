@@ -1,21 +1,63 @@
-# Website (`www.blankcollar.ai`)
+# Website — `blankcollar.ai` console
 
-Marketing surface for The Blank Collar. Phase 8 deliverable.
+Swiss-editorial React surface for the Agentic OS. Vite + React 18 + TypeScript;
+nginx serves the built dist in Docker. Replaces Paperclip's htmx UI as the
+front door at `:3000` (Paperclip's REST API moved to `:3001`).
 
 ## Status
 
-Phase 0: a static placeholder card under `public/`. Not wired into `docker-compose.yml` yet — uncomment the `website:` service block when ready.
+**Sprint 1 (this slice)** — Vite scaffold, tokens + design vocabulary,
+sidebar/topbar shell, Dashboard rendered against fixtures, Tweaks panel
+(theme · density · role · surface), Mobile placeholder behind the surface
+toggle. No backend coupling yet — the screens that wire to the live API
+arrive in S2 onward.
 
-## What lands here
+## Local dev
 
-- Manifesto-driven landing page (see `docs/MARKETING.md`)
-- Sign-in handoff to the hosted Paperclip
-- Templates gallery (Solo Creator, Two-Person SaaS, Family Agency)
-- Pricing page
-- Blog import from `www.theblankcollar.com`
+```bash
+cd apps/website
+npm install
+npm run dev          # http://localhost:5173
+```
 
-## Tech (TBD)
+Or via the full stack:
 
-Likely Next.js or Astro. Whatever it is must be statically deployable so we can ship from a CDN.
+```bash
+make up              # http://localhost:3000  ← website
+                     # http://localhost:3001  ← paperclip API
+```
 
-The point isn't the tech, it's the **calm**.
+## Layout
+
+```
+apps/website/
+├── index.html               # Vite entry (Geist + Instrument Serif preconnects)
+├── vite.config.ts
+├── tsconfig.json
+├── Dockerfile               # node:22 build → nginx:alpine runtime
+└── src/
+    ├── main.tsx             # ReactDOM root
+    ├── App.tsx              # routing, tweaks, surface toggle
+    ├── icons.tsx            # I, ChannelMark, Sigil
+    ├── styles/
+    │   └── tokens.css       # Swiss editorial monochrome (dark first)
+    ├── shell/
+    │   ├── Sidebar.tsx
+    │   └── Topbar.tsx
+    ├── pages/
+    │   ├── Dashboard.tsx    # fully ported S1
+    │   ├── MobilePlaceholder.tsx
+    │   └── (other pages — stub in S1, wired in S2–S5)
+    ├── lib/
+    │   └── tweaks.tsx       # floating panel + radios/toggles
+    └── data/
+        └── fixtures.ts      # design fixtures (retired one screen at a time)
+```
+
+## What's deferred
+
+- Live API wiring (S2): `/goals`, `/runs`, `/audit`, `/agents`
+- Brain constellation (S3) + KRs (`ops.key_result` migration)
+- Kanban + Settings + Inbox (S4)
+- ⌘K palette · Print mode · htmx removal · doctor.sh probe (S5)
+- Auth UI · governance writes · Channels OAuth · voice · mobile · E2B

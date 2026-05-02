@@ -170,7 +170,7 @@ services:
       NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
       NANGO_GOOGLE_PROVIDER_KEY: ${NANGO_GOOGLE_PROVIDER_KEY:-google}
     ports:
-      - "${PAPERCLIP_PORT:-3000}:80"
+      - "${PAPERCLIP_PORT:-3001}:80"
     volumes:
       - ./brand:/app/brand:ro
       - ./packages/skills:/app/packages/skills:ro
@@ -505,6 +505,27 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+    networks: [bc_net]
+
+  # =========================================================================
+  # Website — Swiss-editorial React console (Vite + React + TS → nginx).
+  #   Replaces paperclip's htmx UI as the front door at :3000.
+  #   Talks to paperclip (now :3001) via its REST API; in-cluster name is
+  #   `paperclip` so the website Docker image can reach it as
+  #   http://paperclip:80 — same address paperclip's own services already use.
+  # =========================================================================
+  website:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: ./apps/website
+      dockerfile: Dockerfile
+    image: blankcollar/website:0.1.0
+    container_name: bc_website
+    ports:
+      - "${WEBSITE_PORT:-3000}:80"
+    depends_on:
+      paperclip:
+        condition: service_started
     networks: [bc_net]
 
   # =========================================================================
