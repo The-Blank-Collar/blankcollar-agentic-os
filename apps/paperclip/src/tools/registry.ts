@@ -39,10 +39,10 @@ async function upsertShared(m: LoadedTool): Promise<void> {
     await client.query(
       `INSERT INTO ops.tool (
          org_id, slug, version, scope, name, description, transport, target,
-         env_keys, input_schema, manifest_path, enabled
+         env_keys, input_schema, tool_name, manifest_path, enabled
        )
        VALUES (NULL, $1, $2, 'shared'::ops.skill_scope, $3, $4, $5::ops.tool_transport, $6,
-               $7::jsonb, $8::jsonb, $9, true)
+               $7::jsonb, $8::jsonb, $9, $10, true)
        ON CONFLICT (COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid), slug, version)
        DO UPDATE SET
          name          = EXCLUDED.name,
@@ -51,6 +51,7 @@ async function upsertShared(m: LoadedTool): Promise<void> {
          target        = EXCLUDED.target,
          env_keys      = EXCLUDED.env_keys,
          input_schema  = EXCLUDED.input_schema,
+         tool_name     = EXCLUDED.tool_name,
          manifest_path = EXCLUDED.manifest_path,
          updated_at    = now()`,
       [
@@ -62,6 +63,7 @@ async function upsertShared(m: LoadedTool): Promise<void> {
         m.target,
         JSON.stringify(m.env_keys),
         JSON.stringify(m.input_schema),
+        m.tool_name ?? null,
         m.manifest_path,
       ],
     );

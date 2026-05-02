@@ -411,9 +411,25 @@ export const ToolManifest = z
     target:       z.string().min(1).max(500),
     env_keys:     z.array(z.string().min(1).max(120)).default([]),
     input_schema: z.record(z.unknown()).default({}),
+    /**
+     * Tool name on the MCP server side. Defaults to the segment after
+     * the last `.` in `id` (so `web.fetch` → `fetch`). Set explicitly
+     * when the server-side tool name differs from the slug suffix.
+     */
+    tool_name:    z.string().min(1).max(120).optional(),
   })
   .strict();
 export type ToolManifest = z.infer<typeof ToolManifest>;
+
+export const ToolInvokeBody = z
+  .object({
+    input:  z.record(z.unknown()).default({}),
+    run_id: z.string().uuid().nullable().optional(),
+    /** Per-call timeout override in ms; capped server-side at 60s. */
+    timeout_ms: z.number().int().min(1_000).max(60_000).optional(),
+  })
+  .strict();
+export type ToolInvokeBody = z.infer<typeof ToolInvokeBody>;
 
 export const PolicyCreate = z
   .object({

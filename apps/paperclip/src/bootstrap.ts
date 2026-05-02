@@ -696,6 +696,11 @@ const ADDITIVE_MIGRATIONS = [
    );`,
   `CREATE UNIQUE INDEX IF NOT EXISTS tool_uniq_idx
       ON ops.tool (COALESCE(org_id, '00000000-0000-0000-0000-000000000000'::uuid), slug, version);`,
+  // Phase 2.2: tool_name override — when the server-side MCP tool name
+  // differs from the dotted slug suffix (e.g. slug "github.list_issues"
+  // but the server tool is named "list-issues"). Defaults to NULL; the
+  // route handler derives a fallback from the slug if absent.
+  `ALTER TABLE ops.tool ADD COLUMN IF NOT EXISTS tool_name text;`,
   `ALTER TABLE ops.tool ENABLE ROW LEVEL SECURITY;`,
   `ALTER TABLE ops.tool FORCE  ROW LEVEL SECURITY;`,
   `DROP POLICY IF EXISTS app_scope_org ON ops.tool;`,
@@ -783,6 +788,48 @@ const ADDITIVE_MIGRATIONS = [
        USING      (current_setting('app.system_scope', true) = 'true')
        WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
   ]),
+
+  // -- ops.tool_call_log — Phase 2.2 --------------------------------------
+  // One row per MCP tool invocation. Mirrors ops.llm_call_log's shape.
+  // Recorded by the MCP client wrapper on every invoke (success or error).
+  // Backs `bc tool` (future verb) and forensic debugging.
+  `CREATE TABLE IF NOT EXISTS ops.tool_call_log (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid REFERENCES core.organization(id) ON DELETE SET NULL,
+     run_id        uuid REFERENCES ops.run(id) ON DELETE SET NULL,
+     tool_slug     text NOT NULL,
+     tool_version  integer NOT NULL DEFAULT 1,
+     input         jsonb NOT NULL DEFAULT '{}'::jsonb,
+     output        jsonb,
+     is_error      boolean NOT NULL DEFAULT false,
+     error         text,
+     latency_ms    integer NOT NULL DEFAULT 0,
+     stderr_tail   text,
+     created_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS tool_call_log_org_idx
+      ON ops.tool_call_log (org_id, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS tool_call_log_run_idx
+      ON ops.tool_call_log (run_id, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS tool_call_log_slug_idx
+      ON ops.tool_call_log (tool_slug, created_at DESC);`,
+  `ALTER TABLE ops.tool_call_log ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.tool_call_log FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.tool_call_log;`,
+  `CREATE POLICY app_scope_org ON ops.tool_call_log
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id IS NULL
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.tool_call_log;`,
+  `CREATE POLICY app_system_scope ON ops.tool_call_log
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 
   // -- ops.llm_call_log — Phase 2.1.c -------------------------------------
   // One row per Portkey-routed LLM call. The gateway writes these on every
