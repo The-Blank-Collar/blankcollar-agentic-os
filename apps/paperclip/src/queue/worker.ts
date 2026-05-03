@@ -24,6 +24,7 @@ import { audit } from "../audit.js";
 import { config } from "../config.js";
 import { withOrgScope, withSystemScope } from "../db.js";
 import type { Scope } from "../schemas.js";
+import { cascadeFromRun } from "../swarms/dispatch.js";
 import type { AdapterClient } from "./adapter-client.js";
 import { getAdapter, knownKinds } from "./registry.js";
 
@@ -256,6 +257,14 @@ export class Worker {
         },
         client,
       );
+      // Sprint 5.6: if this run was a swarm subtask, mark the subtask
+      // and cascade to dispatch any newly-ready dependents in the DAG.
+      // No-op for non-swarm runs (cascadeFromRun returns null).
+      try {
+        await cascadeFromRun(client, runId, "succeeded", output, null, scopeFor(goal));
+      } catch {
+        // Cascade failures don't roll back the run's success.
+      }
     });
   }
 
@@ -281,6 +290,12 @@ export class Worker {
         },
         client,
       );
+      // Sprint 5.6: cascade subtask failure → cancel dependents.
+      try {
+        await cascadeFromRun(client, runId, "failed", null, error, scopeFor(goal));
+      } catch {
+        // see succeed() above — best-effort cascade.
+      }
     });
   }
 

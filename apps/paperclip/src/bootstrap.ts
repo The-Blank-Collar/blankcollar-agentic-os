@@ -807,6 +807,7 @@ const ADDITIVE_MIGRATIONS = [
     "ops.connector_artifact",
     "ops.outcome",
     "ops.outcome_metric",
+    "ops.subtask",
   ].flatMap((tbl) => [
     `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
     `CREATE POLICY app_system_scope ON ${tbl}
@@ -1114,6 +1115,61 @@ const ADDITIVE_MIGRATIONS = [
   `ALTER TABLE ops.outcome_metric FORCE  ROW LEVEL SECURITY;`,
   `DROP POLICY IF EXISTS app_scope_org ON ops.outcome_metric;`,
   `CREATE POLICY app_scope_org ON ops.outcome_metric
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  // -- ops.subtask — Phase 5b / Sprint 5.6 --------------------------------
+  // First-class DAG subtasks for swarm goals. Distinct from the legacy
+  // plan-as-jsonb in `ops.goal.metadata.plan.subtasks` — both shapes
+  // coexist. Goals with rows here run via the swarm dispatcher (parallel
+  // fan-out, dep-aware); goals without rows fall back to the existing
+  // sequential dispatch unchanged.
+  //
+  // depends_on[] holds zero or more sibling subtask ids. A subtask is
+  // 'ready' when every entry in depends_on has reached 'succeeded'.
+  // Dispatch hops it to 'queued', creates an ops.run with run_id set,
+  // and the worker handles the rest. On run terminal status the swarm
+  // tick (or the worker hook) flips the subtask status + cascades
+  // dependents.
+  //
+  // status state machine:
+  //   pending  → ready     (deps satisfied)
+  //   ready    → queued    (dispatcher creates a run)
+  //   queued   → running   (worker claims)
+  //   running  → succeeded | failed | cancelled
+  //   any non-terminal → cancelled (operator cancels the parent goal)
+  `CREATE TABLE IF NOT EXISTS ops.subtask (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     goal_id       uuid NOT NULL REFERENCES ops.goal(id) ON DELETE CASCADE,
+     ordinal       integer NOT NULL,
+     title         text NOT NULL,
+     instruction   text NOT NULL,
+     agent_kind    text NOT NULL DEFAULT 'hermes',
+     skill_slug    text,
+     depends_on    uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+     status        text NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending','ready','queued','running','succeeded','failed','cancelled')),
+     run_id        uuid REFERENCES ops.run(id) ON DELETE SET NULL,
+     output        jsonb,
+     error         text,
+     created_at    timestamptz NOT NULL DEFAULT now(),
+     updated_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS subtask_goal_ordinal_idx
+     ON ops.subtask (goal_id, ordinal);`,
+  `CREATE INDEX IF NOT EXISTS subtask_org_status_idx
+     ON ops.subtask (org_id, status);`,
+  `CREATE INDEX IF NOT EXISTS subtask_run_idx
+     ON ops.subtask (run_id) WHERE run_id IS NOT NULL;`,
+  `ALTER TABLE ops.subtask ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.subtask FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.subtask;`,
+  `CREATE POLICY app_scope_org ON ops.subtask
      USING      (current_setting('app.org_id', true) IS NULL
                  OR current_setting('app.org_id', true) = ''
                  OR org_id::text = current_setting('app.org_id', true))
@@ -1443,6 +1499,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.connector_artifact",
   "ops.outcome",
   "ops.outcome_metric",
+  "ops.subtask",
 ];
 
 function buildStrictMigrations(): string[] {

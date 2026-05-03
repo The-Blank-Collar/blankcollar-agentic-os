@@ -41,6 +41,7 @@ import { selfImprovementRoutes } from "./routes/self_improvement.js";
 import { skillDraftRoutes } from "./routes/skill_drafts.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
+import { swarmRoutes } from "./routes/swarms.js";
 import { toolRoutes } from "./routes/tools.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { syncSkillRegistry } from "./skills/registry.js";
@@ -139,6 +140,7 @@ async function main(): Promise<void> {
   await app.register(safeguardRoutes);
   await app.register(searchRoutes);
   await app.register(statsRoutes);
+  await app.register(swarmRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
   await app.register(autonomyRoutes);

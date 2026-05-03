@@ -58,6 +58,9 @@ import type {
   SkillDraftStatus,
   SkillRow,
   SimilarOutcome,
+  SubtaskRow,
+  SwarmDispatchResult,
+  SwarmPlanResult,
   Whoami,
 } from "./types.js";
 
@@ -136,6 +139,11 @@ export interface ApiClient {
   patchSkillDraft(id: string, body: SkillDraftPatch): Promise<SkillDraftRow>;
   promoteSkillDraft(id: string): Promise<SkillDraftPromoteResult>;
   rejectSkillDraft(id: string): Promise<void>;
+  // -- Swarms / subtasks (Phase 5b / Sprint 5.6) ----
+  planSwarm(goalId: string): Promise<SwarmPlanResult>;
+  listSubtasks(goalId: string): Promise<SubtaskRow[]>;
+  dispatchSwarm(goalId: string, opts?: { replan?: boolean }): Promise<SwarmDispatchResult>;
+  cancelSubtask(id: string): Promise<void>;
   // -- Outcomes (Phase 5b / Sprint 5.5) ----
   recordOutcome(runId: string, body: OutcomeCreateBody): Promise<OutcomeRow>;
   listOutcomes(opts?: { skillSlug?: string; agentKind?: string; outputKind?: string; limit?: number }): Promise<OutcomeRow[]>;
@@ -335,6 +343,24 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
         "POST",
         `/api/skill-drafts/${encodeURIComponent(id)}/reject`,
       ),
+    planSwarm: (goalId) =>
+      request<SwarmPlanResult>(
+        "POST",
+        `/api/goals/${encodeURIComponent(goalId)}/plan-swarm`,
+      ),
+    listSubtasks: (goalId) =>
+      request<SubtaskRow[]>(
+        "GET",
+        `/api/goals/${encodeURIComponent(goalId)}/subtasks`,
+      ),
+    dispatchSwarm: (goalId, opts) =>
+      request<SwarmDispatchResult>(
+        "POST",
+        `/api/goals/${encodeURIComponent(goalId)}/dispatch-swarm`,
+        { replan: opts?.replan ?? false } as unknown as Json,
+      ),
+    cancelSubtask: (id) =>
+      request<void>("POST", `/api/subtasks/${encodeURIComponent(id)}/cancel`),
     recordOutcome: (runId, body) =>
       request<OutcomeRow>(
         "POST",

@@ -1,6 +1,13 @@
 import React, { useState } from "react";
 
-import type { GoalWithDetail, KeyResult, KeyResultCreate, Run } from "@blankcollar/shared";
+import type {
+  GoalWithDetail,
+  KeyResult,
+  KeyResultCreate,
+  Run,
+  SubtaskRow,
+  SubtaskStatus,
+} from "@blankcollar/shared";
 
 import { I } from "../icons";
 import { api } from "../lib/api";
@@ -196,6 +203,9 @@ function GoalDetailInner({
             keyResults={g.key_results}
             onChanged={goalQ.refetch}
           />
+
+          <SwarmSection goalId={g.id} />
+
 
           <div className="section">
             <div className="section-head">
@@ -483,6 +493,265 @@ const KrComposer = ({
         </button>
       </div>
     </form>
+  );
+};
+
+// -- Swarm subtasks (Sprint 5.6) ---------------------------------------------
+
+const SUBTASK_TONE: Record<SubtaskStatus, string> = {
+  pending:    "var(--muted-2)",
+  ready:      "var(--info)",
+  queued:     "var(--info)",
+  running:    "var(--info)",
+  succeeded:  "var(--pos)",
+  failed:     "var(--neg)",
+  cancelled:  "var(--muted)",
+};
+
+const SwarmSection = ({ goalId }: { goalId: string }) => {
+  const subtasksQ = useFetch<SubtaskRow[]>(
+    () => api.listSubtasks(goalId),
+    [goalId],
+  );
+  const [busy, setBusy] = useState<"plan" | "dispatch" | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onPlan = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("plan");
+    setErr(null);
+    setWarnings([]);
+    try {
+      const r = await api.planSwarm(goalId);
+      setWarnings(r.warnings);
+      await subtasksQ.refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onDispatch = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("dispatch");
+    setErr(null);
+    try {
+      await api.dispatchSwarm(goalId);
+      await subtasksQ.refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onCancel = async (subtaskId: string): Promise<void> => {
+    if (busy) return;
+    if (!window.confirm("Cancel this subtask? Any dependents will also be cancelled.")) return;
+    try {
+      await api.cancelSubtask(subtaskId);
+      await subtasksQ.refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const subtasks = subtasksQ.data ?? [];
+  const hasPlan = subtasks.length > 0;
+
+  return (
+    <div className="section">
+      <div className="section-head">
+        <div className="stack-h">
+          <span className="title">Swarm plan</span>
+          {hasPlan && <span className="pill">{subtasks.length} step{subtasks.length === 1 ? "" : "s"}</span>}
+        </div>
+        <div className="stack-h">
+          <button className="btn btn-sm" onClick={onPlan} disabled={busy !== null}>
+            <I name="spark" size={12} /> {busy === "plan" ? "Planning…" : hasPlan ? "Re-plan" : "Plan with Chief"}
+          </button>
+          {hasPlan && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={onDispatch}
+              disabled={busy !== null}
+            >
+              {busy === "dispatch" ? "Dispatching…" : "Dispatch ready"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {err && (
+        <div
+          style={{
+            margin: "0 0 12px",
+            padding: 10,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--neg)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+          }}
+        >
+          <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>FAILED</span>
+          {err}
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div
+          style={{
+            margin: "0 0 12px",
+            padding: 10,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--warn)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+          }}
+        >
+          <div className="mono" style={{ color: "var(--warn)", marginBottom: 6 }}>
+            {warnings.length} WARNING{warnings.length === 1 ? "" : "S"}
+          </div>
+          {warnings.map((w, i) => <div key={i} style={{ marginTop: 2 }}>· {w}</div>)}
+        </div>
+      )}
+
+      {subtasksQ.loading && <Loading label="Loading subtasks…" />}
+      {subtasksQ.error && <ErrorState error={subtasksQ.error} onRetry={subtasksQ.refetch} />}
+      {!subtasksQ.loading && !subtasksQ.error && subtasks.length === 0 && (
+        <div className="empty-hint">
+          No swarm plan yet. "Plan with Chief" decomposes the goal into a DAG
+          of subtasks; "Dispatch ready" queues the ones whose dependencies
+          are clear.
+        </div>
+      )}
+      {!subtasksQ.loading && !subtasksQ.error && subtasks.length > 0 && (
+        <SubtaskList subtasks={subtasks} onCancel={onCancel} />
+      )}
+    </div>
+  );
+};
+
+const SubtaskList = ({
+  subtasks,
+  onCancel,
+}: {
+  subtasks: SubtaskRow[];
+  onCancel: (id: string) => void;
+}) => {
+  // Build a map of id → ordinal for friendlier dep labels.
+  const ordinalById = new Map(subtasks.map((s) => [s.id, s.ordinal]));
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      {subtasks.map((s, i) => {
+        const tone = SUBTASK_TONE[s.status];
+        const cancellable =
+          s.status === "pending" ||
+          s.status === "ready" ||
+          s.status === "queued" ||
+          s.status === "running";
+        return (
+          <div
+            key={s.id}
+            style={{
+              padding: "14px 18px",
+              borderTop: i ? "1px solid var(--line)" : 0,
+              display: "grid",
+              gridTemplateColumns: "auto 32px 1fr auto",
+              gap: 12,
+              alignItems: "flex-start",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                alignSelf: "stretch",
+                background: tone,
+                borderRadius: 2,
+                minHeight: 36,
+              }}
+            />
+            <span
+              className="num"
+              style={{
+                fontSize: 13,
+                color: "var(--muted)",
+                paddingTop: 2,
+              }}
+            >
+              {s.ordinal}
+            </span>
+            <div>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 4 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 500 }}>{s.title}</span>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: tone,
+                  }}
+                >
+                  {s.status}
+                </span>
+              </div>
+              <div className="small" style={{ color: "var(--ink-2)", maxWidth: 720, lineHeight: 1.5 }}>
+                {s.instruction}
+              </div>
+              <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 6 }}>
+                {s.agent_kind}
+                {s.skill_slug && ` · skill=${s.skill_slug}`}
+                {s.depends_on.length > 0 && (
+                  <>
+                    {" · depends on "}
+                    {s.depends_on
+                      .map((id) => ordinalById.get(id) ?? "?")
+                      .join(", ")}
+                  </>
+                )}
+                {s.run_id && (
+                  <>
+                    {" · "}
+                    <span>run {s.run_id.slice(0, 8)}</span>
+                  </>
+                )}
+              </div>
+              {s.error && (
+                <div
+                  className="tiny"
+                  style={{
+                    marginTop: 6,
+                    color: "var(--neg)",
+                    fontFamily: "var(--font-mono)",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  error: {s.error}
+                </div>
+              )}
+            </div>
+            <div>
+              {cancellable && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => onCancel(s.id)}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 };
 

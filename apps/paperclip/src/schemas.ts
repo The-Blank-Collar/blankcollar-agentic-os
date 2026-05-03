@@ -756,6 +756,16 @@ export const OutcomeSimilarQuery = z
   });
 export type OutcomeSimilarQuery = z.infer<typeof OutcomeSimilarQuery>;
 
+// ---------- Swarms / Chief of Staff (Phase 5b / Sprint 5.6) ---------------
+
+export const SwarmDispatchBody = z
+  .object({
+    /** When true, also re-runs the planner first. */
+    replan: z.boolean().default(false),
+  })
+  .strict();
+export type SwarmDispatchBody = z.infer<typeof SwarmDispatchBody>;
+
 // ---------- Audit ---------------------------------------------------------
 
 export const AuditQuery = z

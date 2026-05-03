@@ -535,6 +535,47 @@ export interface SimilarOutcome {
   created_at: string;
 }
 
+// ---------- Swarms / subtasks (Phase 5b / Sprint 5.6) ----------------------
+
+export type SubtaskStatus =
+  | "pending"
+  | "ready"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export interface SubtaskRow {
+  id: string;
+  org_id: string;
+  goal_id: string;
+  ordinal: number;
+  title: string;
+  instruction: string;
+  agent_kind: string;
+  skill_slug: string | null;
+  depends_on: string[];
+  status: SubtaskStatus;
+  run_id: string | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SwarmPlanResult {
+  subtasks: SubtaskRow[];
+  warnings: string[];
+  llm_provider: string | null;
+  llm_model: string | null;
+}
+
+export interface SwarmDispatchResult {
+  queued_subtask_ids: string[];
+  queued_run_ids: string[];
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {
