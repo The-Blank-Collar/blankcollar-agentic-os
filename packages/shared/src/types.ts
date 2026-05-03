@@ -226,6 +226,41 @@ export interface InboxSummary {
   };
 }
 
+// ---------- Autonomy modes (Phase 5b / Sprint 5.1) -------------------------
+
+export type AutonomyModeName = "planning" | "auto_approve" | "ask_every_time" | "custom";
+export type AutonomyScopeKind = "org" | "department" | "agent" | "skill";
+
+export interface AutonomyModeRow {
+  id: string;
+  org_id: string;
+  scope_kind: AutonomyScopeKind;
+  scope_id: string | null;
+  mode: AutonomyModeName;
+  spending_cap_cents: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutonomyModeUpsert {
+  scope_kind: AutonomyScopeKind;
+  scope_id?: string | null;
+  mode: AutonomyModeName;
+  spending_cap_cents?: number | null;
+  notes?: string | null;
+}
+
+export interface AutonomyResolved {
+  mode: AutonomyModeName;
+  spending_cap_cents: number | null;
+  source: {
+    scope_kind: AutonomyScopeKind;
+    scope_id: string | null;
+    notes: string | null;
+  } | null;
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {

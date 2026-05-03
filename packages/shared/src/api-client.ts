@@ -15,6 +15,9 @@ import type {
   ApiError,
   AuditEntry,
   AuditQuery,
+  AutonomyModeRow,
+  AutonomyModeUpsert,
+  AutonomyResolved,
   BrainGraph,
   Department,
   DispatchAllResult,
@@ -91,6 +94,11 @@ export interface ApiClient {
   getOrgBySlug(slug: string): Promise<Organization>;
   listDepartments(): Promise<Department[]>;
   whoami(): Promise<Whoami>;
+  // -- Autonomy (Phase 5b / Sprint 5.1) ----
+  listAutonomy(): Promise<AutonomyModeRow[]>;
+  upsertAutonomy(body: AutonomyModeUpsert): Promise<AutonomyModeRow>;
+  deleteAutonomy(id: string): Promise<void>;
+  resolveAutonomy(opts?: { departmentId?: string; agentId?: string; skillId?: string }): Promise<AutonomyResolved>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -220,5 +228,19 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       request<Organization>("GET", `/api/orgs/by-slug/${encodeURIComponent(slug)}`),
     listDepartments: () => request<Department[]>("GET", "/api/departments"),
     whoami: () => request<Whoami>("GET", "/api/whoami"),
+    listAutonomy: () => request<AutonomyModeRow[]>("GET", "/api/autonomy"),
+    upsertAutonomy: (body) =>
+      request<AutonomyModeRow>("PUT", "/api/autonomy", body as unknown as Json),
+    deleteAutonomy: (id) =>
+      request<void>("DELETE", `/api/autonomy/${encodeURIComponent(id)}`),
+    resolveAutonomy: (opts) =>
+      request<AutonomyResolved>(
+        "GET",
+        `/api/autonomy/resolve${qs({
+          department_id: opts?.departmentId,
+          agent_id: opts?.agentId,
+          skill_id: opts?.skillId,
+        })}`,
+      ),
   };
 }

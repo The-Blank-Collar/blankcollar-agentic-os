@@ -800,6 +800,7 @@ const ADDITIVE_MIGRATIONS = [
     "ops.knowledge_doc",
     "ops.knowledge_link",
     "ops.approval",
+    "ops.autonomy_mode",
   ].flatMap((tbl) => [
     `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
     `CREATE POLICY app_system_scope ON ${tbl}
@@ -807,6 +808,59 @@ const ADDITIVE_MIGRATIONS = [
        USING      (current_setting('app.system_scope', true) = 'true')
        WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
   ]),
+
+  // -- ops.autonomy_mode — Phase 5b / Sprint 5.1 -------------------------
+  // Claude-Code-style autonomy modes per scope. Acts as a layer ABOVE
+  // ops.policy: deny always wins, but the mode shapes the default for
+  // allow vs. approve. Resolution walks scope_kind in priority order
+  // skill → agent → department → org. No row at any level → mode='custom'
+  // (delegate to the policy engine unchanged).
+  //
+  //   mode = 'auto_approve'     — bypass approval requirements (deny still applies)
+  //   mode = 'ask_every_time'   — force every allow to become approve
+  //   mode = 'planning'         — return a plan; don't execute (v1: behaves
+  //                                like ask_every_time for skills; future:
+  //                                returns a per-skill plan preview)
+  //   mode = 'custom'           — delegate fully to ops.policy (the existing
+  //                                behaviour; the policy engine decides)
+  //
+  // spending_cap_cents (optional) lets an operator say "auto_approve under
+  // $X" — over that, the resolver escalates to approve. Future Sprint 5.2
+  // (Safeguards) writes here too when a safeguard rule includes a budget.
+  `CREATE TABLE IF NOT EXISTS ops.autonomy_mode (
+     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id              uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     scope_kind          text NOT NULL CHECK (scope_kind IN ('org','department','agent','skill')),
+     scope_id            uuid,
+     mode                text NOT NULL CHECK (mode IN ('planning','auto_approve','ask_every_time','custom')),
+     spending_cap_cents  integer,
+     notes               text,
+     created_at          timestamptz NOT NULL DEFAULT now(),
+     updated_at          timestamptz NOT NULL DEFAULT now(),
+     CONSTRAINT autonomy_scope_id_present CHECK (
+       (scope_kind = 'org' AND scope_id IS NULL)
+       OR (scope_kind <> 'org' AND scope_id IS NOT NULL)
+     )
+   );`,
+  // One row per (org, scope_kind='org'). Partial because NULL scope_id
+  // can't participate in a multi-column unique constraint.
+  `CREATE UNIQUE INDEX IF NOT EXISTS autonomy_mode_org_unique
+     ON ops.autonomy_mode (org_id) WHERE scope_kind = 'org';`,
+  // One row per (org, scope_kind, scope_id) for non-org scopes.
+  `CREATE UNIQUE INDEX IF NOT EXISTS autonomy_mode_scoped_unique
+     ON ops.autonomy_mode (org_id, scope_kind, scope_id) WHERE scope_kind <> 'org';`,
+  `CREATE INDEX IF NOT EXISTS autonomy_mode_lookup_idx
+     ON ops.autonomy_mode (org_id, scope_kind);`,
+  `ALTER TABLE ops.autonomy_mode ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.autonomy_mode FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.autonomy_mode;`,
+  `CREATE POLICY app_scope_org ON ops.autonomy_mode
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
 
   // -- ops.document + ops.document_chunk — Phase 2.4 ---------------------
   // Long-form ingested content (markdown files, URLs, future PDFs/Docs).
@@ -1123,6 +1177,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.document",
   "ops.document_chunk",
   "ops.upstream_source",
+  "ops.autonomy_mode",
 ];
 
 function buildStrictMigrations(): string[] {

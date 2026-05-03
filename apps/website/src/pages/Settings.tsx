@@ -1,6 +1,13 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
-import type { Department, Organization, Whoami } from "@blankcollar/shared";
+import type {
+  AutonomyModeName,
+  AutonomyModeRow,
+  AutonomyResolved,
+  Department,
+  Organization,
+  Whoami,
+} from "@blankcollar/shared";
 
 import { ChannelMark, I } from "../icons";
 import { api } from "../lib/api";
@@ -10,6 +17,7 @@ import { ErrorState, Loading } from "../components/States";
 
 type SectionId =
   | "overview"
+  | "autonomy"
   | "people"
   | "governance"
   | "budgets"
@@ -20,6 +28,7 @@ type SectionId =
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview",   label: "Overview" },
+  { id: "autonomy",   label: "Autonomy" },
   { id: "people",     label: "People & roles" },
   { id: "governance", label: "Governance" },
   { id: "budgets",    label: "Budgets" },
@@ -78,6 +87,7 @@ export function Settings() {
 
         <div style={{ padding: "var(--pad-y) var(--pad-x)", overflow: "auto" }}>
           {section === "overview"   && <OverviewTab />}
+          {section === "autonomy"   && <AutonomyTab />}
           {section === "people"     && <PeopleTab />}
           {section === "governance" && <GovernanceTab />}
           {section === "budgets"    && <BudgetsTab />}
@@ -219,6 +229,277 @@ const FactCell = ({ eyebrow, value, hint }: { eyebrow: string; value: string; hi
     <div className="small" style={{ color: "var(--ink-2)", marginTop: 4 }}>{hint}</div>
   </div>
 );
+
+// -- Autonomy ----------------------------------------------------------------
+
+const MODE_OPTIONS: { mode: AutonomyModeName; label: string; hint: string; tone: string }[] = [
+  {
+    mode: "auto_approve",
+    label: "Auto-approve",
+    hint: "Run autonomously within safeguards. You're notified of results.",
+    tone: "var(--pos)",
+  },
+  {
+    mode: "ask_every_time",
+    label: "Ask every time",
+    hint: "Confirm every important action before it runs. The safe default.",
+    tone: "var(--info)",
+  },
+  {
+    mode: "planning",
+    label: "Planning",
+    hint: "Propose a plan first. You review and approve before anything executes.",
+    tone: "var(--warn)",
+  },
+  {
+    mode: "custom",
+    label: "Custom",
+    hint: "Delegate to your policy + safeguard rules. Use this once you've written specific rules.",
+    tone: "var(--muted)",
+  },
+];
+
+function AutonomyTab() {
+  const listQ = useFetch<AutonomyModeRow[]>(() => api.listAutonomy(), []);
+  const resolvedQ = useFetch<AutonomyResolved>(() => api.resolveAutonomy(), []);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<AutonomyModeName | null>(null);
+
+  const orgRow = (listQ.data ?? []).find((r) => r.scope_kind === "org") ?? null;
+  const currentMode = orgRow?.mode ?? "custom";
+
+  // When the panel opens, sync the pending pick to whatever's saved.
+  useEffect(() => {
+    setPending(null);
+  }, [orgRow?.id]);
+
+  const choice = pending ?? currentMode;
+
+  const save = async (): Promise<void> => {
+    if (!pending || pending === currentMode || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.upsertAutonomy({ scope_kind: "org", mode: pending });
+      await Promise.all([listQ.refetch(), resolvedQ.refetch()]);
+      setPending(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dirty = pending !== null && pending !== currentMode;
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Autonomy.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        How much you want to be in the loop. The default applies across the
+        whole studio; per-department, per-agent, and per-skill overrides
+        arrive in a future sprint. Deny rules from <b>Governance</b> always win
+        over the autonomy mode — autonomy can't bypass an explicit safeguard.
+      </div>
+
+      {listQ.loading && <Loading label="Loading autonomy state…" />}
+      {listQ.error && <ErrorState error={listQ.error} onRetry={listQ.refetch} />}
+
+      {!listQ.loading && !listQ.error && (
+        <>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>
+            Studio default
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 16 }}>
+            {MODE_OPTIONS.map((opt) => {
+              const selected = choice === opt.mode;
+              const saved = currentMode === opt.mode;
+              return (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => setPending(opt.mode)}
+                  style={{
+                    textAlign: "left",
+                    padding: "14px 16px",
+                    border: selected ? `2px solid ${opt.tone}` : "1px solid var(--line)",
+                    background: selected ? "var(--bg-2)" : "var(--bg-1)",
+                    color: "var(--ink)",
+                    borderRadius: "var(--radius-lg)",
+                    cursor: "pointer",
+                    transition: "border-color 0.1s, background 0.1s",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: opt.tone,
+                      }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{opt.label}</span>
+                    {saved && (
+                      <span
+                        className="mono"
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 10,
+                          letterSpacing: "0.1em",
+                          color: "var(--muted)",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <div className="small" style={{ color: "var(--ink-2)", lineHeight: 1.45 }}>
+                    {opt.hint}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {err && (
+            <div
+              style={{
+                padding: 10,
+                marginBottom: 12,
+                border: "1px solid var(--line)",
+                borderLeft: "2px solid var(--neg)",
+                borderRadius: "var(--radius)",
+                background: "var(--bg-1)",
+                fontSize: 12.5,
+                color: "var(--ink-2)",
+              }}
+            >
+              <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>
+                FAILED
+              </span>
+              {err}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={save}
+              disabled={!dirty || busy}
+            >
+              {busy ? "Saving…" : dirty ? "Save change" : "Saved"}
+            </button>
+            {dirty && !busy && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setPending(null)}
+              >
+                Discard
+              </button>
+            )}
+            {orgRow && (
+              <span className="tiny mono" style={{ color: "var(--muted)", marginLeft: "auto" }}>
+                Last updated {relativeTime(orgRow.updated_at)}
+              </span>
+            )}
+          </div>
+
+          <div className="eyebrow" style={{ margin: "32px 0 10px" }}>
+            What this looks like in practice
+          </div>
+          <div className="card" style={{ padding: 16 }}>
+            <div className="small" style={{ color: "var(--ink-2)", lineHeight: 1.6 }}>
+              {resolvedQ.loading && "Computing…"}
+              {!resolvedQ.loading && resolvedQ.data && (
+                <ResolvedExplain resolved={resolvedQ.data} />
+              )}
+            </div>
+          </div>
+
+          <div className="eyebrow" style={{ margin: "32px 0 10px" }}>
+            Per-scope overrides ({listQ.data?.length ?? 0})
+          </div>
+          {(listQ.data ?? []).length === 0 ? (
+            <div className="empty-hint">
+              Only the studio default is set. Per-department / agent / skill
+              overrides arrive in a future sprint — until then, this default
+              applies everywhere.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {(listQ.data ?? []).map((r, i) => (
+                <div
+                  key={r.id}
+                  style={{
+                    padding: "12px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                    display: "grid",
+                    gridTemplateColumns: "120px 1fr 1fr auto",
+                    gap: 16,
+                    alignItems: "center",
+                    fontSize: 13,
+                  }}
+                >
+                  <span className="mono" style={{ color: "var(--muted)", fontSize: 11 }}>
+                    {r.scope_kind}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5 }}>
+                    {r.scope_id ? r.scope_id.slice(0, 8) : "—"}
+                  </span>
+                  <span style={{ fontWeight: 500 }}>{r.mode}</span>
+                  <span className="tiny mono" style={{ color: "var(--muted)" }}>
+                    {relativeTime(r.updated_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+const ResolvedExplain = ({ resolved }: { resolved: AutonomyResolved }) => {
+  const opt = MODE_OPTIONS.find((o) => o.mode === resolved.mode);
+  return (
+    <>
+      <div style={{ marginBottom: 8 }}>
+        Right now, a fresh agent action <b>at the org level</b> resolves to{" "}
+        <span
+          className="mono"
+          style={{
+            padding: "2px 6px",
+            background: "var(--bg-3)",
+            borderRadius: 3,
+            color: opt?.tone ?? "var(--ink)",
+          }}
+        >
+          {resolved.mode}
+        </span>{" "}
+        — {opt?.hint ?? ""}
+      </div>
+      {resolved.source && (
+        <div className="tiny" style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+          source: {resolved.source.scope_kind}
+          {resolved.source.scope_id ? ` · ${resolved.source.scope_id.slice(0, 8)}` : ""}
+        </div>
+      )}
+      {!resolved.source && (
+        <div className="tiny" style={{ color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+          no row at any scope · falling back to <span style={{ fontWeight: 500 }}>custom</span>
+          {" "}(policy engine decides)
+        </div>
+      )}
+    </>
+  );
+};
 
 // -- People & roles ----------------------------------------------------------
 

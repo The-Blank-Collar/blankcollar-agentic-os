@@ -542,6 +542,51 @@ export const AgentPatch = z
   .strict();
 export type AgentPatch = z.infer<typeof AgentPatch>;
 
+// ---------- Autonomy modes (Phase 5b / Sprint 5.1) ------------------------
+
+export const AutonomyMode = z.enum([
+  "planning",
+  "auto_approve",
+  "ask_every_time",
+  "custom",
+]);
+export type AutonomyMode = z.infer<typeof AutonomyMode>;
+
+export const AutonomyScopeKind = z.enum(["org", "department", "agent", "skill"]);
+export type AutonomyScopeKind = z.infer<typeof AutonomyScopeKind>;
+
+/**
+ * Upsert a mode at a given scope. `scope_id` MUST be omitted/null when
+ * `scope_kind === 'org'` and MUST be present otherwise (matches the SQL
+ * CHECK constraint).
+ */
+export const AutonomyModeUpsert = z
+  .object({
+    scope_kind: AutonomyScopeKind,
+    scope_id: z.string().uuid().nullable().optional(),
+    mode: AutonomyMode,
+    spending_cap_cents: z.number().int().min(0).max(1_000_000_000_000).nullable().optional(),
+    notes: z.string().max(500).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (d) => (d.scope_kind === "org" ? d.scope_id == null : d.scope_id != null),
+    {
+      message: "scope_id must be null for scope_kind='org' and present otherwise",
+      path: ["scope_id"],
+    },
+  );
+export type AutonomyModeUpsert = z.infer<typeof AutonomyModeUpsert>;
+
+export const AutonomyResolveQuery = z
+  .object({
+    department_id: z.string().uuid().optional(),
+    agent_id: z.string().uuid().optional(),
+    skill_id: z.string().uuid().optional(),
+  })
+  .strict();
+export type AutonomyResolveQuery = z.infer<typeof AutonomyResolveQuery>;
+
 // ---------- Audit ---------------------------------------------------------
 
 export const AuditQuery = z

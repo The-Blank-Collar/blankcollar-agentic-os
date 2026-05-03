@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   AgentCreate,
+  AutonomyModeUpsert,
+  AutonomyResolveQuery,
   DocumentMarkdownCreate,
   GoalCreate,
   GoalListQuery,
@@ -37,6 +39,86 @@ describe("Scope", () => {
       sneak: true,
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe("AutonomyModeUpsert", () => {
+  const UUID = "11111111-1111-1111-1111-111111111111";
+
+  it("requires scope_id for non-org scopes", () => {
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "department",
+        mode: "auto_approve",
+      }).success,
+    ).toBe(false);
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "department",
+        scope_id: UUID,
+        mode: "auto_approve",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects scope_id when scope_kind is 'org'", () => {
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "org",
+        scope_id: UUID,
+        mode: "auto_approve",
+      }).success,
+    ).toBe(false);
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "org",
+        mode: "auto_approve",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects unknown modes", () => {
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "org",
+        mode: "yolo",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts the four canonical modes", () => {
+    for (const mode of ["planning", "auto_approve", "ask_every_time", "custom"]) {
+      expect(
+        AutonomyModeUpsert.safeParse({ scope_kind: "org", mode }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("caps spending_cap_cents to a sane positive integer", () => {
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "org",
+        mode: "auto_approve",
+        spending_cap_cents: -1,
+      }).success,
+    ).toBe(false);
+    expect(
+      AutonomyModeUpsert.safeParse({
+        scope_kind: "org",
+        mode: "auto_approve",
+        spending_cap_cents: 50_000,
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("AutonomyResolveQuery", () => {
+  it("accepts an empty query (org-only resolve)", () => {
+    expect(AutonomyResolveQuery.safeParse({}).success).toBe(true);
+  });
+
+  it("rejects invalid uuids", () => {
+    expect(AutonomyResolveQuery.safeParse({ skill_id: "not-a-uuid" }).success).toBe(false);
   });
 });
 

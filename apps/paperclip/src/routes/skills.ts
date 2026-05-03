@@ -17,6 +17,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
+import { resolveAutonomy } from "../autonomy/resolve.js";
 import { withOrgScope } from "../db.js";
 import { evaluatePolicy } from "../policy/evaluate.js";
 import { resolveCallerScope } from "../scope.js";
@@ -122,13 +123,46 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
         // Policy gate: every skill invocation passes through the engine
         // before queueing. action_kind = "skill.{slug}" so policies can
         // target a single skill or a family via wildcard.
-        const decision = await evaluatePolicy(client, {
+        const policy = await evaluatePolicy(client, {
           orgId: scope.org_id,
           role: scope.role,
           agentKind: skill.agent_kind,
           skillSlug: skill.slug,
           actionKind: `skill.${skill.slug}`,
         });
+
+        // Autonomy mode layers on top of the policy decision. Deny ALWAYS
+        // wins (deliberate denials are firm guardrails). For non-deny
+        // decisions, the resolved mode shapes the default behavior.
+        const autonomy = await resolveAutonomy(client, {
+          orgId: scope.org_id,
+          skillId: skill.id,
+          // department_id and agent_id are not part of the skill invoke
+          // shape today. Sprint 5.6 (Chief of Staff) wires them in when
+          // a specific agent gets selected upstream.
+        });
+
+        let decision: { effect: "allow" | "approve" | "deny"; matched: typeof policy.matched } =
+          policy;
+        if (policy.effect !== "deny") {
+          if (autonomy.mode === "ask_every_time" || autonomy.mode === "planning") {
+            // Force every non-deny into approve so the operator sees the
+            // proposal in the inbox. (Planning gets a richer preview in
+            // Sprint 5.3; for v1 it shares the approval path.)
+            decision = {
+              effect: "approve",
+              matched: policy.matched ?? null,
+            };
+          } else if (autonomy.mode === "auto_approve" && policy.effect === "approve") {
+            // Auto-approve overrides the policy's "approve" requirement
+            // unless an explicit spending cap escalates back to approve.
+            // (The cap is for safeguard files; v1 honors it conservatively.)
+            decision = autonomy.spending_cap_cents == null
+              ? { effect: "allow", matched: policy.matched ?? null }
+              : policy;
+          }
+          // mode === 'custom' (or no row): use policy.effect unchanged.
+        }
         if (decision.effect === "deny") {
           await audit(
             {
