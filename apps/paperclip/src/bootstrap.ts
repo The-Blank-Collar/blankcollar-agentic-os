@@ -802,6 +802,7 @@ const ADDITIVE_MIGRATIONS = [
     "ops.approval",
     "ops.autonomy_mode",
     "ops.safeguard",
+    "ops.skill_draft",
   ].flatMap((tbl) => [
     `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
     `CREATE POLICY app_system_scope ON ${tbl}
@@ -910,6 +911,59 @@ const ADDITIVE_MIGRATIONS = [
      ADD COLUMN IF NOT EXISTS safeguard_id uuid REFERENCES ops.safeguard(id) ON DELETE CASCADE;`,
   `CREATE INDEX IF NOT EXISTS policy_safeguard_idx
      ON ops.policy (safeguard_id) WHERE safeguard_id IS NOT NULL;`,
+
+  // -- ops.skill_draft + ops.skill.source_document_id — Phase 5b / Sprint 5.3
+  // Skill drafts: LLM-extracted skill candidates pulled from a markdown SOP
+  // / playbook in `ops.document`. The operator reviews the draft and either
+  // promotes it to `ops.skill` (org-scoped) or rejects it. The draft lives
+  // forever as a record of what the LLM proposed — useful when an SOP is
+  // re-ingested and we want to compare deltas.
+  //
+  // status:
+  //   - 'draft'     — generated, awaiting operator review
+  //   - 'promoted'  — operator approved; promoted_skill_id points at the
+  //                    new ops.skill row
+  //   - 'rejected'  — operator declined; soft-deleted via this status (no
+  //                    DELETE so audit history is preserved)
+  `CREATE TABLE IF NOT EXISTS ops.skill_draft (
+     id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id               uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     source_document_id   uuid REFERENCES ops.document(id) ON DELETE SET NULL,
+     title                text NOT NULL,
+     description          text,
+     agent_kind           text NOT NULL DEFAULT 'hermes',
+     proposed_slug        text NOT NULL,
+     steps                jsonb NOT NULL DEFAULT '[]'::jsonb,
+     inferred_tools       jsonb NOT NULL DEFAULT '[]'::jsonb,
+     params_schema        jsonb NOT NULL DEFAULT '{}'::jsonb,
+     status               text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','promoted','rejected')),
+     promoted_skill_id    uuid REFERENCES ops.skill(id) ON DELETE SET NULL,
+     warnings             jsonb NOT NULL DEFAULT '[]'::jsonb,
+     llm_provider         text,
+     llm_model            text,
+     created_at           timestamptz NOT NULL DEFAULT now(),
+     updated_at           timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS skill_draft_org_status_idx
+     ON ops.skill_draft (org_id, status, updated_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS skill_draft_source_doc_idx
+     ON ops.skill_draft (source_document_id) WHERE source_document_id IS NOT NULL;`,
+  `ALTER TABLE ops.skill_draft ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.skill_draft FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.skill_draft;`,
+  `CREATE POLICY app_scope_org ON ops.skill_draft
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  // ops.skill gets a back-reference to the document it was extracted from.
+  // Nullable — manual / shared skills have no source document.
+  `ALTER TABLE ops.skill
+     ADD COLUMN IF NOT EXISTS source_document_id uuid REFERENCES ops.document(id) ON DELETE SET NULL;`,
+  `CREATE INDEX IF NOT EXISTS skill_source_doc_idx
+     ON ops.skill (source_document_id) WHERE source_document_id IS NOT NULL;`,
 
   // -- ops.document + ops.document_chunk — Phase 2.4 ---------------------
   // Long-form ingested content (markdown files, URLs, future PDFs/Docs).
@@ -1228,6 +1282,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.upstream_source",
   "ops.autonomy_mode",
   "ops.safeguard",
+  "ops.skill_draft",
 ];
 
 function buildStrictMigrations(): string[] {

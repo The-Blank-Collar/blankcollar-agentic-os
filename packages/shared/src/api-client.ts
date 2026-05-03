@@ -39,6 +39,11 @@ import type {
   SafeguardRow,
   SafeguardUpsert,
   SafeguardWithParse,
+  SkillDraftPatch,
+  SkillDraftPromoteResult,
+  SkillDraftRow,
+  SkillDraftStatus,
+  SkillRow,
   Whoami,
 } from "./types.js";
 
@@ -109,6 +114,14 @@ export interface ApiClient {
   upsertSafeguard(body: SafeguardUpsert): Promise<SafeguardWithParse>;
   deleteSafeguard(id: string): Promise<void>;
   previewSafeguards(content_md: string): Promise<SafeguardPreview>;
+  // -- Skills + skill drafts (Phase 5b / Sprint 5.3) ----
+  listSkills(): Promise<SkillRow[]>;
+  generateSkillDraft(documentId: string): Promise<SkillDraftRow>;
+  listSkillDrafts(opts?: { status?: SkillDraftStatus; limit?: number }): Promise<SkillDraftRow[]>;
+  getSkillDraft(id: string): Promise<SkillDraftRow>;
+  patchSkillDraft(id: string, body: SkillDraftPatch): Promise<SkillDraftRow>;
+  promoteSkillDraft(id: string): Promise<SkillDraftPromoteResult>;
+  rejectSkillDraft(id: string): Promise<void>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -261,5 +274,34 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       request<void>("DELETE", `/api/safeguards/${encodeURIComponent(id)}`),
     previewSafeguards: (content_md) =>
       request<SafeguardPreview>("POST", "/api/safeguards/preview", { content_md }),
+    listSkills: () => request<SkillRow[]>("GET", "/api/skills"),
+    generateSkillDraft: (documentId) =>
+      request<SkillDraftRow>(
+        "POST",
+        `/api/documents/${encodeURIComponent(documentId)}/draft-skill`,
+      ),
+    listSkillDrafts: (opts) =>
+      request<SkillDraftRow[]>(
+        "GET",
+        `/api/skill-drafts${qs({ status: opts?.status, limit: opts?.limit })}`,
+      ),
+    getSkillDraft: (id) =>
+      request<SkillDraftRow>("GET", `/api/skill-drafts/${encodeURIComponent(id)}`),
+    patchSkillDraft: (id, body) =>
+      request<SkillDraftRow>(
+        "PATCH",
+        `/api/skill-drafts/${encodeURIComponent(id)}`,
+        body as unknown as Json,
+      ),
+    promoteSkillDraft: (id) =>
+      request<SkillDraftPromoteResult>(
+        "POST",
+        `/api/skill-drafts/${encodeURIComponent(id)}/promote`,
+      ),
+    rejectSkillDraft: (id) =>
+      request<void>(
+        "POST",
+        `/api/skill-drafts/${encodeURIComponent(id)}/reject`,
+      ),
   };
 }

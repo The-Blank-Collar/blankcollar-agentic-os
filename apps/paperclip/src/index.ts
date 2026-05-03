@@ -36,6 +36,7 @@ import { runRoutes } from "./routes/runs.js";
 import { safeguardRoutes } from "./routes/safeguards.js";
 import { searchRoutes } from "./routes/search.js";
 import { selfImprovementRoutes } from "./routes/self_improvement.js";
+import { skillDraftRoutes } from "./routes/skill_drafts.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
 import { toolRoutes } from "./routes/tools.js";
@@ -117,6 +118,7 @@ async function main(): Promise<void> {
   await app.register(heartbeatRoutes);
   await app.register(brainRoutes);
   await app.register(skillRoutes);
+  await app.register(skillDraftRoutes);
   await app.register(toolRoutes);
   await app.register(routineRoutes);
   await app.register(onboardingRoutes);

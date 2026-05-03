@@ -311,6 +311,67 @@ export interface SafeguardUpsert {
   content_md: string;
 }
 
+// ---------- Skills + skill drafts (Phase 5b / Sprint 5.3) ------------------
+
+export type SkillDraftStatus = "draft" | "promoted" | "rejected";
+
+export interface SkillStep {
+  n: number;
+  instruction: string;
+  tool: string | null;
+}
+
+export interface SkillRow {
+  id: string;
+  org_id: string | null;
+  slug: string;
+  version: number;
+  scope: string;
+  agent_kind: string;
+  title: string;
+  description: string | null;
+  side_effects: string;
+  enabled: boolean;
+  source_document_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillDraftRow {
+  id: string;
+  org_id: string;
+  source_document_id: string | null;
+  title: string;
+  description: string | null;
+  agent_kind: string;
+  proposed_slug: string;
+  steps: SkillStep[];
+  inferred_tools: string[];
+  params_schema: Record<string, unknown>;
+  status: SkillDraftStatus;
+  promoted_skill_id: string | null;
+  warnings: string[];
+  llm_provider: string | null;
+  llm_model: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillDraftPatch {
+  title?: string;
+  description?: string | null;
+  agent_kind?: string;
+  proposed_slug?: string;
+  steps?: SkillStep[];
+  inferred_tools?: string[];
+  params_schema?: Record<string, unknown>;
+}
+
+export interface SkillDraftPromoteResult {
+  skill_id: string;
+  version: number;
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {

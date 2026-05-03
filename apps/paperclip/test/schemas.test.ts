@@ -11,6 +11,8 @@ import {
   RunDispatch,
   RunFeedbackCreate,
   Scope,
+  SkillDraftListQuery,
+  SkillDraftPatch,
   UpstreamSourceCreate,
   UpstreamSourcePatch,
 } from "../src/schemas.js";
@@ -119,6 +121,41 @@ describe("AutonomyResolveQuery", () => {
 
   it("rejects invalid uuids", () => {
     expect(AutonomyResolveQuery.safeParse({ skill_id: "not-a-uuid" }).success).toBe(false);
+  });
+});
+
+describe("SkillDraftPatch", () => {
+  it("rejects slugs that contain forbidden characters", () => {
+    expect(SkillDraftPatch.safeParse({ proposed_slug: "Bad Slug" }).success).toBe(false);
+    expect(SkillDraftPatch.safeParse({ proposed_slug: "good.slug-1" }).success).toBe(true);
+  });
+
+  it("caps title and description lengths", () => {
+    expect(
+      SkillDraftPatch.safeParse({ title: "x".repeat(201) }).success,
+    ).toBe(false);
+    expect(
+      SkillDraftPatch.safeParse({ description: "x".repeat(5_001) }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a partial patch with only one field", () => {
+    expect(SkillDraftPatch.safeParse({ title: "ok" }).success).toBe(true);
+    expect(SkillDraftPatch.safeParse({}).success).toBe(true);
+  });
+});
+
+describe("SkillDraftListQuery", () => {
+  it("rejects unknown statuses", () => {
+    expect(SkillDraftListQuery.safeParse({ status: "yolo" }).success).toBe(false);
+    expect(SkillDraftListQuery.safeParse({ status: "draft" }).success).toBe(true);
+  });
+
+  it("coerces limit from a string and applies bounds", () => {
+    const ok = SkillDraftListQuery.safeParse({ limit: "10" });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.limit).toBe(10);
+    expect(SkillDraftListQuery.safeParse({ limit: "0" }).success).toBe(false);
   });
 });
 

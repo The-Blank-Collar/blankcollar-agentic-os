@@ -615,6 +615,37 @@ export const SafeguardPreview = z
   .strict();
 export type SafeguardPreview = z.infer<typeof SafeguardPreview>;
 
+// ---------- Skill drafts (Phase 5b / Sprint 5.3) --------------------------
+
+export const SkillDraftStatus = z.enum(["draft", "promoted", "rejected"]);
+export type SkillDraftStatus = z.infer<typeof SkillDraftStatus>;
+
+export const SkillDraftPatch = z
+  .object({
+    title:          z.string().min(1).max(200).optional(),
+    description:    z.string().max(5_000).nullable().optional(),
+    agent_kind:     z.string().min(1).max(40).optional(),
+    proposed_slug:  z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9._-]+$/, "slug must be lowercase [a-z0-9._-]")
+      .optional(),
+    steps:          z.array(z.record(z.unknown())).max(50).optional(),
+    inferred_tools: z.array(z.string().max(120)).max(20).optional(),
+    params_schema:  z.record(z.unknown()).optional(),
+  })
+  .strict();
+export type SkillDraftPatch = z.infer<typeof SkillDraftPatch>;
+
+export const SkillDraftListQuery = z
+  .object({
+    status: SkillDraftStatus.optional(),
+    limit:  z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict();
+export type SkillDraftListQuery = z.infer<typeof SkillDraftListQuery>;
+
 // ---------- Audit ---------------------------------------------------------
 
 export const AuditQuery = z
