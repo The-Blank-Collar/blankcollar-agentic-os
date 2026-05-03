@@ -135,6 +135,33 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 - [x] **Policy engine `(role, agent_kind, skill_slug, action_kind) → allow|approve|deny`** — `ops.policy` table, evaluator, `/api/policies` CRUD + `/policies/evaluate` dry-run, wired into `/skills/:slug/invoke` (deny → 403, approve → 202 with approval row, allow → existing queue path). Approval-effect path round-trips: approving the resulting `ops.approval` queues the run from the cached proposal.
 - [x] Approval inbox for human-in-the-loop tools (in `/api/inbox`, surfaced as `item_kind=approval`)
 
+## Phase 5b — Advanced Intelligence (the self-improving workforce)
+
+**Goal:** turn the static company brain into a living one. Knowledge becomes capability, data flows in by itself, every run makes the next one smarter, and the operator stays comfortably in the loop.
+
+Six features layered on top of Phase 5's foundation (Skills, Documents, Policies, Approvals, Feedback, Brain). All LLM-agnostic via the Portkey gateway; all backward-compatible — every new table is additive, no breaking migrations. Recommended ship order (highest UX leverage first):
+
+- [ ] **Sprint 5.1 — Flexible Human Control (Claude-Code-style autonomy modes).** New `ops.autonomy_mode` table at `(org_id, scope_kind, scope_id, mode)` levels (org / department / agent / skill). Modes: `planning` (propose-only, await approval) · `auto_approve` (run autonomously within safeguards) · `ask_every_time` (confirm before each side-effecting action) · `custom` (delegates to `ops.policy`). Surfaces the existing policy + approval + simulation engine behind a single human-readable Settings → Autonomy tab. Highest UX leverage for non-technical operators; smallest backend lift since the rails already exist. Inspired by Claude Code's plan/auto/ask modes.
+
+- [ ] **Sprint 5.2 — Safeguard Files (`safeguards.md` → policy rows).** Each org/department/agent gets a `safeguards.md` (stored in `ops.document` with `kind='safeguard'` or first-class `ops.safeguard` table). Plain-English rules ("never spend more than $200 in a single transaction", "never send outbound email without approval") parsed on save into `ops.policy` rows so the existing evaluator does the enforcement. UI editor (Settings → Safeguards) + audit trail (`safeguard.update` action). Pairs with Sprint 5.1 — modes need rules to enforce.
+
+- [ ] **Sprint 5.3 — SOP → Skill pipeline ("Knowledge → Skill").** Upload a markdown SOP / playbook → background job uses Portkey-routed LLM to extract numbered steps, infer required tools (matched against the MCP registry), and register a draft entry in `ops.skill_draft`. Operator reviews + promotes to `ops.skill`. Source doc linked via `skill.source_document_id` so re-ingesting the SOP versions the skill. CLI: `bc skill from-doc <document_id>`. UI: "Generate skill" button on any document. Bridges `ops.document` (read-only knowledge) → `ops.skill` (executable capability). The "magic moment" feature.
+
+- [ ] **Sprint 5.4 — Auto data ingestion layer (n8n-style connectors).** Continuous-sync connectors via Nango: Slack channels (messages → `ops.document` chunks + Graphiti episodes), Google Drive / Docs (file change events), Zoom / Google Meet (transcripts via webhook), Email (extends the existing IMAP poll), HubSpot / Notion (CRM + wiki). Built on Phase 2.5's upstream-auto-pull primitive — each connector registers as an `ops.upstream_source` with `kind='nango_<provider>'`. Per-source enable/disable, throttling, and dedupe via the existing content-hash logic. One-click "Connect Slack → brain auto-updates."
+
+- [ ] **Sprint 5.5 — Performance memory + self-improvement loop.** New `ops.outcome` (what an agent produced — campaign copy, proposal text, decision artifact) + `ops.outcome_metric` (open rate, conversion, human edit-distance, time-to-close, …). Metrics arrive via webhooks (HubSpot / Stripe / email opens) or operator entry. Future runs of similar tasks pull top-N successful past outputs as few-shot context. The `ops.run_feedback` rating + tags (Sprint 2.3) already feeds the human-correction half of this loop. Result: the workforce gets measurably better at its repeat tasks without any retraining.
+
+- [ ] **Sprint 5.6 — Agent swarms + Chief of Staff.** Enhanced LangGraph patterns for parallel sub-task fan-out (agents work in parallel on independent subtasks, results aggregated) + a smart-routing "Chief of Staff" agent that decomposes complex goals into per-agent assignments and tracks partial progress. Builds on the existing classifier in `apps/langgraph` but introduces explicit DAG planning, dependency tracking, and a result aggregator. Most useful for goals where today's single-agent linear plan struggles ("launch the spring catalogue" → marketing + sourcing + finance + legal in parallel).
+
+**Backward compatibility guarantees:**
+- Every new table is *additive*. No `ALTER TABLE … DROP` or column-rename. Old rows in `ops.goal`, `ops.run`, `ops.run_feedback`, `ops.skill`, `ops.document`, `ops.policy`, `ops.approval` continue to work untouched.
+- New columns (e.g. `skill.source_document_id`) default to `NULL` so existing skills are valid.
+- The `policy` evaluator stays the source of truth for allow/approve/deny — Sprint 5.1's autonomy modes and Sprint 5.2's safeguards both *write* policy rows; the evaluator code path is unchanged.
+
+**LLM-agnostic guarantees:**
+- Every prompt routes through Portkey (Sprint 2.1). Sprint 5.3's SOP extractor and Sprint 5.5's similar-task retrieval both call `chatComplete()` with `provider: 'anthropic'` (default) or `provider: 'openrouter'` (per-call override) — same wire, any provider.
+- The FakeLLM fallback (no `PORTKEY_API_KEY`) returns deterministic stub output so the demo + tests run with zero API keys.
+
 ## Phase 6 — Auth & Multi-Tenancy
 
 **Goal:** more than one user, more than one org, real role enforcement.
