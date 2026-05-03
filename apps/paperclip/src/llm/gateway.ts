@@ -6,15 +6,25 @@
  * synchronous prose path (briefings, classifier, future agents) goes
  * through `chatComplete`.
  *
- * The wire format is Anthropic's Messages API — Portkey is configured to
- * passthrough Anthropic-shaped payloads to the provider referenced by the
- * virtual key. We never speak OpenAI-shaped JSON here even though the
- * gateway supports it.
+ * Two routing styles supported (auto-detected from the model name):
+ *
+ *   1. Model Catalog (Portkey 2025+): model = `@workspace/model-id`
+ *      → wire: OpenAI-shaped /chat/completions
+ *      → headers: x-portkey-api-key only (no virtual-key header)
+ *      The `@workspace` prefix carries the routing — Portkey reads it
+ *      and dispatches to the workspace's configured provider+key. No
+ *      separate virtual-key header is needed (and including one is
+ *      a 400 from Portkey's side).
+ *
+ *   2. Legacy Virtual Key: model = plain name (e.g. `claude-sonnet-4-6`)
+ *      → wire: Anthropic-shaped /messages
+ *      → headers: x-portkey-api-key + x-portkey-virtual-key
+ *      Used when the operator configured a classic Virtual Key in
+ *      Portkey's older UI.
  *
  * Boot guard: `requireConfig()` (in config.ts) throws if PORTKEY_API_KEY
- * or PORTKEY_VIRTUAL_KEY_ANTHROPIC are unset, so by the time this module
- * is reached the keys are guaranteed present. The defensive check below
- * is a belt-and-suspenders for unit tests / programmatic boots.
+ * is unset. PORTKEY_VIRTUAL_KEY_ANTHROPIC is required only for the legacy
+ * routing path; Model Catalog setups don't need it.
  */
 
 import { config } from "../config.js";
@@ -27,9 +37,8 @@ export type ChatCompleteInput = {
   model?: string;
   max_tokens?: number;
   /**
-   * Override the Portkey virtual key for this call. Defaults to the
-   * configured Anthropic VK. Pass "openrouter" (or the literal VK string)
-   * to route through OpenRouter for models Anthropic doesn't host.
+   * Override the Portkey virtual key for this call. Only used by the
+   * legacy Virtual Key routing path; Model Catalog requests ignore it.
    */
   provider?: "anthropic" | "openrouter";
 };
@@ -58,26 +67,97 @@ type AnthropicMessageResponse = {
   usage?: { input_tokens?: number; output_tokens?: number };
 };
 
+type OpenAIChatResponse = {
+  id?: string;
+  model?: string;
+  choices?: Array<{ message?: { role?: string; content?: string } }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+};
+
 export type ChatCompleteOptions = {
   fetchImpl?: typeof fetch;
 };
+
+/** True when the model identifier carries Portkey's `@workspace/model` routing. */
+function isModelCatalogRef(model: string): boolean {
+  return typeof model === "string" && model.startsWith("@");
+}
 
 export async function chatComplete(
   input: ChatCompleteInput,
   opts: ChatCompleteOptions = {},
 ): Promise<ChatCompleteResult> {
-  if (!config.portkeyApiKey || !config.portkeyVirtualKeyAnthropic) {
+  if (!config.portkeyApiKey) {
     throw new GatewayError(
       0,
       null,
-      "PORTKEY_API_KEY and PORTKEY_VIRTUAL_KEY_ANTHROPIC must be set " +
-        "before any LLM call. Did boot skip requireConfig()?",
+      "PORTKEY_API_KEY must be set before any LLM call. " +
+        "Did boot skip requireConfig()?",
     );
   }
 
-  // Pick the virtual key for this call. Default: Anthropic. Per-call
-  // override lets callers route to OpenRouter for models Anthropic
-  // doesn't host (Gemini, Llama, etc.).
+  const model = input.model ?? config.llmModel;
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const baseUrl = config.portkeyBaseUrl.replace(/\/$/, "");
+
+  // ── Model Catalog routing (preferred when `@workspace/...` is set) ─────
+  if (isModelCatalogRef(model)) {
+    const url = `${baseUrl}/chat/completions`;
+    const messages = input.system
+      ? [{ role: "system", content: input.system }, ...input.messages]
+      : input.messages;
+    const body = {
+      model,
+      max_tokens: input.max_tokens ?? config.llmMaxTokens,
+      messages,
+    };
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-portkey-api-key": config.portkeyApiKey,
+      },
+      body: JSON.stringify(body),
+    });
+    const traceId =
+      res.headers.get("x-portkey-trace-id") ??
+      res.headers.get("x-trace-id") ??
+      null;
+    const rawText = await res.text();
+    let parsed: OpenAIChatResponse | { error?: { message?: string } } | null = null;
+    try {
+      parsed = rawText.length > 0 ? (JSON.parse(rawText) as OpenAIChatResponse) : null;
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) {
+      const message =
+        (parsed as { error?: { message?: string } } | null)?.error?.message ??
+        `HTTP ${res.status} ${res.statusText}`;
+      throw new GatewayError(res.status, parsed ?? rawText, `gateway: ${message}`);
+    }
+    const data = (parsed ?? {}) as OpenAIChatResponse;
+    const text = (data.choices?.[0]?.message?.content ?? "").trim();
+    return {
+      text,
+      usage: {
+        input_tokens: Number(data.usage?.prompt_tokens ?? 0),
+        output_tokens: Number(data.usage?.completion_tokens ?? 0),
+      },
+      model: data.model ?? model,
+      trace_id: traceId,
+    };
+  }
+
+  // ── Legacy Virtual Key routing (Anthropic-shaped /messages) ────────────
+  if (!config.portkeyVirtualKeyAnthropic) {
+    throw new GatewayError(
+      0,
+      null,
+      "Legacy Virtual Key routing requires PORTKEY_VIRTUAL_KEY_ANTHROPIC. " +
+        "Either set it OR switch to a `@workspace/model` Model Catalog reference.",
+    );
+  }
   const provider = input.provider ?? "anthropic";
   const virtualKey =
     provider === "openrouter"
@@ -92,11 +172,9 @@ export async function chatComplete(
     );
   }
 
-  const url = `${config.portkeyBaseUrl.replace(/\/$/, "")}/messages`;
-  const fetchImpl = opts.fetchImpl ?? fetch;
-
+  const url = `${baseUrl}/messages`;
   const body = {
-    model: input.model ?? config.llmModel,
+    model,
     max_tokens: input.max_tokens ?? config.llmMaxTokens,
     ...(input.system ? { system: input.system } : {}),
     messages: input.messages,
@@ -108,9 +186,6 @@ export async function chatComplete(
       "content-type": "application/json",
       "x-portkey-api-key": config.portkeyApiKey,
       "x-portkey-virtual-key": virtualKey,
-      // Anthropic's wire requires this; Portkey forwards it through.
-      // OpenRouter accepts it harmlessly when the virtual key targets
-      // an OpenRouter provider (the header is ignored downstream).
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
