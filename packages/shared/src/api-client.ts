@@ -16,6 +16,7 @@ import type {
   AuditEntry,
   AuditQuery,
   BrainGraph,
+  Department,
   DispatchAllResult,
   DispatchResult,
   Goal,
@@ -23,11 +24,15 @@ import type {
   GoalListQuery,
   GoalPatch,
   GoalWithDetail,
+  InboxItem,
+  InboxSummary,
   KeyResult,
   KeyResultCreate,
   KeyResultPatch,
+  Organization,
   Run,
   RunDispatch,
+  Whoami,
 } from "./types.js";
 
 export interface ApiClientOpts {
@@ -78,6 +83,14 @@ export interface ApiClient {
   deleteKeyResult(id: string): Promise<void>;
   // -- Brain ----
   getBrainGraph(opts?: { limit?: number; refresh?: boolean }): Promise<BrainGraph>;
+  // -- Inbox ----
+  listInbox(opts?: { limit?: number }): Promise<InboxItem[]>;
+  inboxSummary(): Promise<InboxSummary>;
+  acknowledgeInbox(goalId: string): Promise<{ runs_acknowledged: number }>;
+  // -- Org + departments + whoami ----
+  getOrgBySlug(slug: string): Promise<Organization>;
+  listDepartments(): Promise<Department[]>;
+  whoami(): Promise<Whoami>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -195,5 +208,17 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
           refresh: opts?.refresh ? "true" : undefined,
         })}`,
       ),
+    listInbox: (opts) =>
+      request<InboxItem[]>("GET", `/api/inbox${qs({ limit: opts?.limit })}`),
+    inboxSummary: () => request<InboxSummary>("GET", "/api/inbox/summary"),
+    acknowledgeInbox: (goalId) =>
+      request<{ runs_acknowledged: number }>(
+        "POST",
+        `/api/inbox/acknowledge/${encodeURIComponent(goalId)}`,
+      ),
+    getOrgBySlug: (slug) =>
+      request<Organization>("GET", `/api/orgs/by-slug/${encodeURIComponent(slug)}`),
+    listDepartments: () => request<Department[]>("GET", "/api/departments"),
+    whoami: () => request<Whoami>("GET", "/api/whoami"),
   };
 }

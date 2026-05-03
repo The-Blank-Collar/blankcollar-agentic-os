@@ -201,6 +201,55 @@ export interface AuditQuery {
   limit?: number;
 }
 
+// ---------- Inbox (Phase 4) -----------------------------------------------
+
+export type InboxItemKind = "approval" | "decision" | "blocked" | "routine_output" | "draft";
+
+export interface InboxItem {
+  item_kind: InboxItemKind;
+  goal_id: string;
+  title: string;
+  created_at: string;
+  urgency: "urgent" | "normal";
+  metadata: Record<string, unknown>;
+}
+
+export interface InboxSummary {
+  total: number;
+  urgent: number;
+  by_kind: {
+    approval: number;
+    decision: number;
+    blocked: number;
+    routine_output: number;
+    draft: number;
+  };
+}
+
+// ---------- Departments + whoami ------------------------------------------
+
+export interface Department {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+  active_goal_count: number;
+}
+
+export interface Organization {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+}
+
+export interface Whoami {
+  org: { id: string; slug: string | null; name: string | null };
+  role: string;
+  department: { id: string; name: string } | null;
+  goal_id: string | null;
+}
+
 export interface DispatchOk {
   run_id: string;
   status: "queued";

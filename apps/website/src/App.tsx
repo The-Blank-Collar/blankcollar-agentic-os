@@ -81,7 +81,7 @@ export default function App() {
       content = <Goals onOpenGoal={openGoal} />;
       break;
     case "kanban":
-      content = <Kanban />;
+      content = <Kanban onOpenGoal={openGoal} />;
       break;
     case "brain":
       content = <Brain />;
@@ -99,7 +99,7 @@ export default function App() {
       content = <Activity />;
       break;
     case "inbox":
-      content = <Inbox />;
+      content = <Inbox onOpenGoal={openGoal} />;
       break;
     case "settings":
       content = <Settings />;
