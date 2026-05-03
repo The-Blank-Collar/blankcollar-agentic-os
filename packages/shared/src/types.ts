@@ -141,6 +141,49 @@ export interface AgentState extends AgentSummary {
   sigil_seed: string;
 }
 
+export interface KeyResultCreate {
+  label: string;
+  target_value?: string | null;
+  current_value?: string | null;
+  unit?: string | null;
+  weight?: number;
+  due_at?: string | null;
+}
+
+export interface KeyResultPatch {
+  label?: string;
+  target_value?: string | null;
+  current_value?: string | null;
+  unit?: string | null;
+  weight?: number;
+  due_at?: string | null;
+}
+
+// ---------- Brain graph (Phase 3 synthesized) ------------------------------
+
+export type BrainNodeKind = "person" | "agent" | "goal" | "capture" | "tool";
+export type BrainEdgeKind = "owns" | "contributes" | "captures" | "ran";
+
+export interface BrainNode {
+  id: string;
+  kind: BrainNodeKind;
+  label: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BrainEdge {
+  from: string;
+  to: string;
+  kind: BrainEdgeKind;
+}
+
+export interface BrainGraph {
+  nodes: BrainNode[];
+  edges: BrainEdge[];
+  truncated: boolean;
+  generated_at: string;
+}
+
 export interface AuditEntry {
   id: string;
   actor_id: string | null;

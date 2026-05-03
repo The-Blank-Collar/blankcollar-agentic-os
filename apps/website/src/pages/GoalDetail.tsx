@@ -1,4 +1,6 @@
-import type { GoalWithDetail, KeyResult, Run } from "@blankcollar/shared";
+import React, { useState } from "react";
+
+import type { GoalWithDetail, KeyResult, KeyResultCreate, Run } from "@blankcollar/shared";
 
 import { I } from "../icons";
 import { api } from "../lib/api";
@@ -137,26 +139,11 @@ function GoalDetailInner({ goalId }: { goalId: string }) {
 
       <div className="gd-grid">
         <div className="left">
-          <div className="section">
-            <div className="section-head">
-              <div className="stack-h">
-                <span className="title">Key results</span>
-                <span className="pill">{g.key_results.length}</span>
-              </div>
-              <button className="btn btn-ghost btn-sm" disabled title="Editing arrives in S3">
-                <I name="plus" size={12} /> Add
-              </button>
-            </div>
-            {g.key_results.length === 0 ? (
-              <div className="empty-hint">
-                No key results yet. The KR composer arrives in S3.
-              </div>
-            ) : (
-              <div className="kr-list">
-                {g.key_results.map((k) => <KeyResultRow key={k.id} kr={k} />)}
-              </div>
-            )}
-          </div>
+          <KeyResultsSection
+            goalId={g.id}
+            keyResults={g.key_results}
+            onChanged={goalQ.refetch}
+          />
 
           <div className="section">
             <div className="section-head">
@@ -244,12 +231,79 @@ const Meta = ({ k, v }: { k: string; v: string }) => (
   </div>
 );
 
-const KeyResultRow = ({ kr }: { kr: KeyResult }) => {
+const KeyResultsSection = ({
+  goalId,
+  keyResults,
+  onChanged,
+}: {
+  goalId: string;
+  keyResults: KeyResult[];
+  onChanged: () => void;
+}) => {
+  const [composing, setComposing] = useState(false);
+  return (
+    <div className="section">
+      <div className="section-head">
+        <div className="stack-h">
+          <span className="title">Key results</span>
+          <span className="pill">{keyResults.length}</span>
+        </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setComposing((c) => !c)}
+        >
+          <I name="plus" size={12} /> {composing ? "Cancel" : "Add"}
+        </button>
+      </div>
+
+      {composing && (
+        <KrComposer
+          goalId={goalId}
+          onSaved={() => {
+            setComposing(false);
+            onChanged();
+          }}
+          onCancel={() => setComposing(false)}
+        />
+      )}
+
+      {keyResults.length === 0 && !composing ? (
+        <div className="empty-hint">
+          No key results yet. Click <span className="mono">Add</span> to create one.
+        </div>
+      ) : (
+        <div className="kr-list">
+          {keyResults.map((k) => (
+            <KeyResultRow key={k.id} kr={k} onChanged={onChanged} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const KeyResultRow = ({ kr, onChanged }: { kr: KeyResult; onChanged: () => void }) => {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const target = kr.target_value ? Number.parseFloat(kr.target_value) : NaN;
   const current = kr.current_value ? Number.parseFloat(kr.current_value) : NaN;
   const pct = Number.isFinite(target) && Number.isFinite(current) && target > 0
     ? Math.min(100, Math.round((current / target) * 100))
     : 0;
+
+  const onDelete = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.deleteKeyResult(kr.id);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="kr">
       <div>
@@ -258,6 +312,7 @@ const KeyResultRow = ({ kr }: { kr: KeyResult }) => {
           {kr.unit ? `${kr.unit} · ` : ""}
           {kr.due_at ? `due ${dueLabel(kr.due_at)}` : "no deadline"}
         </div>
+        {err && <div className="tiny" style={{ color: "var(--neg)", marginTop: 4 }}>{err}</div>}
       </div>
       <div className="kbar">
         <div className="progressbar" style={{ flex: 1 }}>
@@ -270,9 +325,125 @@ const KeyResultRow = ({ kr }: { kr: KeyResult }) => {
           {kr.current_value ?? "—"}{" "}
           <span style={{ color: "var(--muted)" }}>/ {kr.target_value ?? "—"}</span>
         </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ marginTop: 6, opacity: 0.7 }}
+          onClick={onDelete}
+          disabled={busy}
+          title="Delete key result"
+        >
+          {busy ? "…" : "Delete"}
+        </button>
       </div>
     </div>
   );
+};
+
+const KrComposer = ({
+  goalId,
+  onSaved,
+  onCancel,
+}: {
+  goalId: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}) => {
+  const [form, setForm] = useState<{
+    label: string;
+    target_value: string;
+    current_value: string;
+    unit: string;
+  }>({ label: "", target_value: "", current_value: "", unit: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!form.label.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    const body: KeyResultCreate = {
+      label: form.label.trim(),
+      target_value: form.target_value.trim() || null,
+      current_value: form.current_value.trim() || null,
+      unit: form.unit.trim() || null,
+    };
+    try {
+      await api.createKeyResult(goalId, body);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      style={{
+        margin: "12px 0 16px",
+        padding: 14,
+        border: "1px solid var(--line)",
+        borderRadius: "var(--radius-lg)",
+        background: "var(--bg-1)",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <input
+        autoFocus
+        placeholder="What outcome does this measure?"
+        value={form.label}
+        onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+        style={krInput}
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        <input
+          placeholder="Target (e.g. 100)"
+          value={form.target_value}
+          onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))}
+          style={krInput}
+        />
+        <input
+          placeholder="Current (e.g. 0)"
+          value={form.current_value}
+          onChange={(e) => setForm((f) => ({ ...f, current_value: e.target.value }))}
+          style={krInput}
+        />
+        <input
+          placeholder="Unit (e.g. signups)"
+          value={form.unit}
+          onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+          style={krInput}
+        />
+      </div>
+      {err && <div className="tiny" style={{ color: "var(--neg)" }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" className="btn btn-sm" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary btn-sm"
+          disabled={busy || !form.label.trim()}
+        >
+          {busy ? "Adding…" : "Add"}
+        </button>
+      </div>
+    </form>
+  );
+};
+
+const krInput: React.CSSProperties = {
+  height: 32,
+  padding: "0 10px",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius)",
+  background: "var(--bg)",
+  color: "var(--ink)",
+  fontFamily: "var(--font-sans)",
+  fontSize: 13,
+  outline: "none",
 };
 
 const capitalize = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);

@@ -15,6 +15,7 @@ import type {
   ApiError,
   AuditEntry,
   AuditQuery,
+  BrainGraph,
   DispatchAllResult,
   DispatchResult,
   Goal,
@@ -22,6 +23,9 @@ import type {
   GoalListQuery,
   GoalPatch,
   GoalWithDetail,
+  KeyResult,
+  KeyResultCreate,
+  KeyResultPatch,
   Run,
   RunDispatch,
 } from "./types.js";
@@ -67,6 +71,13 @@ export interface ApiClient {
   // -- Agents ----
   listAgents(opts?: { isActive?: boolean }): Promise<AgentSummary[]>;
   getAgentState(id: string): Promise<AgentState>;
+  // -- Key results ----
+  listKeyResults(goalId: string): Promise<KeyResult[]>;
+  createKeyResult(goalId: string, body: KeyResultCreate): Promise<KeyResult>;
+  updateKeyResult(id: string, body: KeyResultPatch): Promise<KeyResult>;
+  deleteKeyResult(id: string): Promise<void>;
+  // -- Brain ----
+  getBrainGraph(opts?: { limit?: number; refresh?: boolean }): Promise<BrainGraph>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -157,5 +168,32 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       ),
     getAgentState: (id) =>
       request<AgentState>("GET", `/api/agents/${encodeURIComponent(id)}/state`),
+    listKeyResults: (goalId) =>
+      request<KeyResult[]>(
+        "GET",
+        `/api/goals/${encodeURIComponent(goalId)}/key-results`,
+      ),
+    createKeyResult: (goalId, body) =>
+      request<KeyResult>(
+        "POST",
+        `/api/goals/${encodeURIComponent(goalId)}/key-results`,
+        body as unknown as Json,
+      ),
+    updateKeyResult: (id, body) =>
+      request<KeyResult>(
+        "PATCH",
+        `/api/key-results/${encodeURIComponent(id)}`,
+        body as unknown as Json,
+      ),
+    deleteKeyResult: (id) =>
+      request<void>("DELETE", `/api/key-results/${encodeURIComponent(id)}`),
+    getBrainGraph: (opts) =>
+      request<BrainGraph>(
+        "GET",
+        `/api/brain/graph${qs({
+          limit: opts?.limit,
+          refresh: opts?.refresh ? "true" : undefined,
+        })}`,
+      ),
   };
 }
