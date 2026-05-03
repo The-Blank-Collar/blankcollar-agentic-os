@@ -22,12 +22,21 @@ bootstrap: ## First-run setup (Docker check, .env, pull, up, healthcheck)
 	./infra/scripts/bootstrap.sh
 
 .PHONY: up
-up: ## Start the full stack in the background
+up: ## Start the full stack in the background (rebuilds images for changed sources)
+	$(COMPOSE) up -d --build
+
+.PHONY: up-fast
+up-fast: ## Start the stack without checking for source changes (use after a known-clean pull)
 	$(COMPOSE) up -d
 
 .PHONY: up-tools
 up-tools: ## Start the stack including pgAdmin
-	$(COMPOSE) --profile tools up -d
+	$(COMPOSE) --profile tools up -d --build
+
+.PHONY: rebuild
+rebuild: ## Force-rebuild every image, then start the stack
+	$(COMPOSE) build --no-cache
+	$(COMPOSE) up -d
 
 .PHONY: down
 down: ## Stop the stack (keeps data)
@@ -172,7 +181,7 @@ users: ## List provisioned users + roles
 stripe-listen: ## Forward Stripe test webhooks to local Paperclip (requires `stripe` CLI)
 	@command -v stripe >/dev/null || { echo "Install stripe CLI: brew install stripe/stripe-cli/stripe"; exit 1; }
 	@echo "Copy the displayed signing secret (whsec_…) into .env as STRIPE_WEBHOOK_SECRET, then restart paperclip."
-	stripe listen --forward-to localhost:3000/api/webhooks/stripe
+	stripe listen --forward-to localhost:3001/api/webhooks/stripe
 
 .PHONY: stripe-trigger
 stripe-trigger: ## Fire a Stripe test event. Usage: make stripe-trigger EVENT=customer.subscription.created

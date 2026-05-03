@@ -8,9 +8,12 @@ import { dueLabel, progressPercent, relativeTime, runDot, statusDot, statusLabel
 import { useFetch } from "../lib/useFetch";
 import { Empty, ErrorState, Loading } from "../components/States";
 
-type Props = { goalId: string | null };
+type Props = {
+  goalId: string | null;
+  onAfterArchive?: () => void;
+};
 
-export function GoalDetail({ goalId }: Props) {
+export function GoalDetail({ goalId, onAfterArchive }: Props) {
   if (!goalId) {
     return (
       <div className="page">
@@ -18,10 +21,16 @@ export function GoalDetail({ goalId }: Props) {
       </div>
     );
   }
-  return <GoalDetailInner goalId={goalId} />;
+  return <GoalDetailInner goalId={goalId} onAfterArchive={onAfterArchive} />;
 }
 
-function GoalDetailInner({ goalId }: { goalId: string }) {
+function GoalDetailInner({
+  goalId,
+  onAfterArchive,
+}: {
+  goalId: string;
+  onAfterArchive?: () => void;
+}) {
   const goalQ = useFetch<GoalWithDetail>(() => api.getGoal(goalId), [goalId]);
   const runsQ = useFetch<Run[]>(() => api.listRuns({ goalId }), [goalId]);
 
@@ -60,6 +69,26 @@ function GoalDetailInner({ goalId }: { goalId: string }) {
     }
   };
 
+  const [archiving, setArchiving] = useState(false);
+  const [archiveErr, setArchiveErr] = useState<string | null>(null);
+
+  const onArchive = async (): Promise<void> => {
+    if (archiving) return;
+    const ok = window.confirm(
+      "Archive this goal? It hides from active views; runs + key results stay in the audit log.",
+    );
+    if (!ok) return;
+    setArchiving(true);
+    setArchiveErr(null);
+    try {
+      await api.archiveGoal(goalId);
+      onAfterArchive?.();
+    } catch (err) {
+      setArchiveErr(err instanceof Error ? err.message : String(err));
+      setArchiving(false);
+    }
+  };
+
   return (
     <div className="page">
       <div className="gd-hero">
@@ -78,17 +107,40 @@ function GoalDetailInner({ goalId }: { goalId: string }) {
           )}
         </div>
         <div className="gactions">
-          <button className="btn btn-sm" disabled title="Comments arrive in S4">
-            <I name="msg" size={12} /> Comment
-          </button>
-          <button className="btn btn-sm" disabled title="Briefings arrive in S4">
-            <I name="play" size={12} /> Briefing
-          </button>
-          <button className="btn btn-primary btn-sm" disabled title="Editing arrives in S4">
-            Adjust target
+          <button
+            className="btn btn-sm"
+            onClick={onArchive}
+            disabled={archiving || g.status === "archived"}
+            title={
+              g.status === "archived"
+                ? "Already archived"
+                : "Hide from active views; data is preserved"
+            }
+          >
+            {archiving ? "Archiving…" : g.status === "archived" ? "Archived" : "Archive goal"}
           </button>
         </div>
       </div>
+
+      {archiveErr && (
+        <div
+          style={{
+            margin: "12px var(--pad-x) 0",
+            padding: 10,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--neg)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+          }}
+        >
+          <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>
+            ARCHIVE FAILED
+          </span>
+          {archiveErr}
+        </div>
+      )}
 
       <div className="gd-sub">
         <div className="cell">

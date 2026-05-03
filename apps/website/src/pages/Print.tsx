@@ -18,7 +18,7 @@ const noop = (): void => undefined;
 const SCREENS: { label: string; page: string; el: () => JSX.Element }[] = [
   { label: "01 — Dashboard / Company Overview", page: "Studio · Dashboard",   el: () => <Dashboard onOpenGoal={noop} onOpenBrain={noop} /> },
   { label: "02 — Board (Kanban)",               page: "Studio · Board",       el: () => <Kanban onOpenGoal={noop} /> },
-  { label: "03 — Goals",                        page: "Goals",                el: () => <Goals onOpenGoal={noop} /> },
+  { label: "03 — Goals",                        page: "Goals",                el: () => <Goals onOpenGoal={noop} onNewGoal={noop} /> },
   { label: "04 — Goal Detail",                  page: "Goals · Detail",       el: () => <GoalDetail goalId={null} /> },
   { label: "05 — Company Brain",                page: "Company brain",        el: () => <Brain /> },
   { label: "06 — Team / Roster",                page: "Team",                 el: () => <Team /> },

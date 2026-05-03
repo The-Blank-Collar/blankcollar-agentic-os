@@ -16,6 +16,7 @@ import { Print } from "./pages/Print";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { goals } from "./data/fixtures";
 import { CommandPalette } from "./lib/cmdk";
+import { GoalComposer } from "./components/GoalComposer";
 import {
   DEFAULT_TWEAKS,
   TweakRadio,
@@ -56,6 +57,7 @@ export default function App() {
   const [page, setPage] = useState<PageId>("dashboard");
   const [goalId, setGoalId] = useState<string | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [printMode, setPrintMode] = useState<boolean>(
     typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "") === "print",
   );
@@ -116,10 +118,18 @@ export default function App() {
   let content: JSX.Element;
   switch (page) {
     case "goal":
-      content = <GoalDetail goalId={goalId} />;
+      content = (
+        <GoalDetail
+          goalId={goalId}
+          onAfterArchive={() => {
+            setGoalId(null);
+            setPage("goals");
+          }}
+        />
+      );
       break;
     case "goals":
-      content = <Goals onOpenGoal={openGoal} />;
+      content = <Goals onOpenGoal={openGoal} onNewGoal={() => setComposerOpen(true)} />;
       break;
     case "kanban":
       content = <Kanban onOpenGoal={openGoal} />;
@@ -191,7 +201,7 @@ export default function App() {
             <Topbar
               crumbs={crumbs}
               onSearch={() => setCmdOpen(true)}
-              onNew={() => setCmdOpen(true)}
+              onNew={() => setComposerOpen(true)}
             />
             {content}
           </div>
@@ -202,6 +212,11 @@ export default function App() {
         open={cmdOpen}
         onClose={() => setCmdOpen(false)}
         navigate={navigateFromPalette}
+      />
+      <GoalComposer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onCreated={(id) => openGoal(id)}
       />
 
       <TweaksPanel title="Tweaks">

@@ -19,9 +19,12 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "archived", label: "Archived" },
 ];
 
-type Props = { onOpenGoal: (id: string) => void };
+type Props = {
+  onOpenGoal: (id: string) => void;
+  onNewGoal: () => void;
+};
 
-export function Goals({ onOpenGoal }: Props) {
+export function Goals({ onOpenGoal, onNewGoal }: Props) {
   const { data, error, loading, refetch } = useFetch<Goal[]>(
     () => api.listGoals({ limit: 100 }),
     [],
@@ -56,7 +59,7 @@ export function Goals({ onOpenGoal }: Props) {
           <button className="btn btn-sm" onClick={refetch}>
             <I name="spark" size={12} /> Refresh
           </button>
-          <button className="btn btn-primary btn-sm" disabled title="Composer arrives in S4">
+          <button className="btn btn-primary btn-sm" onClick={onNewGoal}>
             <I name="plus" size={12} /> New goal
           </button>
         </div>
