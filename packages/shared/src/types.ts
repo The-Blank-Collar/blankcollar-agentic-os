@@ -261,6 +261,56 @@ export interface AutonomyResolved {
   } | null;
 }
 
+// ---------- Safeguards (Phase 5b / Sprint 5.2) ----------------------------
+
+export type SafeguardScopeKind = "org" | "department" | "agent";
+export type PolicyEffect = "allow" | "approve" | "deny";
+
+export interface SafeguardRow {
+  id: string;
+  org_id: string;
+  scope_kind: SafeguardScopeKind;
+  scope_id: string | null;
+  content_md: string;
+  content_hash: string;
+  rule_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SafeguardParsedRule {
+  effect: PolicyEffect;
+  agent_kind: string | null;
+  skill_slug: string | null;
+  action_kind: string | null;
+  reason: string;
+  priority: number;
+}
+
+export interface SafeguardParseWarning {
+  line: string;
+  line_number: number;
+  message: string;
+}
+
+export interface SafeguardWithParse extends SafeguardRow {
+  rules: SafeguardParsedRule[];
+  warnings: SafeguardParseWarning[];
+}
+
+export interface SafeguardPreview {
+  rule_count: number;
+  rules: SafeguardParsedRule[];
+  warnings: SafeguardParseWarning[];
+  content_hash: string;
+}
+
+export interface SafeguardUpsert {
+  scope_kind: SafeguardScopeKind;
+  scope_id?: string | null;
+  content_md: string;
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {

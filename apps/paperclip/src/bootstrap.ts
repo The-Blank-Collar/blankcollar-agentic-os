@@ -801,6 +801,7 @@ const ADDITIVE_MIGRATIONS = [
     "ops.knowledge_link",
     "ops.approval",
     "ops.autonomy_mode",
+    "ops.safeguard",
   ].flatMap((tbl) => [
     `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
     `CREATE POLICY app_system_scope ON ${tbl}
@@ -861,6 +862,54 @@ const ADDITIVE_MIGRATIONS = [
      WITH CHECK (current_setting('app.org_id', true) IS NULL
                  OR current_setting('app.org_id', true) = ''
                  OR org_id::text = current_setting('app.org_id', true));`,
+
+  // -- ops.safeguard — Phase 5b / Sprint 5.2 -----------------------------
+  // Plain-English rules saved per scope (org / department / agent). Each
+  // safeguard row holds the raw markdown + a content_hash; on PUT we
+  // delete every ops.policy row tagged with `safeguard_id = self.id`
+  // and insert fresh rows from the new parse. The existing policy
+  // evaluator does the enforcement — safeguards just ride on top.
+  //
+  // Generated policy rows get priority=50 (safeguards bind tighter than
+  // a default user-written policy at priority=100). Manual policies can
+  // still override by writing priority<50.
+  `CREATE TABLE IF NOT EXISTS ops.safeguard (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     scope_kind    text NOT NULL CHECK (scope_kind IN ('org','department','agent')),
+     scope_id      uuid,
+     content_md    text NOT NULL,
+     content_hash  text NOT NULL,
+     rule_count    integer NOT NULL DEFAULT 0,
+     created_at    timestamptz NOT NULL DEFAULT now(),
+     updated_at    timestamptz NOT NULL DEFAULT now(),
+     CONSTRAINT safeguard_scope_id_present CHECK (
+       (scope_kind = 'org' AND scope_id IS NULL)
+       OR (scope_kind <> 'org' AND scope_id IS NOT NULL)
+     )
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS safeguard_org_unique
+     ON ops.safeguard (org_id) WHERE scope_kind = 'org';`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS safeguard_scoped_unique
+     ON ops.safeguard (org_id, scope_kind, scope_id) WHERE scope_kind <> 'org';`,
+  `ALTER TABLE ops.safeguard ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.safeguard FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.safeguard;`,
+  `CREATE POLICY app_scope_org ON ops.safeguard
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  // ops.policy gets a back-reference to the safeguard that generated it.
+  // Nullable: hand-written policies have no safeguard. ON DELETE CASCADE
+  // so deleting a safeguard cleans up its generated rules in one shot.
+  `ALTER TABLE ops.policy
+     ADD COLUMN IF NOT EXISTS safeguard_id uuid REFERENCES ops.safeguard(id) ON DELETE CASCADE;`,
+  `CREATE INDEX IF NOT EXISTS policy_safeguard_idx
+     ON ops.policy (safeguard_id) WHERE safeguard_id IS NOT NULL;`,
 
   // -- ops.document + ops.document_chunk — Phase 2.4 ---------------------
   // Long-form ingested content (markdown files, URLs, future PDFs/Docs).
@@ -1178,6 +1227,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.document_chunk",
   "ops.upstream_source",
   "ops.autonomy_mode",
+  "ops.safeguard",
 ];
 
 function buildStrictMigrations(): string[] {

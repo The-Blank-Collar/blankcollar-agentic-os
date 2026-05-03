@@ -6,6 +6,11 @@ import type {
   AutonomyResolved,
   Department,
   Organization,
+  PolicyEffect,
+  SafeguardParsedRule,
+  SafeguardParseWarning,
+  SafeguardPreview as SafeguardPreviewT,
+  SafeguardRow,
   Whoami,
 } from "@blankcollar/shared";
 
@@ -18,6 +23,7 @@ import { ErrorState, Loading } from "../components/States";
 type SectionId =
   | "overview"
   | "autonomy"
+  | "safeguards"
   | "people"
   | "governance"
   | "budgets"
@@ -29,6 +35,7 @@ type SectionId =
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview",   label: "Overview" },
   { id: "autonomy",   label: "Autonomy" },
+  { id: "safeguards", label: "Safeguards" },
   { id: "people",     label: "People & roles" },
   { id: "governance", label: "Governance" },
   { id: "budgets",    label: "Budgets" },
@@ -88,6 +95,7 @@ export function Settings() {
         <div style={{ padding: "var(--pad-y) var(--pad-x)", overflow: "auto" }}>
           {section === "overview"   && <OverviewTab />}
           {section === "autonomy"   && <AutonomyTab />}
+          {section === "safeguards" && <SafeguardsTab />}
           {section === "people"     && <PeopleTab />}
           {section === "governance" && <GovernanceTab />}
           {section === "budgets"    && <BudgetsTab />}
@@ -500,6 +508,276 @@ const ResolvedExplain = ({ resolved }: { resolved: AutonomyResolved }) => {
     </>
   );
 };
+
+// -- Safeguards --------------------------------------------------------------
+
+const SAFEGUARD_TEMPLATE = `# Safeguards
+
+Plain-English rules. Each bullet becomes a policy that the system enforces
+on every action. Lines starting with "Never X without approval" require
+approval before X runs. Lines starting with "Never X" block X outright.
+
+## Communication
+- Never send outbound email without approval. (skill: email.send)
+- Always review press releases. (skill: press.send)
+
+## Spending
+- Never spend more than $200 in one transaction.
+- Auto-approve invoices under $50. (effect: allow)
+
+## Hiring
+- Never extend an offer without approval. (skill: hire.extend_offer)
+`;
+
+const EFFECT_TONE: Record<PolicyEffect, string> = {
+  allow:   "var(--pos)",
+  approve: "var(--info)",
+  deny:    "var(--neg)",
+};
+
+function SafeguardsTab() {
+  const listQ = useFetch<SafeguardRow[]>(() => api.listSafeguards(), []);
+  const orgRow = (listQ.data ?? []).find((r) => r.scope_kind === "org") ?? null;
+
+  const [draft, setDraft] = useState<string>("");
+  const [preview, setPreview] = useState<SafeguardPreviewT | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  // When the saved row arrives or changes, sync the editor draft.
+  useEffect(() => {
+    if (orgRow) {
+      setDraft(orgRow.content_md);
+      setPreview(null);
+      setErr(null);
+    } else if (!listQ.loading && draft === "") {
+      setDraft(SAFEGUARD_TEMPLATE);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgRow?.id, orgRow?.updated_at, listQ.loading]);
+
+  const dirty = orgRow ? draft !== orgRow.content_md : draft !== SAFEGUARD_TEMPLATE && draft.trim().length > 0;
+
+  const onPreview = async (): Promise<void> => {
+    if (previewing) return;
+    setPreviewing(true);
+    setErr(null);
+    try {
+      const r = await api.previewSafeguards(draft);
+      setPreview(r);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const onSave = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const saved = await api.upsertSafeguard({
+        scope_kind: "org",
+        content_md: draft,
+      });
+      // Update preview so the user can confirm what was saved.
+      setPreview({
+        rule_count: saved.rule_count,
+        rules: saved.rules,
+        warnings: saved.warnings,
+        content_hash: saved.content_hash,
+      });
+      setSavedAt(saved.updated_at);
+      await listQ.refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Safeguards.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        The lines your team won't cross — written in plain English. Each
+        bullet becomes a rule the existing policy engine enforces on every
+        action. <b>Deny rules here always win</b> over the autonomy mode you
+        picked above. Per-department and per-agent safeguards arrive in a
+        future sprint; for now this is the studio-wide default.
+      </div>
+
+      {listQ.loading && <Loading label="Loading safeguards…" />}
+      {listQ.error && <ErrorState error={listQ.error} onRetry={listQ.refetch} />}
+
+      {!listQ.loading && !listQ.error && (
+        <>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Studio safeguards</div>
+
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            style={{
+              width: "100%",
+              minHeight: 320,
+              padding: 14,
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius-lg)",
+              background: "var(--bg-1)",
+              color: "var(--ink)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12.5,
+              lineHeight: 1.6,
+              outline: "none",
+              resize: "vertical",
+            }}
+          />
+
+          {err && (
+            <div
+              style={{
+                padding: 10,
+                marginTop: 12,
+                border: "1px solid var(--line)",
+                borderLeft: "2px solid var(--neg)",
+                borderRadius: "var(--radius)",
+                background: "var(--bg-1)",
+                fontSize: 12.5,
+                color: "var(--ink-2)",
+              }}
+            >
+              <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>FAILED</span>
+              {err}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={onPreview}
+              disabled={previewing}
+            >
+              {previewing ? "Parsing…" : "Preview rules"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onSave}
+              disabled={busy || !dirty}
+            >
+              {busy ? "Saving…" : dirty ? "Save safeguards" : "Saved"}
+            </button>
+            {orgRow && (
+              <span className="tiny mono" style={{ color: "var(--muted)", marginLeft: "auto" }}>
+                {savedAt ? `Just saved · ${relativeTime(savedAt)}` : `Last saved ${relativeTime(orgRow.updated_at)}`}
+                {" · "}
+                <span>{orgRow.rule_count} rule{orgRow.rule_count === 1 ? "" : "s"}</span>
+              </span>
+            )}
+          </div>
+
+          {preview && <ParsedRulesView preview={preview} />}
+        </>
+      )}
+    </Section>
+  );
+}
+
+const ParsedRulesView = ({ preview }: { preview: SafeguardPreviewT }) => (
+  <>
+    <div className="eyebrow" style={{ margin: "32px 0 10px" }}>
+      Parsed rules ({preview.rule_count})
+    </div>
+    {preview.warnings.length > 0 && (
+      <div
+        style={{
+          padding: 10,
+          marginBottom: 12,
+          border: "1px solid var(--line)",
+          borderLeft: "2px solid var(--warn)",
+          borderRadius: "var(--radius)",
+          background: "var(--bg-1)",
+          fontSize: 12.5,
+          color: "var(--ink-2)",
+        }}
+      >
+        <div className="mono" style={{ color: "var(--warn)", marginBottom: 6 }}>
+          {preview.warnings.length} WARNING{preview.warnings.length === 1 ? "" : "S"}
+        </div>
+        {preview.warnings.map((w, i) => (
+          <WarningRow key={i} w={w} />
+        ))}
+      </div>
+    )}
+    {preview.rule_count === 0 ? (
+      <div className="empty-hint">
+        No rules parsed yet. Add a bullet starting with "Never X without approval".
+      </div>
+    ) : (
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        {preview.rules.map((r, i) => (
+          <RuleRow key={i} r={r} idx={i} />
+        ))}
+      </div>
+    )}
+  </>
+);
+
+const RuleRow = ({ r, idx }: { r: SafeguardParsedRule; idx: number }) => (
+  <div
+    style={{
+      padding: "12px 16px",
+      borderTop: idx ? "1px solid var(--line)" : 0,
+      display: "grid",
+      gridTemplateColumns: "90px 1fr",
+      gap: 16,
+      alignItems: "flex-start",
+    }}
+  >
+    <span
+      className="mono"
+      style={{
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: EFFECT_TONE[r.effect],
+        paddingTop: 2,
+      }}
+    >
+      {r.effect}
+    </span>
+    <div>
+      <div style={{ fontSize: 13 }}>{r.reason}</div>
+      <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 4 }}>
+        {[
+          r.skill_slug ? `skill=${r.skill_slug}` : null,
+          r.agent_kind ? `agent=${r.agent_kind}` : null,
+          r.action_kind ? `action=${r.action_kind}` : null,
+          `priority=${r.priority}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </div>
+    </div>
+  </div>
+);
+
+const WarningRow = ({ w }: { w: SafeguardParseWarning }) => (
+  <div style={{ marginTop: 4 }}>
+    <span className="mono tiny" style={{ color: "var(--muted)" }}>
+      line {w.line_number}:
+    </span>{" "}
+    <span style={{ color: "var(--ink-2)" }}>{w.message}</span>{" "}
+    <span className="mono tiny" style={{ color: "var(--muted)" }}>
+      "{w.line.length > 60 ? w.line.slice(0, 57) + "…" : w.line}"
+    </span>
+  </div>
+);
 
 // -- People & roles ----------------------------------------------------------
 

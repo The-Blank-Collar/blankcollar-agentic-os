@@ -587,6 +587,34 @@ export const AutonomyResolveQuery = z
   .strict();
 export type AutonomyResolveQuery = z.infer<typeof AutonomyResolveQuery>;
 
+// ---------- Safeguards (Phase 5b / Sprint 5.2) ----------------------------
+
+export const SafeguardScopeKind = z.enum(["org", "department", "agent"]);
+export type SafeguardScopeKind = z.infer<typeof SafeguardScopeKind>;
+
+export const SafeguardUpsert = z
+  .object({
+    scope_kind: SafeguardScopeKind,
+    scope_id: z.string().uuid().nullable().optional(),
+    content_md: z.string().min(0).max(100_000),
+  })
+  .strict()
+  .refine(
+    (d) => (d.scope_kind === "org" ? d.scope_id == null : d.scope_id != null),
+    {
+      message: "scope_id must be null for scope_kind='org' and present otherwise",
+      path: ["scope_id"],
+    },
+  );
+export type SafeguardUpsert = z.infer<typeof SafeguardUpsert>;
+
+export const SafeguardPreview = z
+  .object({
+    content_md: z.string().min(0).max(100_000),
+  })
+  .strict();
+export type SafeguardPreview = z.infer<typeof SafeguardPreview>;
+
 // ---------- Audit ---------------------------------------------------------
 
 export const AuditQuery = z

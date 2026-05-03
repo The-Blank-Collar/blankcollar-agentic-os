@@ -35,6 +35,10 @@ import type {
   Organization,
   Run,
   RunDispatch,
+  SafeguardPreview,
+  SafeguardRow,
+  SafeguardUpsert,
+  SafeguardWithParse,
   Whoami,
 } from "./types.js";
 
@@ -99,6 +103,12 @@ export interface ApiClient {
   upsertAutonomy(body: AutonomyModeUpsert): Promise<AutonomyModeRow>;
   deleteAutonomy(id: string): Promise<void>;
   resolveAutonomy(opts?: { departmentId?: string; agentId?: string; skillId?: string }): Promise<AutonomyResolved>;
+  // -- Safeguards (Phase 5b / Sprint 5.2) ----
+  listSafeguards(): Promise<SafeguardRow[]>;
+  getSafeguard(id: string): Promise<SafeguardRow>;
+  upsertSafeguard(body: SafeguardUpsert): Promise<SafeguardWithParse>;
+  deleteSafeguard(id: string): Promise<void>;
+  previewSafeguards(content_md: string): Promise<SafeguardPreview>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -242,5 +252,14 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
           skill_id: opts?.skillId,
         })}`,
       ),
+    listSafeguards: () => request<SafeguardRow[]>("GET", "/api/safeguards"),
+    getSafeguard: (id) =>
+      request<SafeguardRow>("GET", `/api/safeguards/${encodeURIComponent(id)}`),
+    upsertSafeguard: (body) =>
+      request<SafeguardWithParse>("PUT", "/api/safeguards", body as unknown as Json),
+    deleteSafeguard: (id) =>
+      request<void>("DELETE", `/api/safeguards/${encodeURIComponent(id)}`),
+    previewSafeguards: (content_md) =>
+      request<SafeguardPreview>("POST", "/api/safeguards/preview", { content_md }),
   };
 }

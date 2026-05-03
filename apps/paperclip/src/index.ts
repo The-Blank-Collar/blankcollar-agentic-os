@@ -33,6 +33,7 @@ import { paymentRoutes } from "./routes/payments.js";
 import { policyRoutes } from "./routes/policies.js";
 import { routineRoutes } from "./routes/routines.js";
 import { runRoutes } from "./routes/runs.js";
+import { safeguardRoutes } from "./routes/safeguards.js";
 import { searchRoutes } from "./routes/search.js";
 import { selfImprovementRoutes } from "./routes/self_improvement.js";
 import { skillRoutes } from "./routes/skills.js";
@@ -129,6 +130,7 @@ async function main(): Promise<void> {
   await app.register(approvalRoutes);
   await app.register(channelRoutes);
   await app.register(runRoutes);
+  await app.register(safeguardRoutes);
   await app.register(searchRoutes);
   await app.register(statsRoutes);
   await app.register(agentRoutes);
