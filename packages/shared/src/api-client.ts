@@ -41,6 +41,11 @@ import type {
   KeyResultCreate,
   KeyResultPatch,
   Organization,
+  OutcomeCreateBody,
+  OutcomeMetricCreateBody,
+  OutcomeMetricRow,
+  OutcomeRow,
+  OutcomeWithMetrics,
   Run,
   RunDispatch,
   SafeguardPreview,
@@ -52,6 +57,7 @@ import type {
   SkillDraftRow,
   SkillDraftStatus,
   SkillRow,
+  SimilarOutcome,
   Whoami,
 } from "./types.js";
 
@@ -130,6 +136,14 @@ export interface ApiClient {
   patchSkillDraft(id: string, body: SkillDraftPatch): Promise<SkillDraftRow>;
   promoteSkillDraft(id: string): Promise<SkillDraftPromoteResult>;
   rejectSkillDraft(id: string): Promise<void>;
+  // -- Outcomes (Phase 5b / Sprint 5.5) ----
+  recordOutcome(runId: string, body: OutcomeCreateBody): Promise<OutcomeRow>;
+  listOutcomes(opts?: { skillSlug?: string; agentKind?: string; outputKind?: string; limit?: number }): Promise<OutcomeRow[]>;
+  getOutcome(id: string): Promise<OutcomeWithMetrics>;
+  recordOutcomeMetric(outcomeId: string, body: OutcomeMetricCreateBody): Promise<OutcomeMetricRow>;
+  listOutcomeMetrics(outcomeId: string): Promise<OutcomeMetricRow[]>;
+  similarOutcomes(opts: { skillSlug?: string; agentKind?: string; outputKind?: string; topN?: number; poolSize?: number }): Promise<SimilarOutcome[]>;
+  deleteOutcome(id: string): Promise<void>;
   // -- Connectors (Phase 5b / Sprint 5.4) ----
   listConnectorProviders(): Promise<{ providers: ConnectorProviderInfo[] }>;
   listConnectors(): Promise<ConnectorRow[]>;
@@ -321,6 +335,48 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
         "POST",
         `/api/skill-drafts/${encodeURIComponent(id)}/reject`,
       ),
+    recordOutcome: (runId, body) =>
+      request<OutcomeRow>(
+        "POST",
+        `/api/runs/${encodeURIComponent(runId)}/outcomes`,
+        body as unknown as Json,
+      ),
+    listOutcomes: (opts) =>
+      request<OutcomeRow[]>(
+        "GET",
+        `/api/outcomes${qs({
+          skill_slug: opts?.skillSlug,
+          agent_kind: opts?.agentKind,
+          output_kind: opts?.outputKind,
+          limit: opts?.limit,
+        })}`,
+      ),
+    getOutcome: (id) =>
+      request<OutcomeWithMetrics>("GET", `/api/outcomes/${encodeURIComponent(id)}`),
+    recordOutcomeMetric: (outcomeId, body) =>
+      request<OutcomeMetricRow>(
+        "POST",
+        `/api/outcomes/${encodeURIComponent(outcomeId)}/metrics`,
+        body as unknown as Json,
+      ),
+    listOutcomeMetrics: (outcomeId) =>
+      request<OutcomeMetricRow[]>(
+        "GET",
+        `/api/outcomes/${encodeURIComponent(outcomeId)}/metrics`,
+      ),
+    similarOutcomes: (opts) =>
+      request<SimilarOutcome[]>(
+        "GET",
+        `/api/outcomes/similar${qs({
+          skill_slug: opts.skillSlug,
+          agent_kind: opts.agentKind,
+          output_kind: opts.outputKind,
+          top_n: opts.topN,
+          pool_size: opts.poolSize,
+        })}`,
+      ),
+    deleteOutcome: (id) =>
+      request<void>("DELETE", `/api/outcomes/${encodeURIComponent(id)}`),
     listConnectorProviders: () =>
       request<{ providers: ConnectorProviderInfo[] }>("GET", "/api/connectors/providers"),
     listConnectors: () => request<ConnectorRow[]>("GET", "/api/connectors"),

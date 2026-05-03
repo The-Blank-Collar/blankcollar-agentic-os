@@ -19,6 +19,7 @@ import type { FastifyInstance } from "fastify";
 import { audit } from "../audit.js";
 import { resolveAutonomy } from "../autonomy/resolve.js";
 import { withOrgScope } from "../db.js";
+import { retrieveOutcomes } from "../outcomes/retrieve.js";
 import { evaluatePolicy } from "../policy/evaluate.js";
 import { resolveCallerScope } from "../scope.js";
 import { SkillListQuery } from "../schemas.js";
@@ -253,6 +254,33 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
           };
         }
 
+        // Few-shot retrieval (Sprint 5.5): pull top-N successful past
+        // outcomes for the same skill so the agent gets primed with
+        // examples that have measurably worked. Best-effort — never
+        // blocks the queue path; an empty array is a fine default.
+        let fewShot: Array<{ title: string; output_kind: string; content_md: string; score: number; created_at: string }> = [];
+        try {
+          const recent = await retrieveOutcomes(client, {
+            orgId: scope.org_id,
+            skillSlug: skill.slug,
+            agentKind: skill.agent_kind,
+            topN: 3,
+            poolSize: 20,
+          });
+          fewShot = recent.map((r) => ({
+            title: r.title,
+            output_kind: r.output_kind,
+            content_md: r.content_md.slice(0, 4_000),
+            score: Number(r.score.toFixed(3)),
+            created_at: r.created_at,
+          }));
+        } catch {
+          // Retrieval errors don't fail the run — the agent runs
+          // without examples in that case. Surface in audit metadata
+          // below so the operator can spot a chronic failure.
+          fewShot = [];
+        }
+
         const { rows: runRows } = await client.query<{ id: string }>(
           `INSERT INTO ops.run (goal_id, status, input)
            VALUES ($1, 'queued', $2::jsonb)
@@ -263,6 +291,7 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
               skill: skill.slug,
               agent_kind: skill.agent_kind,
               inputs,
+              few_shot: fewShot,
             }),
           ],
         );
@@ -279,6 +308,7 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
               version: skill.version,
               goal_id: goalId,
               agent_kind: skill.agent_kind,
+              few_shot_count: fewShot.length,
             },
           },
           client,

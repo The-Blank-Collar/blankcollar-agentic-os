@@ -30,6 +30,7 @@ import { upstreamRoutes } from "./routes/upstream.js";
 import { llmRoutes } from "./routes/llm.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
+import { outcomeRoutes } from "./routes/outcomes.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { policyRoutes } from "./routes/policies.js";
 import { routineRoutes } from "./routes/routines.js";
@@ -111,6 +112,7 @@ async function main(): Promise<void> {
   await app.register(webhookRoutes);
   await app.register(healthRoutes);
   await app.register(orgRoutes);
+  await app.register(outcomeRoutes);
   await app.register(goalRoutes);
   await app.register(keyResultRoutes);
   await app.register(captureRoutes);

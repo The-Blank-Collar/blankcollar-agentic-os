@@ -694,6 +694,68 @@ export const ConnectorPaste = z
   .strict();
 export type ConnectorPaste = z.infer<typeof ConnectorPaste>;
 
+// ---------- Outcomes (Phase 5b / Sprint 5.5) -------------------------------
+
+export const OutcomeMetricDirection = z.enum([
+  "higher_is_better",
+  "lower_is_better",
+  "informational",
+]);
+export type OutcomeMetricDirection = z.infer<typeof OutcomeMetricDirection>;
+
+export const OutcomeMetricSource = z.enum(["manual", "webhook", "derived", "agent"]);
+export type OutcomeMetricSource = z.infer<typeof OutcomeMetricSource>;
+
+export const OutcomeCreate = z
+  .object({
+    run_id:      z.string().uuid().nullable().optional(),
+    goal_id:     z.string().uuid().nullable().optional(),
+    agent_kind:  z.string().min(1).max(40).nullable().optional(),
+    skill_slug:  z.string().min(1).max(120).nullable().optional(),
+    output_kind: z.string().min(1).max(60),
+    title:       z.string().min(1).max(500),
+    content_md:  z.string().min(1).max(1_000_000),
+    metadata:    z.record(z.unknown()).optional(),
+  })
+  .strict();
+export type OutcomeCreate = z.infer<typeof OutcomeCreate>;
+
+export const OutcomeListQuery = z
+  .object({
+    skill_slug:  z.string().min(1).max(120).optional(),
+    agent_kind:  z.string().min(1).max(40).optional(),
+    output_kind: z.string().min(1).max(60).optional(),
+    limit:       z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+export type OutcomeListQuery = z.infer<typeof OutcomeListQuery>;
+
+export const OutcomeMetricCreate = z
+  .object({
+    name:      z.string().min(1).max(80),
+    value:     z.number().finite(),
+    unit:      z.string().max(40).nullable().optional(),
+    direction: OutcomeMetricDirection.default("higher_is_better"),
+    source:    OutcomeMetricSource.default("manual"),
+    metadata:  z.record(z.unknown()).optional(),
+  })
+  .strict();
+export type OutcomeMetricCreate = z.infer<typeof OutcomeMetricCreate>;
+
+export const OutcomeSimilarQuery = z
+  .object({
+    skill_slug:  z.string().min(1).max(120).optional(),
+    agent_kind:  z.string().min(1).max(40).optional(),
+    output_kind: z.string().min(1).max(60).optional(),
+    top_n:       z.coerce.number().int().min(1).max(20).default(3),
+    pool_size:   z.coerce.number().int().min(1).max(200).default(20),
+  })
+  .strict()
+  .refine((d) => !!d.skill_slug || !!d.agent_kind, {
+    message: "Provide at least one of skill_slug or agent_kind",
+  });
+export type OutcomeSimilarQuery = z.infer<typeof OutcomeSimilarQuery>;
+
 // ---------- Audit ---------------------------------------------------------
 
 export const AuditQuery = z

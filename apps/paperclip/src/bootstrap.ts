@@ -805,6 +805,8 @@ const ADDITIVE_MIGRATIONS = [
     "ops.skill_draft",
     "ops.connector",
     "ops.connector_artifact",
+    "ops.outcome",
+    "ops.outcome_metric",
   ].flatMap((tbl) => [
     `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
     `CREATE POLICY app_system_scope ON ${tbl}
@@ -1035,6 +1037,83 @@ const ADDITIVE_MIGRATIONS = [
   `ALTER TABLE ops.connector_artifact FORCE  ROW LEVEL SECURITY;`,
   `DROP POLICY IF EXISTS app_scope_org ON ops.connector_artifact;`,
   `CREATE POLICY app_scope_org ON ops.connector_artifact
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  // -- ops.outcome + ops.outcome_metric — Phase 5b / Sprint 5.5 -----------
+  // Performance memory. An "outcome" is a concrete piece of output an
+  // agent produced (campaign copy, proposal text, decision artifact …).
+  // Many "metrics" can attach to each outcome over time — open rate,
+  // conversion %, human edit distance, time-to-close, etc. — recorded
+  // either via webhook (Stripe / HubSpot / email opens) or operator
+  // entry. The retriever in `apps/paperclip/src/outcomes/retrieve.ts`
+  // joins ops.run_feedback (Sprint 2.3) + ops.outcome_metric to compute
+  // a composite score, then surfaces top-N successful past outputs as
+  // few-shot context for future similar runs.
+  //
+  // The link to ops.run is nullable (ON DELETE SET NULL) so deleting a
+  // run doesn't cascade-kill the historical outcome — the outcome is
+  // the long-lived artifact; the run is just where it came from.
+  `CREATE TABLE IF NOT EXISTS ops.outcome (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     run_id        uuid REFERENCES ops.run(id) ON DELETE SET NULL,
+     goal_id       uuid REFERENCES ops.goal(id) ON DELETE SET NULL,
+     agent_kind    text,
+     skill_slug    text,
+     output_kind   text NOT NULL,
+     title         text NOT NULL,
+     content_md    text NOT NULL,
+     content_hash  text NOT NULL,
+     char_count    integer NOT NULL DEFAULT 0,
+     metadata      jsonb NOT NULL DEFAULT '{}'::jsonb,
+     created_at    timestamptz NOT NULL DEFAULT now(),
+     updated_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS outcome_org_skill_idx
+     ON ops.outcome (org_id, skill_slug, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS outcome_org_agent_idx
+     ON ops.outcome (org_id, agent_kind, created_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS outcome_run_idx
+     ON ops.outcome (run_id) WHERE run_id IS NOT NULL;`,
+  `ALTER TABLE ops.outcome ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.outcome FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.outcome;`,
+  `CREATE POLICY app_scope_org ON ops.outcome
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `CREATE TABLE IF NOT EXISTS ops.outcome_metric (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     outcome_id    uuid NOT NULL REFERENCES ops.outcome(id) ON DELETE CASCADE,
+     name          text NOT NULL,
+     value         numeric NOT NULL,
+     unit          text,
+     direction     text NOT NULL DEFAULT 'higher_is_better'
+                   CHECK (direction IN ('higher_is_better','lower_is_better','informational')),
+     source        text NOT NULL DEFAULT 'manual'
+                   CHECK (source IN ('manual','webhook','derived','agent')),
+     recorded_at   timestamptz NOT NULL DEFAULT now(),
+     metadata      jsonb NOT NULL DEFAULT '{}'::jsonb,
+     created_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS outcome_metric_outcome_idx
+     ON ops.outcome_metric (outcome_id, recorded_at DESC);`,
+  `CREATE INDEX IF NOT EXISTS outcome_metric_org_name_idx
+     ON ops.outcome_metric (org_id, name, recorded_at DESC);`,
+  `ALTER TABLE ops.outcome_metric ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.outcome_metric FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.outcome_metric;`,
+  `CREATE POLICY app_scope_org ON ops.outcome_metric
      USING      (current_setting('app.org_id', true) IS NULL
                  OR current_setting('app.org_id', true) = ''
                  OR org_id::text = current_setting('app.org_id', true))
@@ -1362,6 +1441,8 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.skill_draft",
   "ops.connector",
   "ops.connector_artifact",
+  "ops.outcome",
+  "ops.outcome_metric",
 ];
 
 function buildStrictMigrations(): string[] {

@@ -8,6 +8,9 @@ import {
   GoalCreate,
   GoalListQuery,
   GoalPatch,
+  OutcomeCreate,
+  OutcomeMetricCreate,
+  OutcomeSimilarQuery,
   RunDispatch,
   RunFeedbackCreate,
   Scope,
@@ -156,6 +159,60 @@ describe("SkillDraftListQuery", () => {
     expect(ok.success).toBe(true);
     if (ok.success) expect(ok.data.limit).toBe(10);
     expect(SkillDraftListQuery.safeParse({ limit: "0" }).success).toBe(false);
+  });
+});
+
+describe("OutcomeCreate / OutcomeMetricCreate / OutcomeSimilarQuery", () => {
+  it("OutcomeCreate requires output_kind, title, content_md", () => {
+    expect(OutcomeCreate.safeParse({}).success).toBe(false);
+    expect(
+      OutcomeCreate.safeParse({
+        output_kind: "campaign_copy",
+        title: "spring catalogue",
+        content_md: "## hello",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("OutcomeMetricCreate enforces direction + source enums", () => {
+    expect(
+      OutcomeMetricCreate.safeParse({
+        name: "open_rate",
+        value: 0.42,
+        direction: "yolo",
+      }).success,
+    ).toBe(false);
+    expect(
+      OutcomeMetricCreate.safeParse({
+        name: "open_rate",
+        value: 0.42,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("OutcomeMetricCreate rejects non-finite numbers", () => {
+    expect(
+      OutcomeMetricCreate.safeParse({ name: "x", value: Number.POSITIVE_INFINITY }).success,
+    ).toBe(false);
+    expect(
+      OutcomeMetricCreate.safeParse({ name: "x", value: Number.NaN }).success,
+    ).toBe(false);
+  });
+
+  it("OutcomeSimilarQuery requires at least one filter", () => {
+    expect(OutcomeSimilarQuery.safeParse({}).success).toBe(false);
+    expect(
+      OutcomeSimilarQuery.safeParse({ skill_slug: "email.send" }).success,
+    ).toBe(true);
+  });
+
+  it("OutcomeSimilarQuery clamps top_n / pool_size to sane ranges", () => {
+    expect(
+      OutcomeSimilarQuery.safeParse({ skill_slug: "x", top_n: 0 }).success,
+    ).toBe(false);
+    expect(
+      OutcomeSimilarQuery.safeParse({ skill_slug: "x", top_n: 999 }).success,
+    ).toBe(false);
   });
 });
 

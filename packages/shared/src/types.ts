@@ -462,6 +462,79 @@ export interface ConnectorArtifactRow {
   updated_at: string;
 }
 
+// ---------- Outcomes (Phase 5b / Sprint 5.5) -------------------------------
+
+export type OutcomeMetricDirection =
+  | "higher_is_better"
+  | "lower_is_better"
+  | "informational";
+
+export type OutcomeMetricSource = "manual" | "webhook" | "derived" | "agent";
+
+export interface OutcomeRow {
+  id: string;
+  org_id: string;
+  run_id: string | null;
+  goal_id: string | null;
+  agent_kind: string | null;
+  skill_slug: string | null;
+  output_kind: string;
+  title: string;
+  content_md: string;
+  content_hash: string;
+  char_count: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OutcomeMetricRow {
+  id: string;
+  outcome_id: string;
+  name: string;
+  value: string; // numeric arrives as string from pg
+  unit: string | null;
+  direction: OutcomeMetricDirection;
+  source: OutcomeMetricSource;
+  recorded_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface OutcomeWithMetrics extends OutcomeRow {
+  metrics: OutcomeMetricRow[];
+}
+
+export interface OutcomeCreateBody {
+  run_id?: string | null;
+  goal_id?: string | null;
+  agent_kind?: string | null;
+  skill_slug?: string | null;
+  output_kind: string;
+  title: string;
+  content_md: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface OutcomeMetricCreateBody {
+  name: string;
+  value: number;
+  unit?: string | null;
+  direction?: OutcomeMetricDirection;
+  source?: OutcomeMetricSource;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SimilarOutcome {
+  outcome_id: string;
+  score: number;
+  has_feedback: boolean;
+  metric_count: number;
+  title: string;
+  content_md: string;
+  output_kind: string;
+  created_at: string;
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {

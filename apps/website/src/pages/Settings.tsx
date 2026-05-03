@@ -10,6 +10,8 @@ import type {
   ConnectorSyncResult,
   Department,
   Organization,
+  OutcomeMetricRow,
+  OutcomeRow,
   PolicyEffect,
   SafeguardParsedRule,
   SafeguardParseWarning,
@@ -29,6 +31,7 @@ type SectionId =
   | "autonomy"
   | "safeguards"
   | "connectors"
+  | "performance"
   | "people"
   | "governance"
   | "budgets"
@@ -38,17 +41,18 @@ type SectionId =
   | "billing";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
-  { id: "overview",   label: "Overview" },
-  { id: "autonomy",   label: "Autonomy" },
-  { id: "safeguards", label: "Safeguards" },
-  { id: "connectors", label: "Connectors" },
-  { id: "people",     label: "People & roles" },
-  { id: "governance", label: "Governance" },
-  { id: "budgets",    label: "Budgets" },
-  { id: "presets",    label: "Industry preset" },
-  { id: "policies",   label: "Agent policies" },
-  { id: "channels",   label: "Channels" },
-  { id: "billing",    label: "Billing" },
+  { id: "overview",    label: "Overview" },
+  { id: "autonomy",    label: "Autonomy" },
+  { id: "safeguards",  label: "Safeguards" },
+  { id: "connectors",  label: "Connectors" },
+  { id: "performance", label: "Performance" },
+  { id: "people",      label: "People & roles" },
+  { id: "governance",  label: "Governance" },
+  { id: "budgets",     label: "Budgets" },
+  { id: "presets",     label: "Industry preset" },
+  { id: "policies",    label: "Agent policies" },
+  { id: "channels",    label: "Channels" },
+  { id: "billing",     label: "Billing" },
 ];
 
 const DEFAULT_ORG_SLUG: string =
@@ -99,11 +103,12 @@ export function Settings() {
         </div>
 
         <div style={{ padding: "var(--pad-y) var(--pad-x)", overflow: "auto" }}>
-          {section === "overview"   && <OverviewTab />}
-          {section === "autonomy"   && <AutonomyTab />}
-          {section === "safeguards" && <SafeguardsTab />}
-          {section === "connectors" && <ConnectorsTab />}
-          {section === "people"     && <PeopleTab />}
+          {section === "overview"    && <OverviewTab />}
+          {section === "autonomy"    && <AutonomyTab />}
+          {section === "safeguards"  && <SafeguardsTab />}
+          {section === "connectors"  && <ConnectorsTab />}
+          {section === "performance" && <PerformanceTab />}
+          {section === "people"      && <PeopleTab />}
           {section === "governance" && <GovernanceTab />}
           {section === "budgets"    && <BudgetsTab />}
           {section === "presets"    && <PresetsTab />}
@@ -1189,6 +1194,230 @@ const ConnectorRowCard = ({ row, onChanged }: { row: ConnectorRow; onChanged: ()
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// -- Performance memory ------------------------------------------------------
+
+const METRIC_DIRECTION_TONE: Record<string, string> = {
+  higher_is_better: "var(--pos)",
+  lower_is_better:  "var(--info)",
+  informational:    "var(--muted)",
+};
+
+function PerformanceTab() {
+  const outcomesQ = useFetch<OutcomeRow[]>(
+    () => api.listOutcomes({ limit: 50 }),
+    [],
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Performance memory.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Past outputs the team produced, plus the metrics that landed against
+        each. The next time an agent runs the same skill, the top-3
+        successful past outputs (ranked by feedback rating + metric direction)
+        get injected as few-shot context — your team gets measurably better
+        at its repeat tasks without any retraining.
+      </div>
+
+      {outcomesQ.loading && <Loading label="Loading outcomes…" />}
+      {outcomesQ.error && <ErrorState error={outcomesQ.error} onRetry={outcomesQ.refetch} />}
+
+      {!outcomesQ.loading && !outcomesQ.error && (outcomesQ.data ?? []).length === 0 && (
+        <Empty
+          title="No outcomes recorded yet."
+          hint='Record one with `POST /api/runs/:id/outcomes` after a successful skill run; the few-shot loop populates itself from there.'
+        />
+      )}
+
+      {!outcomesQ.loading && !outcomesQ.error && (outcomesQ.data ?? []).length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 380px",
+            gap: 16,
+            alignItems: "flex-start",
+          }}
+        >
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            {(outcomesQ.data ?? []).map((o, i) => {
+              const selected = selectedId === o.id;
+              return (
+                <div
+                  key={o.id}
+                  onClick={() => setSelectedId(o.id)}
+                  style={{
+                    padding: "12px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                    cursor: "pointer",
+                    background: selected ? "var(--bg-2)" : "transparent",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: 10.5,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {o.output_kind}
+                    </span>
+                    {o.skill_slug && (
+                      <span className="tiny mono" style={{ color: "var(--muted)" }}>
+                        {o.skill_slug}
+                      </span>
+                    )}
+                    <span
+                      className="tiny mono"
+                      style={{ color: "var(--muted)", marginLeft: "auto" }}
+                    >
+                      {relativeTime(o.created_at)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginTop: 4 }}>
+                    {o.title}
+                  </div>
+                  <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 4 }}>
+                    {o.char_count} chars
+                    {o.agent_kind && ` · agent=${o.agent_kind}`}
+                    {o.run_id && ` · run ${o.run_id.slice(0, 8)}`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <OutcomeDetail outcomeId={selectedId} />
+        </div>
+      )}
+    </Section>
+  );
+}
+
+const OutcomeDetail = ({ outcomeId }: { outcomeId: string | null }) => {
+  const detailQ = useFetch<{
+    id: string;
+    title: string;
+    output_kind: string;
+    content_md: string;
+    metrics: OutcomeMetricRow[];
+    created_at: string;
+  } | null>(
+    () => (outcomeId ? api.getOutcome(outcomeId) : Promise.resolve(null)),
+    [outcomeId],
+  );
+
+  if (!outcomeId) {
+    return (
+      <div
+        className="card"
+        style={{
+          padding: 18,
+          fontSize: 12.5,
+          color: "var(--muted)",
+          fontStyle: "italic",
+          fontFamily: "var(--font-serif)",
+        }}
+      >
+        Select an outcome on the left to inspect it.
+      </div>
+    );
+  }
+  if (detailQ.loading) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <Loading label="Loading…" />
+      </div>
+    );
+  }
+  if (detailQ.error) {
+    return (
+      <div className="card" style={{ padding: 18 }}>
+        <ErrorState error={detailQ.error} onRetry={detailQ.refetch} />
+      </div>
+    );
+  }
+  const d = detailQ.data;
+  if (!d) return null;
+  return (
+    <div className="card" style={{ padding: 18 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>{d.output_kind}</div>
+      <div className="h4" style={{ marginBottom: 12 }}>{d.title}</div>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>Metrics ({d.metrics.length})</div>
+      {d.metrics.length === 0 ? (
+        <div className="tiny" style={{ color: "var(--muted)", fontStyle: "italic" }}>
+          No metrics recorded yet. POST one to{" "}
+          <span className="mono">/api/outcomes/{d.id.slice(0, 8)}/metrics</span>.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {d.metrics.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 8,
+                padding: "8px 10px",
+                border: "1px solid var(--line)",
+                borderLeft: `2px solid ${
+                  METRIC_DIRECTION_TONE[m.direction] ?? "var(--muted)"
+                }`,
+                borderRadius: "var(--radius)",
+                background: "var(--bg-1)",
+                alignItems: "baseline",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{m.name}</div>
+                <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                  {m.direction} · {m.source} · {relativeTime(m.recorded_at)}
+                </div>
+              </div>
+              <div className="num" style={{ fontSize: 14 }}>
+                {Number(m.value).toLocaleString()}
+                {m.unit && (
+                  <span className="tiny mono" style={{ color: "var(--muted)", marginLeft: 4 }}>
+                    {m.unit}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div
+        className="eyebrow"
+        style={{ marginTop: 16, marginBottom: 6 }}
+      >
+        Output preview
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          padding: 10,
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius)",
+          background: "var(--bg-1)",
+          color: "var(--ink-2)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          lineHeight: 1.5,
+          maxHeight: 220,
+          overflow: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {d.content_md.slice(0, 2_000)}
+        {d.content_md.length > 2_000 ? "\n\n…(truncated)" : ""}
+      </pre>
     </div>
   );
 };
