@@ -520,8 +520,10 @@ services:
   website:
     <<: [*restart-policy, *default-logging]
     build:
-      context: ./apps/website
-      dockerfile: Dockerfile
+      # Build from the repo root so the Vite alias for @blankcollar/shared
+      # (which points at ../../packages/shared/src/) can resolve.
+      context: .
+      dockerfile: apps/website/Dockerfile
     image: blankcollar/website:0.1.0
     container_name: bc_website
     ports:
