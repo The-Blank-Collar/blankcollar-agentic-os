@@ -18,6 +18,7 @@ import { brainRoutes } from "./routes/brain.js";
 import { briefingRoutes } from "./routes/briefings.js";
 import { captureRoutes } from "./routes/captures.js";
 import { channelRoutes } from "./routes/channels.js";
+import { connectorRoutes } from "./routes/connectors.js";
 import { goalRoutes } from "./routes/goals.js";
 import { healthRoutes } from "./routes/health.js";
 import { heartbeatRoutes } from "./routes/heartbeat.js";
@@ -131,6 +132,7 @@ async function main(): Promise<void> {
   await app.register(llmRoutes);
   await app.register(approvalRoutes);
   await app.register(channelRoutes);
+  await app.register(connectorRoutes);
   await app.register(runRoutes);
   await app.register(safeguardRoutes);
   await app.register(searchRoutes);

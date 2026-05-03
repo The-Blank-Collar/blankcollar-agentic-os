@@ -803,6 +803,8 @@ const ADDITIVE_MIGRATIONS = [
     "ops.autonomy_mode",
     "ops.safeguard",
     "ops.skill_draft",
+    "ops.connector",
+    "ops.connector_artifact",
   ].flatMap((tbl) => [
     `DROP POLICY IF EXISTS app_system_scope ON ${tbl};`,
     `CREATE POLICY app_system_scope ON ${tbl}
@@ -964,6 +966,81 @@ const ADDITIVE_MIGRATIONS = [
      ADD COLUMN IF NOT EXISTS source_document_id uuid REFERENCES ops.document(id) ON DELETE SET NULL;`,
   `CREATE INDEX IF NOT EXISTS skill_source_doc_idx
      ON ops.skill (source_document_id) WHERE source_document_id IS NOT NULL;`,
+
+  // -- ops.connector + ops.connector_artifact — Phase 5b / Sprint 5.4 -----
+  // Auto data ingestion. A connector is one configured source that yields
+  // many documents over time (vs. ops.upstream_source from Phase 2.5,
+  // which holds ONE sliding document per URL). Each connector points at a
+  // provider — 'manual_paste', 'url_poll', 'slack', 'gdrive', 'zoom',
+  // 'hubspot', 'notion' — and stores its provider-specific config + an
+  // optional nango_connection_id (the OAuth handle from our Nango
+  // gateway) for providers that need OAuth.
+  //
+  // ops.connector_artifact maps each piece of content the connector has
+  // ingested back to (a) its provider-side external id (Slack message ts,
+  // GDrive file id, Zoom meeting id, etc.) and (b) the ops.document row
+  // we generated for it. UNIQUE (connector_id, external_id) makes
+  // re-syncs idempotent: the next pull updates the same artifact instead
+  // of duplicating.
+  `CREATE TABLE IF NOT EXISTS ops.connector (
+     id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id                    uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     provider                  text NOT NULL,
+     name                      text NOT NULL,
+     scope                     ops.skill_scope NOT NULL DEFAULT 'company',
+     nango_connection_id       text,
+     config                    jsonb NOT NULL DEFAULT '{}'::jsonb,
+     refresh_interval_seconds  integer NOT NULL DEFAULT 3600
+                               CHECK (refresh_interval_seconds >= 60),
+     last_synced_at            timestamptz,
+     last_status               text,
+     last_error                text,
+     consecutive_failures      integer NOT NULL DEFAULT 0,
+     enabled                   boolean NOT NULL DEFAULT true,
+     created_at                timestamptz NOT NULL DEFAULT now(),
+     updated_at                timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE INDEX IF NOT EXISTS connector_org_provider_idx
+     ON ops.connector (org_id, provider, enabled);`,
+  `CREATE INDEX IF NOT EXISTS connector_due_idx
+     ON ops.connector (org_id, last_synced_at) WHERE enabled = true;`,
+  `ALTER TABLE ops.connector ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.connector FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.connector;`,
+  `CREATE POLICY app_scope_org ON ops.connector
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+
+  `CREATE TABLE IF NOT EXISTS ops.connector_artifact (
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id          uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     connector_id    uuid NOT NULL REFERENCES ops.connector(id) ON DELETE CASCADE,
+     external_id     text NOT NULL,
+     document_id     uuid REFERENCES ops.document(id) ON DELETE SET NULL,
+     content_hash    text,
+     last_seen_at    timestamptz NOT NULL DEFAULT now(),
+     metadata        jsonb NOT NULL DEFAULT '{}'::jsonb,
+     created_at      timestamptz NOT NULL DEFAULT now(),
+     updated_at      timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS connector_artifact_unique
+     ON ops.connector_artifact (connector_id, external_id);`,
+  `CREATE INDEX IF NOT EXISTS connector_artifact_org_idx
+     ON ops.connector_artifact (org_id, last_seen_at DESC);`,
+  `ALTER TABLE ops.connector_artifact ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.connector_artifact FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.connector_artifact;`,
+  `CREATE POLICY app_scope_org ON ops.connector_artifact
+     USING      (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) IS NULL
+                 OR current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
 
   // -- ops.document + ops.document_chunk — Phase 2.4 ---------------------
   // Long-form ingested content (markdown files, URLs, future PDFs/Docs).
@@ -1283,6 +1360,8 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.autonomy_mode",
   "ops.safeguard",
   "ops.skill_draft",
+  "ops.connector",
+  "ops.connector_artifact",
 ];
 
 function buildStrictMigrations(): string[] {

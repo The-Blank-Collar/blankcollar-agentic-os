@@ -19,6 +19,14 @@ import type {
   AutonomyModeUpsert,
   AutonomyResolved,
   BrainGraph,
+  ConnectorArtifactRow,
+  ConnectorCreate,
+  ConnectorPasteBody,
+  ConnectorPasteResult,
+  ConnectorPatch,
+  ConnectorProviderInfo,
+  ConnectorRow,
+  ConnectorSyncResult,
   Department,
   DispatchAllResult,
   DispatchResult,
@@ -122,6 +130,16 @@ export interface ApiClient {
   patchSkillDraft(id: string, body: SkillDraftPatch): Promise<SkillDraftRow>;
   promoteSkillDraft(id: string): Promise<SkillDraftPromoteResult>;
   rejectSkillDraft(id: string): Promise<void>;
+  // -- Connectors (Phase 5b / Sprint 5.4) ----
+  listConnectorProviders(): Promise<{ providers: ConnectorProviderInfo[] }>;
+  listConnectors(): Promise<ConnectorRow[]>;
+  getConnector(id: string): Promise<ConnectorRow>;
+  createConnector(body: ConnectorCreate): Promise<ConnectorRow>;
+  patchConnector(id: string, body: ConnectorPatch): Promise<ConnectorRow>;
+  deleteConnector(id: string): Promise<void>;
+  syncConnector(id: string): Promise<ConnectorSyncResult>;
+  pasteConnector(id: string, body: ConnectorPasteBody): Promise<ConnectorPasteResult>;
+  listConnectorArtifacts(id: string): Promise<ConnectorArtifactRow[]>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -302,6 +320,37 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       request<void>(
         "POST",
         `/api/skill-drafts/${encodeURIComponent(id)}/reject`,
+      ),
+    listConnectorProviders: () =>
+      request<{ providers: ConnectorProviderInfo[] }>("GET", "/api/connectors/providers"),
+    listConnectors: () => request<ConnectorRow[]>("GET", "/api/connectors"),
+    getConnector: (id) =>
+      request<ConnectorRow>("GET", `/api/connectors/${encodeURIComponent(id)}`),
+    createConnector: (body) =>
+      request<ConnectorRow>("POST", "/api/connectors", body as unknown as Json),
+    patchConnector: (id, body) =>
+      request<ConnectorRow>(
+        "PATCH",
+        `/api/connectors/${encodeURIComponent(id)}`,
+        body as unknown as Json,
+      ),
+    deleteConnector: (id) =>
+      request<void>("DELETE", `/api/connectors/${encodeURIComponent(id)}`),
+    syncConnector: (id) =>
+      request<ConnectorSyncResult>(
+        "POST",
+        `/api/connectors/${encodeURIComponent(id)}/sync`,
+      ),
+    pasteConnector: (id, body) =>
+      request<ConnectorPasteResult>(
+        "POST",
+        `/api/connectors/${encodeURIComponent(id)}/paste`,
+        body as unknown as Json,
+      ),
+    listConnectorArtifacts: (id) =>
+      request<ConnectorArtifactRow[]>(
+        "GET",
+        `/api/connectors/${encodeURIComponent(id)}/artifacts`,
       ),
   };
 }

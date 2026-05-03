@@ -372,6 +372,96 @@ export interface SkillDraftPromoteResult {
   version: number;
 }
 
+// ---------- Connectors (Phase 5b / Sprint 5.4) -----------------------------
+
+export type ConnectorProviderKey =
+  | "manual_paste"
+  | "url_poll"
+  | "slack"
+  | "gdrive"
+  | "zoom"
+  | "hubspot"
+  | "notion";
+
+export type ConnectorProviderStatus = "ready" | "needs_oauth" | "stub";
+
+export interface ConnectorProviderInfo {
+  key: ConnectorProviderKey;
+  label: string;
+  hint: string;
+  status: ConnectorProviderStatus;
+  config_schema: Record<string, unknown>;
+}
+
+export interface ConnectorRow {
+  id: string;
+  org_id: string;
+  provider: ConnectorProviderKey;
+  name: string;
+  scope: "personal" | "company" | "shared";
+  nango_connection_id: string | null;
+  config: Record<string, unknown>;
+  refresh_interval_seconds: number;
+  last_synced_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectorCreate {
+  provider: ConnectorProviderKey;
+  name: string;
+  scope?: "personal" | "company" | "shared";
+  nango_connection_id?: string | null;
+  config?: Record<string, unknown>;
+  refresh_interval_seconds?: number;
+}
+
+export interface ConnectorPatch {
+  name?: string;
+  scope?: "personal" | "company" | "shared";
+  nango_connection_id?: string | null;
+  config?: Record<string, unknown>;
+  refresh_interval_seconds?: number;
+  enabled?: boolean;
+}
+
+export interface ConnectorPasteBody {
+  external_id: string;
+  title: string;
+  content_md: string;
+  metadata?: Record<string, unknown>;
+  tags?: string[];
+}
+
+export interface ConnectorSyncResult {
+  status: "ok" | "no_op" | "failed";
+  artifacts_added: number;
+  artifacts_updated: number;
+  artifacts_unchanged: number;
+  warnings: string[];
+  error: string | null;
+}
+
+export interface ConnectorPasteResult {
+  document_id: string;
+  action: "added" | "updated" | "unchanged";
+}
+
+export interface ConnectorArtifactRow {
+  id: string;
+  external_id: string;
+  document_id: string | null;
+  content_hash: string | null;
+  last_seen_at: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {

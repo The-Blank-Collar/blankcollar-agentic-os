@@ -646,6 +646,54 @@ export const SkillDraftListQuery = z
   .strict();
 export type SkillDraftListQuery = z.infer<typeof SkillDraftListQuery>;
 
+// ---------- Connectors (Phase 5b / Sprint 5.4) ----------------------------
+
+export const ConnectorProviderKey = z.enum([
+  "manual_paste",
+  "url_poll",
+  "slack",
+  "gdrive",
+  "zoom",
+  "hubspot",
+  "notion",
+]);
+export type ConnectorProviderKey = z.infer<typeof ConnectorProviderKey>;
+
+export const ConnectorCreate = z
+  .object({
+    provider:                 ConnectorProviderKey,
+    name:                     z.string().min(1).max(200),
+    scope:                    SkillScope.default("company"),
+    nango_connection_id:      z.string().max(200).nullable().optional(),
+    config:                   z.record(z.unknown()).default({}),
+    refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).default(3_600),
+  })
+  .strict();
+export type ConnectorCreate = z.infer<typeof ConnectorCreate>;
+
+export const ConnectorPatch = z
+  .object({
+    name:                     z.string().min(1).max(200).optional(),
+    scope:                    SkillScope.optional(),
+    nango_connection_id:      z.string().max(200).nullable().optional(),
+    config:                   z.record(z.unknown()).optional(),
+    refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).optional(),
+    enabled:                  z.boolean().optional(),
+  })
+  .strict();
+export type ConnectorPatch = z.infer<typeof ConnectorPatch>;
+
+export const ConnectorPaste = z
+  .object({
+    external_id:  z.string().min(1).max(200),
+    title:        z.string().min(1).max(500),
+    content_md:   z.string().min(1).max(1_000_000),
+    metadata:     z.record(z.unknown()).optional(),
+    tags:         z.array(z.string().min(1).max(40)).max(20).optional(),
+  })
+  .strict();
+export type ConnectorPaste = z.infer<typeof ConnectorPaste>;
+
 // ---------- Audit ---------------------------------------------------------
 
 export const AuditQuery = z

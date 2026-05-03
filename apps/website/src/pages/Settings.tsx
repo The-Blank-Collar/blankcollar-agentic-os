@@ -4,6 +4,10 @@ import type {
   AutonomyModeName,
   AutonomyModeRow,
   AutonomyResolved,
+  ConnectorProviderInfo,
+  ConnectorProviderKey,
+  ConnectorRow,
+  ConnectorSyncResult,
   Department,
   Organization,
   PolicyEffect,
@@ -18,12 +22,13 @@ import { ChannelMark, I } from "../icons";
 import { api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { ErrorState, Loading } from "../components/States";
+import { Empty, ErrorState, Loading } from "../components/States";
 
 type SectionId =
   | "overview"
   | "autonomy"
   | "safeguards"
+  | "connectors"
   | "people"
   | "governance"
   | "budgets"
@@ -36,6 +41,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview",   label: "Overview" },
   { id: "autonomy",   label: "Autonomy" },
   { id: "safeguards", label: "Safeguards" },
+  { id: "connectors", label: "Connectors" },
   { id: "people",     label: "People & roles" },
   { id: "governance", label: "Governance" },
   { id: "budgets",    label: "Budgets" },
@@ -96,6 +102,7 @@ export function Settings() {
           {section === "overview"   && <OverviewTab />}
           {section === "autonomy"   && <AutonomyTab />}
           {section === "safeguards" && <SafeguardsTab />}
+          {section === "connectors" && <ConnectorsTab />}
           {section === "people"     && <PeopleTab />}
           {section === "governance" && <GovernanceTab />}
           {section === "budgets"    && <BudgetsTab />}
@@ -778,6 +785,413 @@ const WarningRow = ({ w }: { w: SafeguardParseWarning }) => (
     </span>
   </div>
 );
+
+// -- Connectors --------------------------------------------------------------
+
+const PROVIDER_TONE: Record<string, string> = {
+  ready:        "var(--pos)",
+  needs_oauth:  "var(--info)",
+  stub:         "var(--muted-2)",
+};
+
+function ConnectorsTab() {
+  const providersQ = useFetch<{ providers: ConnectorProviderInfo[] }>(
+    () => api.listConnectorProviders(),
+    [],
+  );
+  const connectorsQ = useFetch<ConnectorRow[]>(() => api.listConnectors(), []);
+  const [picker, setPicker] = useState<ConnectorProviderKey | null>(null);
+  const [name, setName] = useState("");
+  const [nangoId, setNangoId] = useState("");
+  const [configJson, setConfigJson] = useState("{}");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const providers = providersQ.data?.providers ?? [];
+  const selectedProvider = providers.find((p) => p.key === picker) ?? null;
+  const needsOauth = selectedProvider?.status === "needs_oauth";
+
+  const reset = (): void => {
+    setPicker(null);
+    setName("");
+    setNangoId("");
+    setConfigJson("{}");
+    setErr(null);
+  };
+
+  const onCreate = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!picker || !name.trim() || busy) return;
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(configJson || "{}");
+    } catch {
+      setErr("Config must be valid JSON.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.createConnector({
+        provider: picker,
+        name: name.trim(),
+        nango_connection_id: nangoId.trim() || null,
+        config,
+      });
+      reset();
+      await connectorsQ.refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Connectors.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Sources that flow into the company brain on a schedule. Each
+        configured connector pulls fresh content into <span className="mono">ops.document</span>,
+        which the existing chunker indexes for search and the SOP→Skill
+        pipeline. Two connectors work today; the rest need the Nango
+        Connect flow (lands in follow-up sprints).
+      </div>
+
+      {/* Provider catalogue */}
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Providers</div>
+      {providersQ.loading && <Loading label="Loading providers…" />}
+      {providersQ.error && <ErrorState error={providersQ.error} onRetry={providersQ.refetch} />}
+      {!providersQ.loading && !providersQ.error && providers.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+            gap: 10,
+            marginBottom: 24,
+          }}
+        >
+          {providers.map((p) => {
+            const tone = PROVIDER_TONE[p.status] ?? "var(--muted)";
+            const selected = picker === p.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPicker(p.key)}
+                style={{
+                  textAlign: "left",
+                  padding: 14,
+                  border: selected ? `2px solid ${tone}` : "1px solid var(--line)",
+                  background: selected ? "var(--bg-2)" : "var(--bg-1)",
+                  color: "var(--ink)",
+                  borderRadius: "var(--radius-lg)",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: tone,
+                    }}
+                  />
+                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
+                </div>
+                <div className="tiny mono" style={{ color: "var(--muted)", marginBottom: 6 }}>
+                  {p.status}
+                </div>
+                <div className="small" style={{ color: "var(--ink-2)", lineHeight: 1.4 }}>
+                  {p.hint}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create form */}
+      {picker && (
+        <form
+          onSubmit={onCreate}
+          style={{
+            padding: 16,
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-lg)",
+            background: "var(--bg-1)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
+          <div className="eyebrow">
+            New {selectedProvider?.label ?? picker} connector
+          </div>
+          <input
+            placeholder="Name (e.g. 'Marketing Slack' or 'Wiki polls')"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={connectorInputStyle}
+            autoFocus
+          />
+          {needsOauth && (
+            <input
+              placeholder="Nango connection id (from Nango Connect flow)"
+              value={nangoId}
+              onChange={(e) => setNangoId(e.target.value)}
+              style={connectorInputStyle}
+            />
+          )}
+          <div>
+            <div className="tiny mono" style={{ color: "var(--muted)", marginBottom: 6 }}>
+              Provider config (JSON)
+            </div>
+            <textarea
+              value={configJson}
+              onChange={(e) => setConfigJson(e.target.value)}
+              spellCheck={false}
+              style={{
+                ...connectorInputStyle,
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                minHeight: 100,
+                padding: 10,
+                resize: "vertical",
+              }}
+            />
+          </div>
+          {err && (
+            <div
+              style={{
+                padding: 10,
+                border: "1px solid var(--line)",
+                borderLeft: "2px solid var(--neg)",
+                borderRadius: "var(--radius)",
+                background: "var(--bg)",
+                fontSize: 12.5,
+                color: "var(--ink-2)",
+              }}
+            >
+              <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>FAILED</span>
+              {err}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="submit"
+              className="btn btn-primary btn-sm"
+              disabled={busy || !name.trim()}
+            >
+              {busy ? "Creating…" : "Create connector"}
+            </button>
+            <button type="button" className="btn btn-sm" onClick={reset}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Active connectors */}
+      <div className="eyebrow" style={{ marginBottom: 10 }}>
+        Configured connectors ({(connectorsQ.data ?? []).length})
+      </div>
+      {connectorsQ.loading && <Loading label="Loading connectors…" />}
+      {connectorsQ.error && <ErrorState error={connectorsQ.error} onRetry={connectorsQ.refetch} />}
+      {!connectorsQ.loading && !connectorsQ.error && (connectorsQ.data ?? []).length === 0 && (
+        <Empty
+          title="No connectors yet."
+          hint="Pick a provider above to wire one up."
+        />
+      )}
+      {!connectorsQ.loading && !connectorsQ.error && (connectorsQ.data ?? []).length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {(connectorsQ.data ?? []).map((c) => (
+            <ConnectorRowCard key={c.id} row={c} onChanged={connectorsQ.refetch} />
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+const connectorInputStyle: React.CSSProperties = {
+  width: "100%",
+  height: 36,
+  padding: "0 10px",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius)",
+  background: "var(--bg)",
+  color: "var(--ink)",
+  fontFamily: "var(--font-sans)",
+  fontSize: 13,
+  outline: "none",
+};
+
+const ConnectorRowCard = ({ row, onChanged }: { row: ConnectorRow; onChanged: () => void }) => {
+  const [busy, setBusy] = useState<"sync" | "toggle" | "delete" | null>(null);
+  const [result, setResult] = useState<ConnectorSyncResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onSync = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("sync");
+    setErr(null);
+    setResult(null);
+    try {
+      const r = await api.syncConnector(row.id);
+      setResult(r);
+      await onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const onToggle = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("toggle");
+    setErr(null);
+    try {
+      await api.patchConnector(row.id, { enabled: !row.enabled });
+      await onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const onDelete = async (): Promise<void> => {
+    if (busy) return;
+    if (!window.confirm(`Delete connector "${row.name}"? Its artifacts + linked documents stay.`)) return;
+    setBusy("delete");
+    setErr(null);
+    try {
+      await api.deleteConnector(row.id);
+      await onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+    }
+  };
+
+  const statusTone = row.last_status === "ok"
+    ? "var(--pos)"
+    : row.last_status === "no_op"
+      ? "var(--muted)"
+      : row.last_status === "failed"
+        ? "var(--neg)"
+        : "var(--muted-2)";
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto",
+          gap: 14,
+          alignItems: "flex-start",
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            alignSelf: "stretch",
+            borderRadius: 2,
+            minHeight: 36,
+            background: row.enabled ? "var(--ink)" : "var(--muted-2)",
+          }}
+        />
+        <div>
+          <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{row.name}</span>
+            <span className="tiny mono" style={{ color: "var(--muted)" }}>{row.provider}</span>
+            {!row.enabled && (
+              <span className="pill" style={{ color: "var(--muted)" }}>disabled</span>
+            )}
+          </div>
+          <div className="tiny mono" style={{ color: "var(--muted)" }}>
+            every {Math.round(row.refresh_interval_seconds / 60)}m
+            {" · "}
+            last sync{" "}
+            {row.last_synced_at ? relativeTime(row.last_synced_at) : "never"}
+            {" · "}
+            <span style={{ color: statusTone }}>
+              {row.last_status ?? "—"}
+            </span>
+            {row.consecutive_failures > 0 && (
+              <span style={{ color: "var(--warn)" }}>
+                {" · "}
+                {row.consecutive_failures} consecutive failure{row.consecutive_failures === 1 ? "" : "s"}
+              </span>
+            )}
+            {row.nango_connection_id && (
+              <>
+                {" · "}
+                <span>nango connected</span>
+              </>
+            )}
+          </div>
+          {row.last_error && (
+            <div
+              className="tiny"
+              style={{
+                marginTop: 6,
+                color: "var(--neg)",
+                maxWidth: 640,
+                fontFamily: "var(--font-mono)",
+                wordBreak: "break-word",
+              }}
+            >
+              error: {row.last_error}
+            </div>
+          )}
+          {result && (
+            <div className="tiny" style={{ marginTop: 8, color: "var(--ink-2)" }}>
+              <span className="mono" style={{ color: "var(--pos)" }}>just synced</span>
+              {": "}
+              +{result.artifacts_added} added · ~{result.artifacts_updated} updated · ={result.artifacts_unchanged} unchanged
+              {result.warnings.length > 0 && (
+                <>
+                  {" · "}
+                  <span style={{ color: "var(--warn)" }}>
+                    {result.warnings.length} warning{result.warnings.length === 1 ? "" : "s"}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+          {err && (
+            <div
+              className="tiny"
+              style={{ marginTop: 6, color: "var(--neg)", fontFamily: "var(--font-mono)" }}
+            >
+              {err}
+            </div>
+          )}
+        </div>
+        <div className="stack-v" style={{ alignItems: "flex-end", gap: 6 }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={onSync}
+            disabled={busy !== null}
+          >
+            {busy === "sync" ? "Syncing…" : "Sync now"}
+          </button>
+          <button type="button" className="btn btn-sm" onClick={onToggle} disabled={busy !== null}>
+            {row.enabled ? "Disable" : "Enable"}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} disabled={busy !== null}>
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // -- People & roles ----------------------------------------------------------
 
