@@ -169,6 +169,9 @@ services:
       NANGO_URL: ${NANGO_URL:-http://nango:3003}
       NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
       NANGO_GOOGLE_PROVIDER_KEY: ${NANGO_GOOGLE_PROVIDER_KEY:-google}
+      # Comma-separated list of extra origins added to the CORS allowlist.
+      # localhost:3000 is always allowed; set this in prod for the public domain.
+      WEBSITE_PUBLIC_URL: ${WEBSITE_PUBLIC_URL:-}
     ports:
       - "${PAPERCLIP_PORT:-3001}:80"
     volumes:

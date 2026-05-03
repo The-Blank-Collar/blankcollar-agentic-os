@@ -1,5 +1,6 @@
 /** Paperclip — orchestrator + dashboard. */
 
+import cors from "@fastify/cors";
 import formbody from "@fastify/formbody";
 import Fastify from "fastify";
 
@@ -55,6 +56,34 @@ async function main(): Promise<void> {
   });
 
   await app.register(formbody);
+
+  // CORS — the React console at apps/website/ talks to /api/* from a
+  // different origin (`:3000` → `:3001`). Browsers block cross-origin
+  // fetches without an explicit Access-Control-Allow-Origin response.
+  // Allowed origins:
+  //   - http://localhost:3000  — local dev (the new console)
+  //   - http://127.0.0.1:3000  — same, IP form
+  //   - WEBSITE_PUBLIC_URL     — production website (e.g. https://blankcollar.ai)
+  //                              comma-separated; defaults to "" (no extras)
+  const corsOrigins = new Set<string>([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ]);
+  for (const o of (process.env.WEBSITE_PUBLIC_URL ?? "").split(",")) {
+    const trimmed = o.trim();
+    if (trimmed) corsOrigins.add(trimmed);
+  }
+  await app.register(cors, {
+    origin: Array.from(corsOrigins),
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Authorization",
+      "Content-Type",
+      "X-BC-Org-Slug",
+    ],
+    credentials: true,
+    maxAge: 86_400,
+  });
 
   // Supabase JWT auth (no-op when SUPABASE_JWT_SECRET unset).
   app.addHook("preHandler", authPreHandler);

@@ -78,7 +78,7 @@ export default function App() {
       content = <GoalDetail goalId={goalId} />;
       break;
     case "goals":
-      content = <Goals />;
+      content = <Goals onOpenGoal={openGoal} />;
       break;
     case "kanban":
       content = <Kanban />;

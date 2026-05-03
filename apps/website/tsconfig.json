@@ -15,7 +15,12 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "useDefineForClassFields": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@blankcollar/shared": ["../../packages/shared/src/index.ts"],
+      "@blankcollar/shared/*": ["../../packages/shared/src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../../packages/shared/src"]
 }
