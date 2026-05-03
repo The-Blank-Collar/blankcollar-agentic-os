@@ -1,0 +1,89 @@
+/* Print mode — used by /print to render every screen on its own page. */
+
+@media print {
+  @page { size: 1280px 920px; margin: 0; }
+  html, body { overflow: visible !important; height: auto !important; background: #0B0B0C; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .surface-toggle, .twk-panel, .twk-launch, .cmd-overlay { display: none !important; }
+}
+
+.print-doc {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+}
+.print-page {
+  width: 1280px;
+  height: 920px;
+  background: var(--bg);
+  color: var(--ink);
+  page-break-after: always;
+  break-after: page;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+  border-bottom: 1px solid var(--line);
+}
+.print-page:last-child { page-break-after: auto; }
+
+/* Cover */
+.print-cover { padding: 80px 96px; }
+.print-cover-grid { display: flex; flex-direction: column; height: 100%; }
+.brand-mark.big { width: 56px; height: 56px; border-width: 2px; }
+.brand-mark.big::after { width: 14px; height: 14px; inset: 6px 6px auto auto; }
+.print-cover-title {
+  font-size: 128px;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  font-weight: 500;
+  margin: 64px 0 24px;
+  font-family: var(--font-sans);
+}
+.print-cover-sub {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-style: italic;
+  color: var(--ink-2);
+  max-width: 560px;
+  line-height: 1.4;
+}
+.print-toc { margin-top: auto; padding-top: 48px; border-top: 1px solid var(--line); }
+.print-toc-row {
+  display: flex;
+  gap: 24px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.print-toc-row:first-child { border-top: 0; }
+.print-toc-n { color: var(--muted); width: 56px; font-family: var(--font-mono); }
+.print-toc-l { color: var(--ink); }
+
+/* Frame */
+.print-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.print-chrome {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.print-screen {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.print-screen .shell { width: 100%; height: 100%; }
+.print-screen .page { overflow: hidden !important; }
+.print-screen .sidebar { overflow: hidden !important; }

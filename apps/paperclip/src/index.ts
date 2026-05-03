@@ -37,7 +37,6 @@ import { selfImprovementRoutes } from "./routes/self_improvement.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
 import { toolRoutes } from "./routes/tools.js";
-import { uiRoutes } from "./routes/ui.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { syncSkillRegistry } from "./skills/registry.js";
 import { probeRegisteredTools, syncToolRegistry } from "./tools/registry.js";
@@ -133,16 +132,20 @@ async function main(): Promise<void> {
   await app.register(statsRoutes);
   await app.register(agentRoutes);
   await app.register(auditRoutes);
-  await app.register(uiRoutes);
 
+  // Paperclip serves /api/*, /webhooks/*, and /healthz only — the htmx
+  // dashboard was retired in Phase 4 and the React console at apps/website
+  // owns the user-facing surface (port 3000). Anything else gets a JSON
+  // 404 with a hint pointing at the new front door.
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith("/api/")) {
       reply.code(404).send({ error: "not_found" });
       return;
     }
-    reply.code(404).type("text/html").send(
-      `<!doctype html><body style="font-family:system-ui;background:#0b0d10;color:#e7eaee;display:grid;place-items:center;min-height:100vh"><div style="text-align:center"><h1>Not found</h1><p><a style="color:#7aa7ff" href="/">← Goals</a></p></div></body>`,
-    );
+    reply.code(404).send({
+      error: "not_found",
+      hint: "the user-facing UI lives at the website service (default :3000); paperclip serves /api/* and /webhooks/*",
+    });
   });
 
   // Additive schema migrations — idempotent, run every boot so existing dev

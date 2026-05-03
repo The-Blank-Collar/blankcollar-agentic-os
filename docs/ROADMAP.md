@@ -110,7 +110,12 @@ A phased plan from groundwork to public launch. Each phase ends with something d
 
 **Goal:** the dashboard becomes the *thing*. Goal-first UX, not API-first. The console replaces Paperclip's htmx UI; built against the Phase-3.5 contract.
 
-- [ ] Vite + React console at `apps/website/` (Swiss editorial, dark-first)
+- [x] **Vite + React console at `apps/website/` (Swiss editorial, dark-first) — S1–S5.**
+  S1 scaffolded the Vite + React + TS surface, ported the design's tokens, shell (Sidebar / Topbar) and Dashboard against fixtures, plus the Tweaks panel (theme · density · role · surface). Port swap landed: website at `:3000`, paperclip API at `:3001`.
+  S2 introduced `packages/shared/` (typed Zod-mirrored types + `fetch` API client) and wired Goals, Goal Detail, Activity to live paperclip endpoints. Paperclip got `@fastify/cors` with `localhost:3000` + production `WEBSITE_PUBLIC_URL` allowlist.
+  S3 added the Brain constellation (stable polar layout from `/api/brain/graph`), Team roster (sigil per agent, grouped by kind), and the KR composer + delete on Goal Detail.
+  S4 shipped the 8-tab Settings shell (read-only, with v2 banner; Overview tab pulls org/whoami/departments live), the drag-to-status Kanban (4 columns mapped to GoalStatus, optimistic move with revert-on-error), and the Inbox wired to `/api/inbox` + `/api/inbox/summary` + acknowledge action.
+  S5 added the ⌘K palette (indexes goals + agents + recent audit, arrow + Enter routing), `/print` mode (renders every screen on its own page, auto-fires `window.print()`), retired the legacy htmx UI (`apps/paperclip/src/routes/ui.ts` deleted), and added the website probe to `infra/scripts/doctor.sh`.
 - [ ] Capture-first input ("what's on your mind") instead of "create a goal"
 - [ ] Daily briefing as the front door (replaces the goals list as default)
 - [ ] Goal cards differentiated by `kind` (decision card / routine card / standing card)

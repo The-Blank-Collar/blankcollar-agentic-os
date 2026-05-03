@@ -12,8 +12,10 @@ import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
 import { Kanban } from "./pages/Kanban";
 import { Settings } from "./pages/Settings";
+import { Print } from "./pages/Print";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { goals } from "./data/fixtures";
+import { CommandPalette } from "./lib/cmdk";
 import {
   DEFAULT_TWEAKS,
   TweakRadio,
@@ -53,16 +55,55 @@ export default function App() {
   const [tweaks, setTweak] = useTweaks(DEFAULT_TWEAKS);
   const [page, setPage] = useState<PageId>("dashboard");
   const [goalId, setGoalId] = useState<string | null>(null);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [printMode, setPrintMode] = useState<boolean>(
+    typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "") === "print",
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = tweaks.theme;
     document.documentElement.dataset.density = tweaks.density;
   }, [tweaks.theme, tweaks.density]);
 
-  const openGoal = (id: string) => {
+  // ⌘K / Ctrl+K opens the palette; Esc closes it (also handled inside).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCmdOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // URL hash routing for /print so it can be deep-linked + printed cleanly.
+  useEffect(() => {
+    const onHash = (): void => {
+      const h = window.location.hash.replace(/^#\/?/, "");
+      setPrintMode(h === "print");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const openGoal = (id: string): void => {
     setGoalId(id);
     setPage("goal");
   };
+
+  const navigateFromPalette = (target: PageId, id?: string): void => {
+    if (target === "goal" && id) {
+      openGoal(id);
+    } else {
+      setPage(target);
+      setGoalId(null);
+    }
+  };
+
+  if (printMode) {
+    return <Print />;
+  }
 
   const crumbs = (() => {
     if (page === "goal") {
@@ -147,11 +188,21 @@ export default function App() {
             role={tweaks.role}
           />
           <div className="main">
-            <Topbar crumbs={crumbs} onSearch={() => undefined} onNew={() => undefined} />
+            <Topbar
+              crumbs={crumbs}
+              onSearch={() => setCmdOpen(true)}
+              onNew={() => setCmdOpen(true)}
+            />
             {content}
           </div>
         </div>
       )}
+
+      <CommandPalette
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        navigate={navigateFromPalette}
+      />
 
       <TweaksPanel title="Tweaks">
         <TweakSection title="Surface">
