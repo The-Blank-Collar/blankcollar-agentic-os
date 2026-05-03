@@ -18,6 +18,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { audit } from "../audit.js";
 import { withOrgScope } from "../db.js";
+import { chatComplete, GatewayError } from "../llm/gateway.js";
 import { resolveCallerScope } from "../scope.js";
 import {
   StripeSignatureError,
@@ -25,9 +26,11 @@ import {
   recordStripeEvent,
   verifyStripeSignature,
 } from "../stripe.js";
+import { sendMessage as tgSendMessage, TelegramApiError, TelegramConfigError } from "../telegram/client.js";
 
 const STRIPE_SECRET = () => process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const CAPTURE_WEBHOOK_SECRET = () => process.env.INBOUND_CAPTURE_WEBHOOK_SECRET ?? "";
+const TELEGRAM_WEBHOOK_SECRET = () => process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
 
 function verifyHmac(rawBody: string, headerValue: string, secret: string): boolean {
   // Header format: "hmac-sha256=<hex>" (matches the Linear / GitHub style).
@@ -200,5 +203,158 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return reply.code(201).send(result);
+  });
+
+  // ----- Telegram webhook ------------------------------------------------
+  // Bot → Telegram → here. Telegram sends a POST with the message envelope
+  // and the secret token in the X-Telegram-Bot-Api-Secret-Token header.
+  //
+  // v1 round-trip:
+  //   1. Verify the secret header.
+  //   2. Extract the message text + chat id.
+  //   3. Persist as a capture (existing pipeline → ephemeral goal).
+  //   4. Call Portkey-routed chatComplete with a tight system prompt.
+  //   5. Reply via the Telegram Bot API.
+  //
+  // Always return 200 OK to Telegram (even on internal errors — Telegram
+  // retries 4xx/5xx aggressively, and the operator should see the failure
+  // in our audit log + bot reply, not in a Telegram retry loop).
+  //
+  // Future v2: route through the real agent pipeline (plan + dispatch a
+  // Hermes run + cascade the run output back to Telegram). v1 keeps the
+  // path tight so the demo is fast.
+  app.post("/api/webhooks/telegram", async (req, reply) => {
+    const secret = TELEGRAM_WEBHOOK_SECRET();
+    if (!secret) {
+      return reply.code(503).send({
+        error: "telegram_webhook_disabled",
+        hint: "set TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET, then run ./infra/scripts/setup-telegram.sh",
+      });
+    }
+    const headerSecret = req.headers["x-telegram-bot-api-secret-token"];
+    if (typeof headerSecret !== "string" || headerSecret !== secret) {
+      app.log.warn("telegram webhook secret mismatch");
+      return reply.code(401).send({ error: "invalid_secret" });
+    }
+
+    const update = req.body as
+      | {
+          update_id?: number;
+          message?: {
+            message_id?: number;
+            text?: string;
+            chat?: { id?: number; type?: string };
+            from?: { id?: number; username?: string; first_name?: string };
+          };
+        }
+      | undefined;
+    const message = update?.message;
+    if (!message?.text || !message.chat?.id) {
+      // Non-text or non-message update (sticker, edit, callback) — ack + ignore.
+      return reply.send({ ok: true, ignored: "non-text" });
+    }
+    const chatId = message.chat.id;
+    const text = message.text;
+    const messageId = message.message_id;
+
+    const scope = await resolveCallerScope(req);
+
+    // Persist the capture so the message lives in our audit + capture log
+    // even if the LLM call fails. Operator sees it in /Activity either way.
+    const captureRecord = await withOrgScope(scope.org_id, async (client) => {
+      const { rows: goalRows } = await client.query<{ id: string }>(
+        `INSERT INTO ops.goal (org_id, title, description, kind, metadata)
+         VALUES ($1, $2, $3, 'ephemeral'::ops.goal_kind, $4::jsonb)
+         RETURNING id`,
+        [
+          scope.org_id,
+          text.slice(0, 200),
+          text.length > 200 ? text : null,
+          JSON.stringify({
+            source: "telegram",
+            telegram: {
+              chat_id: chatId,
+              message_id: messageId,
+              from: message.from ?? null,
+            },
+          }),
+        ],
+      );
+      const goalId = goalRows[0]!.id;
+      const { rows: capRows } = await client.query<{ id: string }>(
+        `INSERT INTO ops.capture
+           (org_id, source, raw_content, parsed_intent, resolved_to_id, resolved_kind)
+         VALUES ($1, 'webhook'::ops.capture_source, $2, $3::jsonb, $4, 'goal')
+         RETURNING id`,
+        [
+          scope.org_id,
+          text,
+          JSON.stringify({
+            source: "telegram",
+            chat_id: chatId,
+            message_id: messageId,
+          }),
+          goalId,
+        ],
+      );
+      await audit(
+        {
+          scope,
+          action: "telegram.message",
+          target_type: "capture",
+          target_id: capRows[0]!.id,
+          metadata: {
+            goal_id: goalId,
+            chat_id: chatId,
+            message_id: messageId,
+            text_length: text.length,
+          },
+        },
+        client,
+      );
+      return { goal_id: goalId, capture_id: capRows[0]!.id };
+    });
+
+    // Round-trip via the LLM. If Portkey is misconfigured or the call
+    // fails, surface the error as a friendly Telegram reply instead of
+    // 500-ing on Telegram (which would trigger their retry loop).
+    let replyText: string;
+    try {
+      const llm = await chatComplete({
+        system:
+          "You are the assistant for The Blank Collar — a small AI-native studio. " +
+          "Reply to the operator concisely (<= 3 short sentences). " +
+          "If the message is a goal or task, acknowledge it briefly + say it's been logged. " +
+          "Otherwise, answer plainly.",
+        messages: [{ role: "user", content: text.slice(0, 4_000) }],
+        max_tokens: 400,
+      });
+      replyText = llm.text.trim() || "(no reply generated)";
+    } catch (err) {
+      const detail =
+        err instanceof GatewayError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      replyText = `⚠️ Brain unavailable right now: ${detail.slice(0, 300)}`;
+      app.log.warn(`telegram → llm failed: ${detail}`);
+    }
+
+    try {
+      await tgSendMessage(chatId, replyText, { reply_to_message_id: messageId });
+    } catch (err) {
+      // If Telegram itself rejects us (token revoked, bad chat id, …) we
+      // still 200 the webhook — audit trail + paperclip log capture it.
+      const detail =
+        err instanceof TelegramApiError
+          ? `${err.status} ${err.description ?? err.message}`
+          : err instanceof TelegramConfigError
+            ? "TELEGRAM_BOT_TOKEN missing"
+            : (err as Error).message;
+      app.log.error(`telegram sendMessage failed: ${detail}`);
+    }
+
+    return reply.send({ ok: true, ...captureRecord });
   });
 }

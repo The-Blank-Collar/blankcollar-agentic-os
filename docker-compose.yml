@@ -177,6 +177,9 @@ services:
       # Comma-separated list of extra origins added to the CORS allowlist.
       # localhost:3000 is always allowed; set this in prod for the public domain.
       WEBSITE_PUBLIC_URL: ${WEBSITE_PUBLIC_URL:-}
+      # Telegram bot — POST /api/webhooks/telegram. Both required to enable.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
     ports:
       - "${PAPERCLIP_PORT:-3001}:80"
     volumes:
