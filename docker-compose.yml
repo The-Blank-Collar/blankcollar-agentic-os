@@ -169,6 +169,11 @@ services:
       NANGO_URL: ${NANGO_URL:-http://nango:3003}
       NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
       NANGO_GOOGLE_PROVIDER_KEY: ${NANGO_GOOGLE_PROVIDER_KEY:-google}
+      # Portkey AI gateway — required at boot. Set both in .env.
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_VIRTUAL_KEY_ANTHROPIC: ${PORTKEY_VIRTUAL_KEY_ANTHROPIC:-}
+      PORTKEY_VIRTUAL_KEY_OPENROUTER: ${PORTKEY_VIRTUAL_KEY_OPENROUTER:-}
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
       # Comma-separated list of extra origins added to the CORS allowlist.
       # localhost:3000 is always allowed; set this in prod for the public domain.
       WEBSITE_PUBLIC_URL: ${WEBSITE_PUBLIC_URL:-}
@@ -215,6 +220,11 @@ services:
       HERMES_MODEL: ${HERMES_MODEL:-claude-sonnet-4-6}
       HERMES_MAX_TOKENS: ${HERMES_MAX_TOKENS:-1024}
       HERMES_MAX_RECALL: ${HERMES_MAX_RECALL:-8}
+      # Portkey AI gateway — required at boot. Set both in .env.
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_VIRTUAL_KEY_ANTHROPIC: ${PORTKEY_VIRTUAL_KEY_ANTHROPIC:-}
+      PORTKEY_VIRTUAL_KEY_OPENROUTER: ${PORTKEY_VIRTUAL_KEY_OPENROUTER:-}
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
       BRAND_DIR: ${BRAND_DIR:-/app/brand}
       BRAND_NAME: ${BRAND_NAME:-blankcollar}
     ports:
@@ -261,6 +271,11 @@ services:
       OPENCLAW_BROWSER_VIEWPORT_W: ${OPENCLAW_BROWSER_VIEWPORT_W:-1280}
       OPENCLAW_BROWSER_VIEWPORT_H: ${OPENCLAW_BROWSER_VIEWPORT_H:-800}
       OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES: ${OPENCLAW_BROWSER_MAX_SCREENSHOT_BYTES:-2000000}
+      # Portkey AI gateway — required at boot. Set both in .env.
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_VIRTUAL_KEY_ANTHROPIC: ${PORTKEY_VIRTUAL_KEY_ANTHROPIC:-}
+      PORTKEY_VIRTUAL_KEY_OPENROUTER: ${PORTKEY_VIRTUAL_KEY_OPENROUTER:-}
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
       NANGO_URL: ${NANGO_URL:-http://nango:3003}
       NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
       NANGO_GOOGLE_PROVIDER_KEY: ${NANGO_GOOGLE_PROVIDER_KEY:-google}
@@ -305,6 +320,11 @@ services:
       LANGGRAPH_MAX_CYCLES: ${LANGGRAPH_MAX_CYCLES:-4}
       LANGGRAPH_POLL_INTERVAL_S: ${LANGGRAPH_POLL_INTERVAL_S:-0.5}
       LANGGRAPH_POLL_TIMEOUT_S: ${LANGGRAPH_POLL_TIMEOUT_S:-180}
+      # Portkey AI gateway — required at boot. Set both in .env.
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_VIRTUAL_KEY_ANTHROPIC: ${PORTKEY_VIRTUAL_KEY_ANTHROPIC:-}
+      PORTKEY_VIRTUAL_KEY_OPENROUTER: ${PORTKEY_VIRTUAL_KEY_OPENROUTER:-}
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
     ports:
       - "${LANGGRAPH_PORT:-8005}:80"
     depends_on:
@@ -503,6 +523,12 @@ services:
       NEXOS_BASE_URL: ${NEXOS_BASE_URL:-https://api.nexos.ai/v1}
       GRAPHITI_LLM_MODEL: ${GRAPHITI_LLM_MODEL:-gpt-4o-mini}
       GRAPHITI_EMBEDDING_MODEL: ${GRAPHITI_EMBEDDING_MODEL:-text-embedding-3-small}
+      # Portkey AI gateway — passed through; graphiti-core's internal LLM
+      # client doesn't currently route through Portkey (Phase 2.1.b.2 follow-up),
+      # but env vars are forwarded so future builds pick them up automatically.
+      PORTKEY_API_KEY: ${PORTKEY_API_KEY:-}
+      PORTKEY_VIRTUAL_KEY_ANTHROPIC: ${PORTKEY_VIRTUAL_KEY_ANTHROPIC:-}
+      PORTKEY_BASE_URL: ${PORTKEY_BASE_URL:-https://api.portkey.ai/v1}
     ports:
       - "${GRAPHITI_PORT:-8004}:80"
     depends_on:
