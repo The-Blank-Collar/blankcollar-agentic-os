@@ -19,6 +19,8 @@ import type {
   AutonomyModeUpsert,
   AutonomyResolved,
   BrainGraph,
+  CaptureCreateBody,
+  CaptureResult,
   ConnectorArtifactRow,
   ConnectorCreate,
   ConnectorPasteBody,
@@ -87,6 +89,8 @@ export class ApiCallError extends Error {
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
 export interface ApiClient {
+  // -- Captures (capture-first composer) ----
+  createCapture(body: CaptureCreateBody): Promise<CaptureResult>;
   // -- Goals ----
   listGoals(query?: GoalListQuery): Promise<Goal[]>;
   getGoal(id: string): Promise<GoalWithDetail>;
@@ -213,6 +217,8 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
   }
 
   return {
+    createCapture: (body) =>
+      request<CaptureResult>("POST", "/api/capture", body as unknown as Json),
     listGoals: (query) =>
       request<Goal[]>("GET", `/api/goals${qs(query as Record<string, string | number>)}`),
     getGoal: (id) => request<GoalWithDetail>("GET", `/api/goals/${encodeURIComponent(id)}`),

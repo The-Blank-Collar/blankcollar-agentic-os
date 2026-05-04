@@ -576,6 +576,35 @@ export interface SwarmDispatchResult {
   queued_run_ids: string[];
 }
 
+// ---------- Captures (Phase 4 / capture-first composer) -------------------
+
+export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";
+
+export interface CaptureCreateBody {
+  raw_content: string;
+  source?: CaptureSource;
+  /** Force a goal kind, skipping the classifier. */
+  kind?: GoalKind;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CaptureIntent {
+  kind: GoalKind;
+  title: string;
+  description?: string;
+  cron_expr?: string;
+  due_at?: string;
+  target_value?: string;
+}
+
+export interface CaptureResult {
+  capture_id: string;
+  goal_id: string;
+  intent: CaptureIntent;
+  created_at: string;
+  kr_id?: string;
+}
+
 // ---------- Departments + whoami ------------------------------------------
 
 export interface Department {
