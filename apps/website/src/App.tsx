@@ -18,6 +18,8 @@ import { goals } from "./data/fixtures";
 import { CommandPalette } from "./lib/cmdk";
 import { GoalComposer } from "./components/GoalComposer";
 import { InviteAccept } from "./components/InviteAccept";
+import { OnboardingWizard } from "./components/OnboardingWizard";
+import { api } from "./lib/api";
 import {
   DEFAULT_TWEAKS,
   TweakRadio,
@@ -59,6 +61,7 @@ export default function App() {
   const [goalId, setGoalId] = useState<string | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("invite");
@@ -94,6 +97,30 @@ export default function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  // First-run onboarding. If no profile exists yet (404), or one exists but
+  // hasn't been completed, offer the wizard. Skipped if the user has
+  // already dismissed it this session via localStorage.
+  useEffect(() => {
+    if (inviteToken) return; // Don't compete with the invite landing.
+    const dismissed = window.localStorage.getItem("bc.onboarding.dismissed") === "true";
+    if (dismissed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await api.onboardingProfile();
+        if (cancelled) return;
+        if (!profile || !profile.completed_at) {
+          setOnboardingOpen(true);
+        }
+      } catch {
+        // Best-effort — don't block the app if the endpoint is down.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
 
   const openGoal = (id: string): void => {
     setGoalId(id);
@@ -235,6 +262,21 @@ export default function App() {
           }}
         />
       )}
+
+      <OnboardingWizard
+        open={onboardingOpen}
+        onClose={() => {
+          setOnboardingOpen(false);
+          // Remember dismissal for this session so we don't badger the
+          // operator on every page navigation. They can re-open from
+          // Settings → Onboarding (Phase 7.b follow-up) or by clearing
+          // localStorage.
+          window.localStorage.setItem("bc.onboarding.dismissed", "true");
+        }}
+        onCompleted={() => {
+          window.localStorage.setItem("bc.onboarding.dismissed", "true");
+        }}
+      />
 
       <TweaksPanel title="Tweaks">
         <TweakSection title="Surface">

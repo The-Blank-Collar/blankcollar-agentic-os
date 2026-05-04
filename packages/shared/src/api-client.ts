@@ -53,6 +53,12 @@ import type {
   InvitationListQuery,
   InvitationPublic,
   InvitationRow,
+  OnboardingAnswerBody,
+  OnboardingFinishResult,
+  OnboardingNextResult,
+  OnboardingProfile,
+  OnboardingStartBody,
+  OnboardingStartResult,
   OrgMember,
   Organization,
   OutcomeCreateBody,
@@ -144,6 +150,12 @@ export interface ApiClient {
   listDepartments(): Promise<Department[]>;
   listOrgMembers(): Promise<OrgMember[]>;
   whoami(): Promise<Whoami>;
+  // -- Onboarding (Phase 7 / wizard) ----
+  onboardingStart(body: OnboardingStartBody): Promise<OnboardingStartResult>;
+  onboardingNext(profileId: string): Promise<OnboardingNextResult>;
+  onboardingAnswer(profileId: string, body: OnboardingAnswerBody): Promise<OnboardingProfile>;
+  onboardingFinish(profileId: string): Promise<OnboardingFinishResult>;
+  onboardingProfile(profileId?: string): Promise<OnboardingProfile | null>;
   // -- Invitations (Phase 6.b) ----
   listInvitations(query?: InvitationListQuery): Promise<InvitationRow[]>;
   createInvitation(body: InvitationCreateBody): Promise<InvitationRow>;
@@ -342,6 +354,36 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     listDepartments: () => request<Department[]>("GET", "/api/departments"),
     listOrgMembers: () => request<OrgMember[]>("GET", "/api/orgs/members"),
     whoami: () => request<Whoami>("GET", "/api/whoami"),
+    onboardingStart: (body) =>
+      request<OnboardingStartResult>("POST", "/api/onboarding/start", body as unknown as Json),
+    onboardingNext: (profileId) =>
+      request<OnboardingNextResult>(
+        "GET",
+        `/api/onboarding/questions${qs({ profile_id: profileId })}`,
+      ),
+    onboardingAnswer: (profileId, body) =>
+      request<OnboardingProfile>(
+        "POST",
+        `/api/onboarding/answer${qs({ profile_id: profileId })}`,
+        body as unknown as Json,
+      ),
+    onboardingFinish: (profileId) =>
+      request<OnboardingFinishResult>(
+        "POST",
+        `/api/onboarding/finish${qs({ profile_id: profileId })}`,
+      ),
+    onboardingProfile: async (profileId) => {
+      try {
+        return await request<OnboardingProfile>(
+          "GET",
+          `/api/onboarding/profile${qs(profileId ? { profile_id: profileId } : undefined)}`,
+        );
+      } catch (e) {
+        // 404 = no profile yet; return null instead of throwing.
+        if (e instanceof ApiCallError && e.status === 404) return null;
+        throw e;
+      }
+    },
     listInvitations: (query) =>
       request<InvitationRow[]>(
         "GET",

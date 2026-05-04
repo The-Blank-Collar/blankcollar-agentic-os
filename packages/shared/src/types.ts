@@ -790,6 +790,82 @@ export interface InvitationAcceptResult {
   accepted_at: string | null;
 }
 
+// ---------- Onboarding (Phase 7 / wizard) ---------------------------------
+
+export type OnboardingMode = "single_user" | "multi_user";
+export type OnboardingTrack = "company" | "individual";
+
+export interface OnboardingQuestion {
+  id: string;
+  prompt: string;
+  hint?: string;
+  optional?: boolean;
+}
+
+export interface OnboardingAnswerRow {
+  question_id: string;
+  question: string;
+  answer: string;
+  asked_at: string;
+}
+
+export interface OnboardingProfile {
+  id: string;
+  org_id: string;
+  user_id: string | null;
+  mode: OnboardingMode;
+  answers: OnboardingAnswerRow[];
+  derived: Record<string, unknown>;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnboardingStartBody {
+  mode: OnboardingMode;
+  user_email?: string;
+  user_name?: string;
+}
+
+export interface OnboardingStartResult {
+  profile_id: string;
+  mode: OnboardingMode;
+  track: OnboardingTrack;
+  questions: OnboardingQuestion[];
+  answered: number;
+}
+
+export interface OnboardingNextResult {
+  profile_id: string;
+  mode: OnboardingMode;
+  track: OnboardingTrack;
+  total: number;
+  answered: number;
+  next: OnboardingQuestion | null;
+  remaining: OnboardingQuestion[];
+}
+
+export interface OnboardingAnswerBody {
+  question_id: string;
+  answer: string;
+}
+
+export interface OnboardingDerived {
+  voice_words?: string[];
+  banned_words?: string[];
+  decision_categories?: string[];
+  channels?: string[];
+  routine_hints?: string[];
+  briefing_hour_utc?: number;
+  [k: string]: unknown;
+}
+
+export interface OnboardingFinishResult {
+  profile: OnboardingProfile;
+  derived: OnboardingDerived;
+  routines_created: number;
+}
+
 export interface DispatchOk {
   run_id: string;
   status: "queued";
