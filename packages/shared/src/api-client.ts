@@ -10,6 +10,7 @@
  */
 
 import type {
+  ActivityRow,
   AgentState,
   AgentSummary,
   ApiError,
@@ -19,6 +20,9 @@ import type {
   AutonomyModeUpsert,
   AutonomyResolved,
   BrainGraph,
+  BriefingGenerateBody,
+  BriefingKind,
+  BriefingRow,
   CaptureCreateBody,
   CaptureResult,
   ConnectorArtifactRow,
@@ -37,6 +41,8 @@ import type {
   GoalListQuery,
   GoalPatch,
   GoalWithDetail,
+  GoalsSummary,
+  HeartbeatResponse,
   InboxItem,
   InboxSummary,
   KeyResult,
@@ -91,6 +97,13 @@ type Json = Record<string, unknown> | unknown[] | string | number | boolean | nu
 export interface ApiClient {
   // -- Captures (capture-first composer) ----
   createCapture(body: CaptureCreateBody): Promise<CaptureResult>;
+  // -- Briefing + heartbeat + activity (front door) ----
+  getBriefingToday(): Promise<BriefingRow>;
+  listBriefings(opts?: { kind?: BriefingKind; limit?: number }): Promise<BriefingRow[]>;
+  generateBriefing(body?: BriefingGenerateBody): Promise<BriefingRow>;
+  getHeartbeat(opts?: { days?: number }): Promise<HeartbeatResponse>;
+  getGoalsSummary(opts?: { stalledDays?: number }): Promise<GoalsSummary>;
+  listActivity(opts?: { limit?: number }): Promise<ActivityRow[]>;
   // -- Goals ----
   listGoals(query?: GoalListQuery): Promise<Goal[]>;
   getGoal(id: string): Promise<GoalWithDetail>;
@@ -219,6 +232,23 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
   return {
     createCapture: (body) =>
       request<CaptureResult>("POST", "/api/capture", body as unknown as Json),
+    getBriefingToday: () => request<BriefingRow>("GET", "/api/briefing/today"),
+    listBriefings: (opts) =>
+      request<BriefingRow[]>(
+        "GET",
+        `/api/briefing${qs({ kind: opts?.kind, limit: opts?.limit })}`,
+      ),
+    generateBriefing: (body) =>
+      request<BriefingRow>("POST", "/api/briefing/generate", (body ?? {}) as unknown as Json),
+    getHeartbeat: (opts) =>
+      request<HeartbeatResponse>("GET", `/api/heartbeat${qs({ days: opts?.days })}`),
+    getGoalsSummary: (opts) =>
+      request<GoalsSummary>(
+        "GET",
+        `/api/goals/summary${qs({ stalled_days: opts?.stalledDays })}`,
+      ),
+    listActivity: (opts) =>
+      request<ActivityRow[]>("GET", `/api/activity${qs({ limit: opts?.limit })}`),
     listGoals: (query) =>
       request<Goal[]>("GET", `/api/goals${qs(query as Record<string, string | number>)}`),
     getGoal: (id) => request<GoalWithDetail>("GET", `/api/goals/${encodeURIComponent(id)}`),

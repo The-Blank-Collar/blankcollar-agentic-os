@@ -576,6 +576,86 @@ export interface SwarmDispatchResult {
   queued_run_ids: string[];
 }
 
+// ---------- Briefings + heartbeat + activity (Phase 4 / front door) -------
+
+export type BriefingKind = "daily" | "weekly" | "on_demand";
+
+export interface BriefingSources {
+  period_start: string;
+  period_end: string;
+  hours: number;
+  goal_count: number;
+  active_goal_count: number;
+  decision_count: number;
+  run_count: number;
+  audit_count: number;
+  [k: string]: unknown;
+}
+
+export interface BriefingRow {
+  id: string;
+  org_id: string;
+  user_id: string | null;
+  kind: BriefingKind;
+  generated_at: string;
+  period_start: string | null;
+  period_end: string | null;
+  summary_md: string;
+  sources: BriefingSources;
+  audio_url: string | null;
+}
+
+export interface BriefingGenerateBody {
+  kind?: BriefingKind;
+  period_hours?: number;
+}
+
+export interface HeartbeatPoint {
+  date: string;
+  value: number;
+}
+
+export interface HeartbeatSeries {
+  kpi: string;
+  label: string;
+  unit: string;
+  points: HeartbeatPoint[];
+}
+
+export interface HeartbeatResponse {
+  period_days: number;
+  period_start: string;
+  period_end: string;
+  series: HeartbeatSeries[];
+}
+
+export interface GoalsSummary {
+  total: number;
+  by_kind: { ephemeral: number; standing: number; routine: number; decision: number };
+  by_status: {
+    draft: number;
+    active: number;
+    paused: number;
+    achieved: number;
+    archived: number;
+  };
+  stalled_count: number;
+}
+
+export interface ActivityRow {
+  run_id: string;
+  goal_id: string;
+  goal_title: string;
+  goal_kind: string;
+  agent_id: string | null;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  duration_ms: number | null;
+  subtask_title: string | null;
+}
+
 // ---------- Captures (Phase 4 / capture-first composer) -------------------
 
 export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";
