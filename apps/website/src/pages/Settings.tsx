@@ -8,7 +8,6 @@ import type {
   ConnectorProviderKey,
   ConnectorRow,
   ConnectorSyncResult,
-  BillingPortal,
   Department,
   InvitableRole,
   InvitationRow,
@@ -16,6 +15,7 @@ import type {
   OnboardingProfile,
   OrgMember,
   Organization,
+  PricingPlan,
   SubscriptionRow,
   OutcomeMetricRow,
   OutcomeRow,
@@ -31,7 +31,7 @@ import { ChannelMark, I } from "../icons";
 import { api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { Empty, ErrorState, Loading } from "../components/States";
+import { Empty, ErrorState, InlineError, Loading } from "../components/States";
 
 type SectionId =
   | "overview"
@@ -1500,8 +1500,12 @@ function PeopleTab() {
           <div className="empty-hint" style={{ padding: 14 }}>Loading invitations…</div>
         )}
         {invitesQ.error && (
-          <div className="empty-hint" style={{ padding: 14, color: "var(--neg)" }}>
-            Couldn't load · {invitesQ.error.message}
+          <div style={{ padding: 14 }}>
+            <InlineError
+              error={invitesQ.error}
+              context="invitations"
+              onRetry={() => invitesQ.refetch()}
+            />
           </div>
         )}
         {!invitesQ.loading && pendingInvites.length === 0 && (
@@ -1559,8 +1563,12 @@ function PeopleTab() {
           <div className="empty-hint" style={{ padding: 16 }}>Loading members…</div>
         )}
         {membersQ.error && (
-          <div className="empty-hint" style={{ padding: 16, color: "var(--neg)" }}>
-            Couldn't load · {membersQ.error.message}
+          <div style={{ padding: 14 }}>
+            <InlineError
+              error={membersQ.error}
+              context="members"
+              onRetry={() => membersQ.refetch()}
+            />
           </div>
         )}
         {(membersQ.data ?? []).length === 0 && !membersQ.loading && (
@@ -2232,9 +2240,12 @@ function OnboardingTab({ onReopen }: { onReopen?: () => void }) {
         <div className="empty-hint" style={{ padding: 16 }}>Loading profile…</div>
       )}
       {profileQ.error && (
-        <div className="empty-hint" style={{ padding: 16, color: "var(--neg)" }}>
-          Couldn't load · {profileQ.error.message}
-        </div>
+        <InlineError
+          error={profileQ.error}
+          context="onboarding profile"
+          onRetry={() => profileQ.refetch()}
+          style={{ marginBottom: 14 }}
+        />
       )}
 
       {!profileQ.loading && !profile && (
@@ -2412,9 +2423,39 @@ const STATUS_TONE: Record<SubscriptionRow["status"], string> = {
 
 function BillingTab() {
   const subQ = useFetch<SubscriptionRow>(() => api.getSubscription(), []);
-  const portalQ = useFetch<BillingPortal>(() => api.getBillingPortal(), []);
+  const plansQ = useFetch<{ plans: PricingPlan[] }>(() => api.listPricingPlans(), []);
   const sub = subQ.data;
-  const portal = portalQ.data;
+  const plans = plansQ.data?.plans ?? [];
+  const [busy, setBusy] = useState<string | null>(null);
+  const [billingErr, setBillingErr] = useState<string | null>(null);
+
+  const startCheckout = async (tier: string): Promise<void> => {
+    if (busy) return;
+    setBusy(tier);
+    setBillingErr(null);
+    try {
+      const session = await api.createCheckoutSession({ tier });
+      window.location.href = session.url;
+    } catch (e) {
+      setBillingErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openPortal = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("portal");
+    setBillingErr(null);
+    try {
+      const session = await api.createPortalSession();
+      window.location.href = session.url;
+    } catch (e) {
+      setBillingErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <Section>
@@ -2491,20 +2532,102 @@ function BillingTab() {
               </>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            {sub.is_free
-              ? portal?.checkout_url
-                ? <a className="btn btn-primary btn-sm" href={portal.checkout_url} target="_blank" rel="noopener noreferrer">Upgrade</a>
-                : <button className="btn btn-sm" disabled>Upgrade — set STRIPE_CHECKOUT_URL</button>
-              : portal?.portal_url
-                ? <a className="btn btn-sm" href={portal.portal_url} target="_blank" rel="noopener noreferrer">Manage plan</a>
-                : <button className="btn btn-sm" disabled>Manage plan — set STRIPE_BILLING_PORTAL_URL</button>}
+          <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center" }}>
+            {!sub.is_free && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={openPortal}
+                disabled={busy !== null}
+              >
+                {busy === "portal" ? "Opening…" : "Manage plan"}
+              </button>
+            )}
             {sub.stripe_customer_id && (
-              <span className="tiny mono" style={{ color: "var(--muted)", alignSelf: "center" }}>
+              <span className="tiny mono" style={{ color: "var(--muted)" }}>
                 stripe.{sub.stripe_customer_id.slice(0, 14)}…
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {billingErr && (
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--neg)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            marginBottom: 16,
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+          }}
+        >
+          <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>
+            BILLING ERROR
+          </span>
+          {billingErr}
+        </div>
+      )}
+
+      {sub?.is_free && plans.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Upgrade</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.min(plans.length, 2)}, 1fr)`,
+              gap: 12,
+            }}
+          >
+            {plans.map((plan) => (
+              <div
+                key={plan.tier}
+                style={{
+                  padding: 18,
+                  border: "1px solid var(--line)",
+                  borderRadius: "var(--radius-lg)",
+                  background: "var(--bg-1)",
+                }}
+              >
+                <div className="eyebrow" style={{ marginBottom: 6 }}>{plan.name}</div>
+                <div className="h3" style={{ marginBottom: 8 }}>{plan.price_display}</div>
+                <ul style={{ paddingLeft: 18, margin: "0 0 14px 0", fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
+                  {plan.highlights.map((h) => (
+                    <li key={h}>{h}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  style={{ width: "100%" }}
+                  onClick={() => startCheckout(plan.tier)}
+                  disabled={busy !== null}
+                >
+                  {busy === plan.tier ? "Redirecting…" : `Upgrade to ${plan.name}`}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sub?.is_free && plans.length === 0 && !plansQ.loading && (
+        <div
+          style={{
+            padding: 14,
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-lg)",
+            color: "var(--muted)",
+            marginBottom: 16,
+            fontSize: 13,
+          }}
+        >
+          No paid tiers configured yet. Set <span className="mono">STRIPE_PRICE_ID_PRO</span> /{" "}
+          <span className="mono">STRIPE_PRICE_ID_STUDIO</span> in <span className="mono">.env</span>{" "}
+          to surface upgrade options.
         </div>
       )}
 

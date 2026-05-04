@@ -1,9 +1,17 @@
 import type { FastifyInstance } from "fastify";
 
 import { audit } from "../audit.js";
+import { checkTier } from "../billing/gate.js";
 import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import { AgentCreate, AgentPatch } from "../schemas.js";
+
+// Phase 8.2 — agent count caps per tier. Active agents only; archived/
+// deactivated rows don't count. Studio + enterprise are unlimited.
+const AGENT_CAP_BY_TIER: Record<string, number> = {
+  free: 3,
+  pro: 10,
+};
 
 type AgentRow = {
   id: string;
@@ -70,6 +78,34 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "invalid_body", details: parsed.error.flatten() });
     }
     const scope = await resolveCallerScope(req);
+
+    // Tier gate — count active agents and compare to the cap. The
+    // gate is a no-op when BLANKCOLLAR_BILLING_ENFORCE != "true".
+    const gate = await checkTier(scope, "free");
+    const cap = AGENT_CAP_BY_TIER[gate.current];
+    if (cap !== undefined) {
+      const { rows: countRows } = await withOrgScope(scope.org_id, (client) =>
+        client.query<{ ct: string }>(
+          "SELECT COUNT(*)::text AS ct FROM ops.agent WHERE org_id = $1 AND is_active = true",
+          [scope.org_id],
+        ),
+      );
+      const active = Number(countRows[0]?.ct ?? "0");
+      if (active >= cap) {
+        const enforce = (process.env.BLANKCOLLAR_BILLING_ENFORCE ?? "").toLowerCase() === "true";
+        if (enforce) {
+          return reply.code(402).send({
+            error: "tier_cap_reached",
+            current_tier: gate.current,
+            cap,
+            active,
+            hint: `Your ${gate.current} plan allows up to ${cap} active agents. ` +
+              "Upgrade in Settings → Billing to add more.",
+          });
+        }
+      }
+    }
+
     const result = await withOrgScope(scope.org_id, async (client) => {
       const { rows } = await client.query<AgentRow>(
         `INSERT INTO ops.agent (org_id, kind, name, config)

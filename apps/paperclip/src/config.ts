@@ -32,6 +32,13 @@ export const config = {
   supabaseJwtSecret: env.SUPABASE_JWT_SECRET ?? "",
   supabaseProjectUrl: env.SUPABASE_URL ?? "",
   authEnforce: env.PAPERCLIP_AUTH_ENFORCE === "true",
+  /**
+   * When a verified Supabase user signs in but has no `core.user_account`
+   * row, auto-create their org + owner role + seed pack. Default true so
+   * the hosted SaaS path "just works" — set to false only if you want to
+   * gate provisioning behind manual approval.
+   */
+  autoBootstrap: env.PAPERCLIP_AUTO_BOOTSTRAP !== "false",
 
   /**
    * AI gateway — Portkey routes every LLM call through a single observable
@@ -57,6 +64,18 @@ export const config = {
   llmMaxTokens: Number(env.PAPERCLIP_LLM_MAX_TOKENS ?? 800),
   brandDir: env.BRAND_DIR ?? "/app/brand",
   brandName: env.BRAND_NAME ?? "blankcollar",
+
+  /**
+   * Transactional email (Phase 8.4). Provider is one of:
+   *   - `console` (default) — logs to stdout, no API call
+   *   - `resend`
+   *   - `postmark`
+   * MAIL_API_KEY is required for resend/postmark; MAIL_FROM defaults to
+   * "Blank Collar <noreply@blankcollar.ai>" if unset.
+   */
+  mailProvider: env.MAIL_PROVIDER ?? "console",
+  mailApiKey: env.MAIL_API_KEY ?? "",
+  mailFrom: env.MAIL_FROM ?? "",
 
   /** Routine scheduler — wakes periodically and fires due routines. */
   schedulerEnabled: env.PAPERCLIP_SCHEDULER_ENABLED !== "false",

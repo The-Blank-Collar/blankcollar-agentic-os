@@ -903,6 +903,33 @@ export interface BillingPortal {
   tier: string;
 }
 
+export interface PricingPlan {
+  tier: "pro" | "studio";
+  name: string;
+  price_id: string;
+  price_display: string;
+  interval: "month" | "year";
+  highlights: string[];
+}
+
+export interface CheckoutSessionResult {
+  session_id: string;
+  url: string;
+  tier: string;
+}
+
+export interface BillingPortalSession {
+  url: string;
+}
+
+export interface OrgBootstrapResult {
+  user_id: string;
+  org_id: string;
+  org_slug: string;
+  org_name: string;
+  created: boolean;
+}
+
 export interface DispatchOk {
   run_id: string;
   status: "queued";

@@ -153,7 +153,17 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_CHECKOUT_URL: ${STRIPE_CHECKOUT_URL:-}
       STRIPE_BILLING_PORTAL_URL: ${STRIPE_BILLING_PORTAL_URL:-}
+      STRIPE_PRICE_ID_PRO: ${STRIPE_PRICE_ID_PRO:-}
+      STRIPE_PRICE_ID_STUDIO: ${STRIPE_PRICE_ID_STUDIO:-}
+      STRIPE_PRICE_DISPLAY_PRO: ${STRIPE_PRICE_DISPLAY_PRO:-}
+      STRIPE_PRICE_DISPLAY_STUDIO: ${STRIPE_PRICE_DISPLAY_STUDIO:-}
       BLANKCOLLAR_BILLING_ENFORCE: ${BLANKCOLLAR_BILLING_ENFORCE:-false}
+      # Phase 8.1 — auto-bootstrap on first sign-in (auth.ts + auth pre-handler).
+      PAPERCLIP_AUTO_BOOTSTRAP: ${PAPERCLIP_AUTO_BOOTSTRAP:-true}
+      # Phase 8.4 transactional email.
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-console}
+      MAIL_API_KEY: ${MAIL_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       # Direct LLM access for prose (briefings). Hermes still owns the agent
       # loop; this is just a side door for editorial copy. Empty key = templated.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -561,6 +571,14 @@ services:
       # (which points at ../../packages/shared/src/) can resolve.
       context: .
       dockerfile: apps/website/Dockerfile
+      # Phase 8.1 — Vite reads VITE_* at build time. Forwarding empty
+      # values is safe; the website skips auth UI when VITE_SUPABASE_URL
+      # is missing and falls back to the demo-mode shell.
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_PAPERCLIP_URL: ${VITE_PAPERCLIP_URL:-}
+        VITE_DEFAULT_ORG_SLUG: ${VITE_DEFAULT_ORG_SLUG:-}
     image: blankcollar/website:0.1.0
     container_name: bc_website
     ports:

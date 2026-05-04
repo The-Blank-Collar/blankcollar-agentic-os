@@ -27,10 +27,13 @@
 import { randomBytes } from "node:crypto";
 
 import type { FastifyInstance } from "fastify";
+import type pg from "pg";
 
 import { audit } from "../audit.js";
 import { config } from "../config.js";
 import { withOrgScope, withSystemScope } from "../db.js";
+import { send as sendMail } from "../mail/index.js";
+import { invitation as invitationTemplate } from "../mail/templates.js";
 import {
   InvitableRole,
   InvitationAccept,
@@ -63,6 +66,39 @@ const INVITATION_COLUMNS =
 
 function newToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+async function dispatchInviteMail(
+  client: pg.PoolClient,
+  row: InvitationRow,
+): Promise<void> {
+  // Best-effort. Failures never block the route.
+  try {
+    const { rows } = await client.query<{ org_name: string; inviter_name: string | null }>(
+      `SELECT o.name AS org_name,
+              COALESCE(u.full_name, u.display_name, u.email) AS inviter_name
+         FROM core.organization o
+    LEFT JOIN core.user_account u ON u.id = $2
+        WHERE o.id = $1`,
+      [row.org_id, row.invited_by_user_id],
+    );
+    const ctx = rows[0] ?? { org_name: "the studio", inviter_name: null };
+    void sendMail({
+      to: row.email,
+      ...invitationTemplate({
+        email: row.email,
+        inviter_name: ctx.inviter_name,
+        org_name: ctx.org_name,
+        role: row.role,
+        invite_url: inviteUrl(row.token),
+        expires_at: row.expires_at,
+      }),
+    }).catch(() => {
+      /* provider already logs */
+    });
+  } catch {
+    /* swallow */
+  }
 }
 
 function inviteUrl(token: string): string {
@@ -142,6 +178,7 @@ export async function invitationRoutes(app: FastifyInstance): Promise<void> {
           },
           client,
         );
+        await dispatchInviteMail(client, row);
         return reply.code(201).send(projectInvitation(row, { withToken: true, withInviteUrl: true }));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -245,6 +282,7 @@ export async function invitationRoutes(app: FastifyInstance): Promise<void> {
         },
         client,
       );
+      await dispatchInviteMail(client, row);
       return projectInvitation(row, { withToken: true, withInviteUrl: true });
     });
   });

@@ -2,6 +2,7 @@ import type { Whoami } from "@blankcollar/shared";
 
 import { I, ChannelMark, type IconName } from "../icons";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { useFetch } from "../lib/useFetch";
 import type { PageId } from "../App";
 
@@ -40,6 +41,7 @@ type Props = {
 };
 
 export function Sidebar({ page, setPage, role }: Props) {
+  const auth = useAuth();
   const whoamiQ = useFetch<Whoami>(() => api.whoami(), []);
   const me = whoamiQ.data;
   const orgName = me?.org.name ?? "Your studio";
@@ -125,6 +127,33 @@ export function Sidebar({ page, setPage, role }: Props) {
           </div>
           <I name="settings" size={14} style={{ color: "var(--muted)" }} />
         </div>
+        {auth.mode === "auth" && auth.session && (
+          <button
+            type="button"
+            onClick={() => void auth.signOut()}
+            title="Sign out"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "8px 12px",
+              marginTop: 4,
+              background: "transparent",
+              border: 0,
+              borderTop: "1px solid var(--line)",
+              color: "var(--muted)",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            Sign out
+          </button>
+        )}
       </div>
     </aside>
   );

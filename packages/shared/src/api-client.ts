@@ -18,6 +18,10 @@ import type {
   AuditQuery,
   AutonomyModeRow,
   BillingPortal,
+  BillingPortalSession,
+  CheckoutSessionResult,
+  OrgBootstrapResult,
+  PricingPlan,
   AutonomyModeUpsert,
   AutonomyResolved,
   BrainGraph,
@@ -93,6 +97,13 @@ export interface ApiClientOpts {
   orgSlug?: string;
   /** Override the global `fetch` (handy in tests). */
   fetcher?: typeof fetch;
+  /**
+   * Supplies the current bearer JWT for `Authorization: Bearer <jwt>` on
+   * every request (Phase 8.1). Called fresh on each request so the
+   * client picks up token rotations automatically. Return null/undefined
+   * to skip the header (e.g. unauthenticated demo mode).
+   */
+  getAuthToken?: () => string | null | undefined | Promise<string | null | undefined>;
 }
 
 export class ApiCallError extends Error {
@@ -152,9 +163,14 @@ export interface ApiClient {
   listDepartments(): Promise<Department[]>;
   listOrgMembers(): Promise<OrgMember[]>;
   whoami(): Promise<Whoami>;
-  // -- Billing (Phase 7.b) ----
+  // -- Billing (Phase 7.b + 8.2) ----
   getSubscription(): Promise<SubscriptionRow>;
   getBillingPortal(): Promise<BillingPortal>;
+  listPricingPlans(): Promise<{ plans: PricingPlan[] }>;
+  createCheckoutSession(body: { tier: string; success_url?: string; cancel_url?: string }): Promise<CheckoutSessionResult>;
+  createPortalSession(body?: { return_url?: string }): Promise<BillingPortalSession>;
+  // -- Org bootstrap (Phase 8.1) ----
+  bootstrapOrg(body?: { full_name?: string; org_name?: string }): Promise<OrgBootstrapResult>;
   // -- Onboarding (Phase 7 / wizard) ----
   onboardingStart(body: OnboardingStartBody): Promise<OnboardingStartResult>;
   onboardingNext(profileId: string): Promise<OnboardingNextResult>;
@@ -226,7 +242,12 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     path: string,
     body?: Json,
   ): Promise<T> {
-    const init: RequestInit = { method, headers: { ...headers } };
+    const reqHeaders: Record<string, string> = { ...headers };
+    if (opts.getAuthToken) {
+      const token = await opts.getAuthToken();
+      if (token) reqHeaders.Authorization = `Bearer ${token}`;
+    }
+    const init: RequestInit = { method, headers: reqHeaders };
     if (body !== undefined) init.body = JSON.stringify(body);
     const res = await fetcher(`${base}${path}`, init);
     if (res.status === 204) return undefined as unknown as T;
@@ -363,6 +384,14 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       request<SubscriptionRow>("GET", "/api/billing/subscription"),
     getBillingPortal: () =>
       request<BillingPortal>("GET", "/api/billing/portal-url"),
+    listPricingPlans: () =>
+      request<{ plans: PricingPlan[] }>("GET", "/api/billing/plans"),
+    createCheckoutSession: (body) =>
+      request<CheckoutSessionResult>("POST", "/api/billing/checkout", body as unknown as Json),
+    createPortalSession: (body) =>
+      request<BillingPortalSession>("POST", "/api/billing/portal", (body ?? {}) as unknown as Json),
+    bootstrapOrg: (body) =>
+      request<OrgBootstrapResult>("POST", "/api/orgs/bootstrap", (body ?? {}) as unknown as Json),
     onboardingStart: (body) =>
       request<OnboardingStartResult>("POST", "/api/onboarding/start", body as unknown as Json),
     onboardingNext: (profileId) =>

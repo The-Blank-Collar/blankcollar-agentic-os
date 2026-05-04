@@ -20,6 +20,8 @@ import { GoalComposer } from "./components/GoalComposer";
 import { InviteAccept } from "./components/InviteAccept";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { api } from "./lib/api";
+import { useAuth } from "./lib/auth";
+import { AuthGate } from "./pages/AuthGate";
 import {
   DEFAULT_TWEAKS,
   TweakRadio,
@@ -56,12 +58,14 @@ const CRUMBS: Record<Exclude<PageId, "goal">, string[]> = {
 };
 
 export default function App() {
+  const auth = useAuth();
   const [tweaks, setTweak] = useTweaks(DEFAULT_TWEAKS);
   const [page, setPage] = useState<PageId>("dashboard");
   const [goalId, setGoalId] = useState<string | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("invite");
@@ -98,10 +102,41 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  // Phase 8.1 bootstrap. In auth mode, the very first sign-in for a
+  // verified user provisions their org + owner role + seed pack on the
+  // server. The auth preHandler does this implicitly, but firing the
+  // explicit endpoint once keeps the state machine deterministic — we
+  // know the org exists before any other page hits whoami.
+  useEffect(() => {
+    if (auth.mode !== "auth") {
+      setBootstrapped(true);
+      return;
+    }
+    if (!auth.session) {
+      setBootstrapped(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const fullName = (auth.user?.user_metadata?.full_name as string | undefined) ?? undefined;
+        await api.bootstrapOrg(fullName ? { full_name: fullName } : undefined);
+      } catch {
+        // Best-effort. If bootstrap fails we still let the app render —
+        // whoami will surface the issue with a friendlier shape.
+      }
+      if (!cancelled) setBootstrapped(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.mode, auth.session, auth.user]);
+
   // First-run onboarding. If no profile exists yet (404), or one exists but
   // hasn't been completed, offer the wizard. Skipped if the user has
   // already dismissed it this session via localStorage.
   useEffect(() => {
+    if (!bootstrapped) return;
     if (inviteToken) return; // Don't compete with the invite landing.
     const dismissed = window.localStorage.getItem("bc.onboarding.dismissed") === "true";
     if (dismissed) return;
@@ -120,7 +155,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [inviteToken]);
+  }, [inviteToken, bootstrapped]);
 
   const openGoal = (id: string): void => {
     setGoalId(id);
@@ -138,6 +173,46 @@ export default function App() {
 
   if (printMode) {
     return <Print />;
+  }
+
+  // Phase 8.1 — when auth is enabled and the user isn't signed in, render
+  // the AuthGate. Demo mode (no Supabase env) skips this entirely.
+  if (auth.mode === "auth") {
+    if (auth.loading) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--bg)",
+            color: "var(--muted)",
+            fontSize: 13,
+            fontFamily: "var(--font-sans)",
+          }}
+        >
+          Loading…
+        </div>
+      );
+    }
+    if (!auth.session) return <AuthGate />;
+    if (!bootstrapped) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--bg)",
+            color: "var(--muted)",
+            fontSize: 13,
+            fontFamily: "var(--font-sans)",
+          }}
+        >
+          Setting up your studio…
+        </div>
+      );
+    }
   }
 
   const crumbs = (() => {

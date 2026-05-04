@@ -103,6 +103,31 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // -- bootstrap ----------------------------------------------------------
+  // Idempotent. Creates the caller's org + owner role + seed pack if no
+  // account exists for their verified email; otherwise resolves to the
+  // existing scope. The auth preHandler already auto-bootstraps on first
+  // sign-in (gated by PAPERCLIP_AUTO_BOOTSTRAP), but this endpoint gives
+  // the client an explicit "make sure I'm provisioned" call to fire
+  // immediately after sign-up.
+  app.post<{ Body: { full_name?: string; org_name?: string } }>(
+    "/api/orgs/bootstrap",
+    async (req, reply) => {
+      const auth = req.bcAuth;
+      if (!auth?.email) {
+        return reply.code(401).send({ error: "auth_required" });
+      }
+      const { bootstrapUserOrg } = await import("../orgs/bootstrap.js");
+      const body = (req.body ?? {}) as { full_name?: string; org_name?: string };
+      const result = await bootstrapUserOrg({
+        email: auth.email,
+        full_name: body.full_name ?? null,
+        org_name: body.org_name ?? null,
+      });
+      return reply.code(result.created ? 201 : 200).send(result);
+    },
+  );
+
   // -- members ------------------------------------------------------------
   // Lists the org's user_account rows + their role assignments. Used by
   // Settings/People and the audit-log explorer's "filter by actor" picker.

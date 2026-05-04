@@ -1445,6 +1445,14 @@ const ADDITIVE_MIGRATIONS = [
      USING      (current_setting('app.system_scope', true) = 'true')
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 
+  // -- core.user_account additive columns (Phase 8.1) ---------------------
+  // The legacy schema has display_name + no updated_at. New code uses
+  // full_name and updated_at. Both columns coexist; new writes set
+  // full_name, old reads of display_name keep working.
+  `ALTER TABLE core.user_account
+     ADD COLUMN IF NOT EXISTS full_name  text,
+     ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();`,
+
   // -- billing.subscription — Phase 7.b ------------------------------------
   // One row per (org, stripe_subscription_id). Materialized from
   // customer.subscription.* events. `tier` is derived from the price's

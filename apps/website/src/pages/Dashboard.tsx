@@ -18,6 +18,7 @@ import { ChannelMark, I, Sigil } from "../icons";
 import { api } from "../lib/api";
 import { progressPercent, relativeTime } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
+import { friendlyMessage } from "../components/States";
 
 /**
  * Editorial dashboard — Phase 4 front door.
@@ -942,7 +943,7 @@ function Hint({ children }: { children: React.ReactNode }) {
 function HintError({ msg }: { msg: string }) {
   return (
     <div className="empty-hint" style={{ color: "var(--neg)" }}>
-      Couldn't load · {msg}
+      {friendlyMessage(msg)}
     </div>
   );
 }

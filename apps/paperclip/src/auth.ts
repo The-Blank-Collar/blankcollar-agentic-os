@@ -18,6 +18,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { config } from "./config.js";
 import { query } from "./db.js";
+import { bootstrapToScope, bootstrapUserOrg } from "./orgs/bootstrap.js";
 import type { RoleKind, Scope } from "./schemas.js";
 
 declare module "fastify" {
@@ -32,6 +33,7 @@ type SupabaseClaims = {
   email?: string | null;
   aud?: string;
   exp?: number;
+  user_metadata?: { full_name?: string; name?: string } | null;
 };
 
 let secretKey: Uint8Array | undefined;
@@ -143,6 +145,27 @@ export async function authPreHandler(
     if (scope) {
       request.bcScope = scope;
       return;
+    }
+    // No account yet. In auto-bootstrap mode (the default for hosted
+    // SaaS) we provision the user's own org on the spot — owner role,
+    // two seed agents, and a welcome goal. The next request lands on
+    // a working dashboard with no further setup.
+    if (config.autoBootstrap) {
+      try {
+        const fullName =
+          claims.user_metadata?.full_name?.trim() ||
+          claims.user_metadata?.name?.trim() ||
+          null;
+        const result = await bootstrapUserOrg({ email, full_name: fullName });
+        request.bcScope = bootstrapToScope(result);
+        return;
+      } catch (err) {
+        request.log.error({ err, email }, "auto-bootstrap failed");
+        if (config.authEnforce) {
+          return reply.code(500).send({ error: "bootstrap_failed" });
+        }
+        // Soft mode — fall through to stub scope.
+      }
     }
   }
   // Token is valid but the user has no provisioned account/role.
