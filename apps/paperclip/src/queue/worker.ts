@@ -26,6 +26,7 @@ import { withOrgScope, withSystemScope } from "../db.js";
 import type { Scope } from "../schemas.js";
 import { cascadeFromRun } from "../swarms/dispatch.js";
 import type { AdapterClient } from "./adapter-client.js";
+import { replyToChannelOnTerminal } from "./channel-replies.js";
 import { getAdapter, knownKinds } from "./registry.js";
 
 type Logger = {
@@ -265,6 +266,14 @@ export class Worker {
       } catch {
         // Cascade failures don't roll back the run's success.
       }
+      // TG.v2 channel cascade — if the goal originated from Telegram (or
+      // another future channel), forward the run's reply to the chat.
+      // Best-effort: a Telegram failure must not roll back the run.
+      try {
+        await replyToChannelOnTerminal(client, goal.id, "succeeded", output, null);
+      } catch {
+        // swallow — channel-replies handles its own logging
+      }
     });
   }
 
@@ -295,6 +304,12 @@ export class Worker {
         await cascadeFromRun(client, runId, "failed", null, error, scopeFor(goal));
       } catch {
         // see succeed() above — best-effort cascade.
+      }
+      // TG.v2 channel cascade — forward the failure to the source channel.
+      try {
+        await replyToChannelOnTerminal(client, goal.id, "failed", null, error);
+      } catch {
+        // swallow
       }
     });
   }

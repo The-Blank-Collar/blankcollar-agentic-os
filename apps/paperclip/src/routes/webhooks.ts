@@ -18,7 +18,6 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { audit } from "../audit.js";
 import { withOrgScope } from "../db.js";
-import { chatComplete, GatewayError } from "../llm/gateway.js";
 import { resolveCallerScope } from "../scope.js";
 import {
   StripeSignatureError,
@@ -26,7 +25,7 @@ import {
   recordStripeEvent,
   verifyStripeSignature,
 } from "../stripe.js";
-import { sendMessage as tgSendMessage, TelegramApiError, TelegramConfigError } from "../telegram/client.js";
+import { sendChatAction, TelegramApiError, TelegramConfigError } from "../telegram/client.js";
 
 const STRIPE_SECRET = () => process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const CAPTURE_WEBHOOK_SECRET = () => process.env.INBOUND_CAPTURE_WEBHOOK_SECRET ?? "";
@@ -209,20 +208,20 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   // Bot → Telegram → here. Telegram sends a POST with the message envelope
   // and the secret token in the X-Telegram-Bot-Api-Secret-Token header.
   //
-  // v1 round-trip:
+  // v2 cascade:
   //   1. Verify the secret header.
   //   2. Extract the message text + chat id.
-  //   3. Persist as a capture (existing pipeline → ephemeral goal).
-  //   4. Call Portkey-routed chatComplete with a tight system prompt.
-  //   5. Reply via the Telegram Bot API.
+  //   3. Persist a capture + ephemeral goal whose metadata records the
+  //      Telegram chat_id + message_id (so the worker can reply later).
+  //   4. Queue a `hermes` run on that goal — same path as a UI dispatch.
+  //   5. Send a "typing…" chat action so the user sees the bot is alive.
+  //   6. Return 200 immediately. The worker's success/fail hooks (in
+  //      queue/channel-replies.ts) read the goal's metadata and forward
+  //      the run output back to the Telegram chat when it terminates.
   //
   // Always return 200 OK to Telegram (even on internal errors — Telegram
   // retries 4xx/5xx aggressively, and the operator should see the failure
-  // in our audit log + bot reply, not in a Telegram retry loop).
-  //
-  // Future v2: route through the real agent pipeline (plan + dispatch a
-  // Hermes run + cascade the run output back to Telegram). v1 keeps the
-  // path tight so the demo is fast.
+  // in our audit log + delayed bot reply, not in a Telegram retry loop).
   app.post("/api/webhooks/telegram", async (req, reply) => {
     const secret = TELEGRAM_WEBHOOK_SECRET();
     if (!secret) {
@@ -259,9 +258,9 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
 
     const scope = await resolveCallerScope(req);
 
-    // Persist the capture so the message lives in our audit + capture log
-    // even if the LLM call fails. Operator sees it in /Activity either way.
-    const captureRecord = await withOrgScope(scope.org_id, async (client) => {
+    // Persist capture + goal + queue the agent run in one transaction so
+    // the worker has everything it needs the moment it claims the run.
+    const dispatched = await withOrgScope(scope.org_id, async (client) => {
       const { rows: goalRows } = await client.query<{ id: string }>(
         `INSERT INTO ops.goal (org_id, title, description, kind, metadata)
          VALUES ($1, $2, $3, 'ephemeral'::ops.goal_kind, $4::jsonb)
@@ -297,12 +296,13 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
           goalId,
         ],
       );
+      const captureId = capRows[0]!.id;
       await audit(
         {
           scope,
           action: "telegram.message",
           target_type: "capture",
-          target_id: capRows[0]!.id,
+          target_id: captureId,
           metadata: {
             goal_id: goalId,
             chat_id: chatId,
@@ -312,49 +312,62 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
         },
         client,
       );
-      return { goal_id: goalId, capture_id: capRows[0]!.id };
+
+      // Queue a Hermes run. The worker picks this up, dispatches to
+      // hermes:80, polls until terminal, and our succeed()/fail() hooks
+      // forward the run output back to Telegram via channel-replies.ts.
+      const subtask = {
+        index: 0,
+        title: text.slice(0, 200),
+        description: text.length > 200 ? text : "",
+        agent_kind: "hermes",
+        input: {
+          source: "telegram",
+          user_message: text.slice(0, 4_000),
+        },
+      };
+      const { rows: runRows } = await client.query<{ id: string }>(
+        `INSERT INTO ops.run (goal_id, status, input)
+         VALUES ($1, 'queued', $2::jsonb)
+         RETURNING id`,
+        [goalId, JSON.stringify({ subtask })],
+      );
+      const runId = runRows[0]!.id;
+      await audit(
+        {
+          scope,
+          action: "run.dispatch",
+          target_type: "run",
+          target_id: runId,
+          metadata: { goal_id: goalId, source: "telegram", subtask_index: 0 },
+        },
+        client,
+      );
+      // Promote the goal from 'draft' to 'active' on first dispatch — same
+      // semantics as the UI flow.
+      await client.query(
+        "UPDATE ops.goal SET status = 'active'::ops.goal_status WHERE id = $1 AND status = 'draft'::ops.goal_status",
+        [goalId],
+      );
+
+      return { goal_id: goalId, capture_id: captureId, run_id: runId };
     });
 
-    // Round-trip via the LLM. If Portkey is misconfigured or the call
-    // fails, surface the error as a friendly Telegram reply instead of
-    // 500-ing on Telegram (which would trigger their retry loop).
-    let replyText: string;
+    // Show "typing…" so the user sees the bot is alive while Hermes works.
+    // Best-effort — token misconfig surfaces as a 503-style chat action
+    // failure but doesn't block the webhook ack.
     try {
-      const llm = await chatComplete({
-        system:
-          "You are the assistant for The Blank Collar — a small AI-native studio. " +
-          "Reply to the operator concisely (<= 3 short sentences). " +
-          "If the message is a goal or task, acknowledge it briefly + say it's been logged. " +
-          "Otherwise, answer plainly.",
-        messages: [{ role: "user", content: text.slice(0, 4_000) }],
-        max_tokens: 400,
-      });
-      replyText = llm.text.trim() || "(no reply generated)";
+      await sendChatAction(chatId, "typing");
     } catch (err) {
-      const detail =
-        err instanceof GatewayError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : String(err);
-      replyText = `⚠️ Brain unavailable right now: ${detail.slice(0, 300)}`;
-      app.log.warn(`telegram → llm failed: ${detail}`);
-    }
-
-    try {
-      await tgSendMessage(chatId, replyText, { reply_to_message_id: messageId });
-    } catch (err) {
-      // If Telegram itself rejects us (token revoked, bad chat id, …) we
-      // still 200 the webhook — audit trail + paperclip log capture it.
       const detail =
         err instanceof TelegramApiError
           ? `${err.status} ${err.description ?? err.message}`
           : err instanceof TelegramConfigError
             ? "TELEGRAM_BOT_TOKEN missing"
             : (err as Error).message;
-      app.log.error(`telegram sendMessage failed: ${detail}`);
+      app.log.warn(`telegram sendChatAction failed: ${detail}`);
     }
 
-    return reply.send({ ok: true, ...captureRecord });
+    return reply.send({ ok: true, ...dispatched });
   });
 }
