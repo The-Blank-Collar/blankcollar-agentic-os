@@ -11,9 +11,11 @@ import type {
 
 import { I } from "../icons";
 import { api } from "../lib/api";
+import { describeCron, nextCronFire } from "../lib/cron";
 import { dueLabel, progressPercent, relativeTime, runDot, statusDot, statusLabel } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
 import { Empty, ErrorState, Loading } from "../components/States";
+import { GoalKindActions } from "../components/GoalKindActions";
 
 type Props = {
   goalId: string | null;
@@ -104,7 +106,7 @@ function GoalDetailInner({
             {g.id.slice(0, 8)} · {g.kind} · {statusLabel(g.status)}
           </div>
           <div className="editorial-eyebrow" style={{ marginBottom: 14 }}>
-            {g.kind === "decision" ? "Decision goal" : `${capitalize(g.kind)} objective`}
+            {kindEyebrow(g.kind)}
           </div>
           <div className="gtt">{g.title}</div>
           {g.description && (
@@ -113,21 +115,16 @@ function GoalDetailInner({
             </div>
           )}
         </div>
-        <div className="gactions">
-          <button
-            className="btn btn-sm"
-            onClick={onArchive}
-            disabled={archiving || g.status === "archived"}
-            title={
-              g.status === "archived"
-                ? "Already archived"
-                : "Hide from active views; data is preserved"
-            }
-          >
-            {archiving ? "Archiving…" : g.status === "archived" ? "Archived" : "Archive goal"}
-          </button>
-        </div>
+        <GoalKindActions
+          g={g}
+          archiving={archiving}
+          archiveErr={archiveErr}
+          onArchive={onArchive}
+          onRefetch={goalQ.refetch}
+        />
       </div>
+
+      <KindSubStrip g={g} pct={pct} runs={runs} />
 
       {archiveErr && (
         <div
@@ -149,62 +146,21 @@ function GoalDetailInner({
         </div>
       )}
 
-      <div className="gd-sub">
-        <div className="cell">
-          <div className="lbl">Progress</div>
-          <div className="val num" style={{ fontSize: 22, letterSpacing: "-0.02em" }}>
-            {pct}%
-          </div>
-          <div className="progressbar" style={{ marginTop: 8 }}>
-            <i style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-        <div className="cell">
-          <div className="lbl">Target</div>
-          <div className="val num" style={{ fontSize: 16 }}>
-            {g.target_value ?? "—"}
-          </div>
-          <div className="tiny" style={{ marginTop: 4 }}>by {dueLabel(g.due_at)}</div>
-        </div>
-        <div className="cell">
-          <div className="lbl">Current</div>
-          <div className="val num" style={{ fontSize: 16 }}>
-            {g.actual_value ?? "—"}
-          </div>
-          {g.delta_label && (
-            <div className="tiny" style={{ marginTop: 4 }}>{g.delta_label}</div>
-          )}
-        </div>
-        <div className="cell">
-          <div className="lbl">Owner</div>
-          <div className="val">
-            {g.owner_id ? <span className="mono tiny">{g.owner_id.slice(0, 8)}</span> : "—"}
-          </div>
-          <div className="tiny" style={{ marginTop: 4 }}>
-            {g.contributors.length > 0
-              ? `${g.contributors.length} contributor${g.contributors.length === 1 ? "" : "s"}`
-              : "no contributors"}
-          </div>
-        </div>
-        <div className="cell">
-          <div className="lbl">Status</div>
-          <div className="val" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className={`dot ${statusDot(g.status)}`} />
-            <span style={{ textTransform: "capitalize" }}>{statusLabel(g.status)}</span>
-          </div>
-          <div className="tiny" style={{ marginTop: 4 }}>updated {relativeTime(g.updated_at)}</div>
-        </div>
-      </div>
-
       <div className="gd-grid">
         <div className="left">
-          <KeyResultsSection
-            goalId={g.id}
-            keyResults={g.key_results}
-            onChanged={goalQ.refetch}
-          />
+          {g.kind === "decision" && <DecisionReasoning g={g} />}
 
-          <SwarmSection goalId={g.id} />
+          {(g.kind === "standing" || g.key_results.length > 0) && (
+            <KeyResultsSection
+              goalId={g.id}
+              keyResults={g.key_results}
+              onChanged={goalQ.refetch}
+            />
+          )}
+
+          {(g.kind === "ephemeral" || g.kind === "standing") && (
+            <SwarmSection goalId={g.id} />
+          )}
 
 
           <div className="section">
@@ -767,7 +723,256 @@ const krInput: React.CSSProperties = {
   outline: "none",
 };
 
-const capitalize = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+function kindEyebrow(kind: GoalWithDetail["kind"]): string {
+  switch (kind) {
+    case "decision":  return "Decision · wants your call";
+    case "routine":   return "Routine · runs on a schedule";
+    case "standing":  return "Standing · measured by KRs";
+    case "ephemeral": return "Ephemeral · one-shot";
+  }
+}
+
+function KindSubStrip({ g, pct, runs }: { g: GoalWithDetail; pct: number; runs: Run[] }) {
+  if (g.kind === "decision") {
+    return <DecisionSubStrip g={g} runs={runs} />;
+  }
+  if (g.kind === "routine") {
+    return <RoutineSubStrip g={g} runs={runs} />;
+  }
+  if (g.kind === "standing") {
+    return <StandingSubStrip g={g} pct={pct} />;
+  }
+  return <EphemeralSubStrip g={g} pct={pct} runs={runs} />;
+}
+
+function DecisionSubStrip({ g, runs }: { g: GoalWithDetail; runs: Run[] }) {
+  const meta = (g.metadata ?? {}) as Record<string, unknown>;
+  const decided = g.status === "achieved" || g.status === "archived";
+  const decision = (meta.decision as string | undefined) ?? null;
+  const decisionAt = (meta.decision_at as string | undefined) ?? null;
+  return (
+    <div className="gd-sub">
+      <div className="cell">
+        <div className="lbl">State</div>
+        <div className="val" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className={`dot ${statusDot(g.status)}`} />
+          <span style={{ textTransform: "capitalize" }}>
+            {decided ? (decision === "approved" ? "Approved" : "Declined") : "Awaiting your call"}
+          </span>
+        </div>
+        <div className="tiny" style={{ marginTop: 4 }}>updated {relativeTime(g.updated_at)}</div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Asked</div>
+        <div className="val num" style={{ fontSize: 16 }}>{relativeTime(g.created_at)}</div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Decided</div>
+        <div className="val num" style={{ fontSize: 16 }}>
+          {decisionAt ? relativeTime(decisionAt) : "—"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Source</div>
+        <div className="val tiny mono">
+          {(meta.source as string | undefined) ?? "manual"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Recent runs</div>
+        <div className="val num" style={{ fontSize: 16 }}>{runs.length}</div>
+      </div>
+    </div>
+  );
+}
+
+function RoutineSubStrip({ g, runs }: { g: GoalWithDetail; runs: Run[] }) {
+  const fire = g.cron_expr ? nextCronFire(g.cron_expr) : null;
+  const lastSucceeded = runs.find((r) => r.status === "succeeded");
+  const succeeded = runs.filter((r) => r.status === "succeeded").length;
+  const failed = runs.filter((r) => r.status === "failed").length;
+  return (
+    <div className="gd-sub">
+      <div className="cell">
+        <div className="lbl">Schedule</div>
+        <div className="val num" style={{ fontSize: 16 }}>
+          {g.cron_expr ? describeCron(g.cron_expr) : "—"}
+        </div>
+        <div className="tiny mono" style={{ marginTop: 4, color: "var(--muted)" }}>
+          {g.cron_expr ?? ""}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Next fire</div>
+        <div className="val num" style={{ fontSize: 16 }}>
+          {g.status === "paused" ? "paused" : fire ? fire.label : "scheduled"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Last fired</div>
+        <div className="val num" style={{ fontSize: 16 }}>
+          {lastSucceeded ? relativeTime(lastSucceeded.finished_at ?? lastSucceeded.created_at) : "—"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Succeeded</div>
+        <div className="val num" style={{ fontSize: 16 }}>{succeeded}</div>
+        {failed > 0 && (
+          <div className="tiny" style={{ marginTop: 4, color: "var(--neg)" }}>{failed} failed</div>
+        )}
+      </div>
+      <div className="cell">
+        <div className="lbl">Status</div>
+        <div className="val" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className={`dot ${statusDot(g.status)}`} />
+          <span style={{ textTransform: "capitalize" }}>{statusLabel(g.status)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StandingSubStrip({ g, pct }: { g: GoalWithDetail; pct: number }) {
+  const krs = g.key_results;
+  return (
+    <div className="gd-sub">
+      <div className="cell">
+        <div className="lbl">Rollup</div>
+        <div className="val num" style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{pct}%</div>
+        <div className="progressbar" style={{ marginTop: 8 }}>
+          <i style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Key results</div>
+        <div className="val num" style={{ fontSize: 16 }}>{krs.length}</div>
+        <div className="tiny" style={{ marginTop: 4 }}>
+          {krs.length === 0 ? "Add one below" : "Listed below"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Target</div>
+        <div className="val num" style={{ fontSize: 16 }}>{g.target_value ?? "—"}</div>
+        <div className="tiny" style={{ marginTop: 4 }}>by {dueLabel(g.due_at)}</div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Current</div>
+        <div className="val num" style={{ fontSize: 16 }}>{g.actual_value ?? "—"}</div>
+        {g.delta_label && (
+          <div className="tiny" style={{ marginTop: 4 }}>{g.delta_label}</div>
+        )}
+      </div>
+      <div className="cell">
+        <div className="lbl">Status</div>
+        <div className="val" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className={`dot ${statusDot(g.status)}`} />
+          <span style={{ textTransform: "capitalize" }}>{statusLabel(g.status)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EphemeralSubStrip({ g, pct, runs }: { g: GoalWithDetail; pct: number; runs: Run[] }) {
+  const lastRun = runs[0] ?? null;
+  return (
+    <div className="gd-sub">
+      <div className="cell">
+        <div className="lbl">Progress</div>
+        <div className="val num" style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{pct}%</div>
+        <div className="progressbar" style={{ marginTop: 8 }}>
+          <i style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Due</div>
+        <div className="val num" style={{ fontSize: 16 }}>{dueLabel(g.due_at)}</div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Runs</div>
+        <div className="val num" style={{ fontSize: 16 }}>{runs.length}</div>
+        <div className="tiny" style={{ marginTop: 4 }}>
+          {lastRun ? `last ${relativeTime(lastRun.created_at)}` : "no runs yet"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Owner</div>
+        <div className="val">
+          {g.owner_id ? <span className="mono tiny">{g.owner_id.slice(0, 8)}</span> : "—"}
+        </div>
+      </div>
+      <div className="cell">
+        <div className="lbl">Status</div>
+        <div className="val" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className={`dot ${statusDot(g.status)}`} />
+          <span style={{ textTransform: "capitalize" }}>{statusLabel(g.status)}</span>
+        </div>
+        <div className="tiny" style={{ marginTop: 4 }}>updated {relativeTime(g.updated_at)}</div>
+      </div>
+    </div>
+  );
+}
+
+function DecisionReasoning({ g }: { g: GoalWithDetail }) {
+  const meta = (g.metadata ?? {}) as Record<string, unknown>;
+  const reasoning = (meta.reasoning as string | undefined)
+    ?? (meta.context as string | undefined)
+    ?? null;
+  const reason = (meta.decision_reason as string | undefined) ?? null;
+  if (!g.description && !reasoning && !reason) return null;
+  return (
+    <div className="section">
+      <div className="section-head">
+        <div className="stack-h">
+          <span className="title">Reasoning</span>
+        </div>
+      </div>
+      <div
+        style={{
+          padding: "16px 18px",
+          border: "1px solid var(--line)",
+          borderLeft: "2px solid var(--info)",
+          borderRadius: "var(--radius)",
+          background: "var(--bg-1)",
+          color: "var(--ink-2)",
+          fontSize: 14,
+          lineHeight: 1.6,
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {g.description ?? reasoning ?? ""}
+      </div>
+      {reason && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "12px 14px",
+            border: "1px solid var(--line)",
+            borderLeft: `2px solid ${g.status === "achieved" ? "var(--pos)" : "var(--neg)"}`,
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            fontSize: 13,
+            color: "var(--ink-2)",
+          }}
+        >
+          <span
+            className="mono"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: g.status === "achieved" ? "var(--pos)" : "var(--neg)",
+              marginRight: 8,
+            }}
+          >
+            {g.status === "achieved" ? "Approved" : "Declined"}
+          </span>
+          {reason}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function groupRunsByDay(runs: Run[]): { date: string; runs: Run[] }[] {
   const groups = new Map<string, Run[]>();
