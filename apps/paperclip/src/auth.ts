@@ -164,10 +164,25 @@ export async function authPreHandler(
   // Only intercept API routes.
   if (!request.url.startsWith("/api/")) return;
 
-  // Public invitation endpoints — recipient may not have an account yet.
-  // Allow through unauthenticated; the route itself enforces email match
-  // when authEnforce is on and a JWT is present.
-  if (request.url.startsWith("/api/invitations/by-token/")) return;
+  // CORS preflight — the browser sends OPTIONS without a Bearer header
+  // before any cross-origin POST/PATCH/DELETE. Let it through to the CORS
+  // plugin's handler; blocking it 401s the preflight and the real request
+  // never fires.
+  if (request.method === "OPTIONS") return;
+
+  // Public endpoints — never auth-gated regardless of mode:
+  //   /api/health           — Docker healthcheck (must be reachable)
+  //   /api/webhooks/*       — Stripe + Telegram + capture (own signature
+  //                           verification at the route level)
+  //   /api/invitations/by-token/* — recipient may not have an account yet
+  if (
+    request.url === "/api/health" ||
+    request.url.startsWith("/api/health?") ||
+    request.url.startsWith("/api/webhooks/") ||
+    request.url.startsWith("/api/invitations/by-token/")
+  ) {
+    return;
+  }
 
   // Auth is OFF (no Supabase configured at all) → no-op.
   if (!authConfigured()) return;
