@@ -9,6 +9,8 @@ import type {
   ConnectorRow,
   ConnectorSyncResult,
   Department,
+  InvitableRole,
+  InvitationRow,
   OrgMember,
   Organization,
   OutcomeMetricRow,
@@ -1439,12 +1441,90 @@ const ROLE_MATRIX: [string, string, string, string, string][] = [
 
 function PeopleTab() {
   const membersQ = useFetch<OrgMember[]>(() => api.listOrgMembers(), []);
+  const invitesQ = useFetch<InvitationRow[]>(() => api.listInvitations({ limit: 50 }), []);
+  const deptsQ = useFetch<Department[]>(() => api.listDepartments(), []);
+  const [composing, setComposing] = useState(false);
+
+  const pendingInvites = (invitesQ.data ?? []).filter((i) => i.status === "pending");
+  const otherInvites = (invitesQ.data ?? []).filter((i) => i.status !== "pending");
+
   return (
     <Section>
       <div className="h3" style={{ marginBottom: 8 }}>People & roles.</div>
       <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
         Three roles: <b>Founder</b> sees everything and decides. <b>Manager</b> runs a department.
         <b> Contributor</b> works on assigned tasks. Agents inherit the role of their manager.
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 8,
+        }}
+      >
+        <div className="eyebrow">Pending invitations ({pendingInvites.length})</div>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => setComposing(true)}
+        >
+          <I name="plus" size={12} /> Invite person
+        </button>
+      </div>
+
+      {composing && (
+        <InviteComposer
+          departments={deptsQ.data ?? []}
+          onClose={() => setComposing(false)}
+          onCreated={() => {
+            setComposing(false);
+            invitesQ.refetch();
+          }}
+        />
+      )}
+
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        {invitesQ.loading && !invitesQ.data && (
+          <div className="empty-hint" style={{ padding: 14 }}>Loading invitations…</div>
+        )}
+        {invitesQ.error && (
+          <div className="empty-hint" style={{ padding: 14, color: "var(--neg)" }}>
+            Couldn't load · {invitesQ.error.message}
+          </div>
+        )}
+        {!invitesQ.loading && pendingInvites.length === 0 && (
+          <div className="empty-hint" style={{ padding: 14 }}>
+            No pending invitations. Use <span className="mono">Invite person</span> to send one.
+          </div>
+        )}
+        {pendingInvites.map((inv, i) => (
+          <InvitationRowItem
+            key={inv.id}
+            inv={inv}
+            isFirst={i === 0}
+            onChanged={() => invitesQ.refetch()}
+          />
+        ))}
+        {otherInvites.length > 0 && (
+          <div
+            style={{
+              padding: "10px 16px",
+              borderTop: "1px solid var(--line)",
+              background: "var(--bg-2)",
+              fontSize: 11,
+              color: "var(--muted)",
+              fontFamily: "var(--font-mono)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            History · {otherInvites.length}
+          </div>
+        )}
+        {otherInvites.map((inv) => (
+          <InvitationRowItem key={inv.id} inv={inv} muted onChanged={() => invitesQ.refetch()} />
+        ))}
       </div>
 
       <div className="eyebrow" style={{ marginBottom: 8 }}>
@@ -1516,7 +1596,7 @@ function PeopleTab() {
         ))}
       </div>
 
-      <ReadOnlyBanner what="Role assignment + invitations" />
+      <ReadOnlyBanner what="Role mutations on existing members" />
 
       <div className="eyebrow" style={{ marginTop: 8, marginBottom: 8 }}>Capability matrix</div>
       <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
@@ -1563,6 +1643,323 @@ function PeopleTab() {
     </Section>
   );
 }
+
+// -- Invitations -------------------------------------------------------------
+
+const ROLE_OPTIONS: { value: InvitableRole; label: string; hint: string }[] = [
+  { value: "team_member",     label: "Team member",     hint: "works on assigned tasks" },
+  { value: "department_lead", label: "Department lead", hint: "runs a department" },
+  { value: "auditor",         label: "Auditor",         hint: "read-only across the org" },
+  { value: "owner",           label: "Owner",           hint: "full access · use sparingly" },
+];
+
+function InviteComposer({
+  departments,
+  onClose,
+  onCreated,
+}: {
+  departments: Department[];
+  onClose: () => void;
+  onCreated: (created: InvitationRow) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<InvitableRole>("team_member");
+  const [departmentId, setDepartmentId] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState<InvitationRow | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (busy || !email.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const inv = await api.createInvitation({
+        email: email.trim(),
+        role,
+        department_id: departmentId || null,
+      });
+      setCreated(inv);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const close = (): void => {
+    if (created) onCreated(created);
+    onClose();
+  };
+
+  if (created) {
+    const url = created.invite_url ?? "";
+    return (
+      <div
+        style={{
+          padding: 16,
+          border: "1px solid var(--line)",
+          borderLeft: "2px solid var(--pos)",
+          borderRadius: "var(--radius-lg)",
+          background: "var(--bg-1)",
+          marginBottom: 16,
+        }}
+      >
+        <div className="eyebrow" style={{ color: "var(--pos)", marginBottom: 6 }}>
+          Invitation created
+        </div>
+        <div className="small" style={{ color: "var(--ink-2)", marginBottom: 12 }}>
+          Send this link to <span className="mono">{created.email}</span>. It expires in 7 days.
+          Email delivery isn't wired yet — share the link via your channel of choice.
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "stretch",
+            marginBottom: 12,
+          }}
+        >
+          <input
+            readOnly
+            value={url}
+            onFocus={(e) => e.currentTarget.select()}
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius)",
+              background: "var(--bg)",
+              color: "var(--ink-2)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+        <button type="button" className="btn btn-sm" onClick={close}>
+          Done
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      style={{
+        padding: 16,
+        border: "1px solid var(--line)",
+        borderRadius: "var(--radius-lg)",
+        background: "var(--bg-1)",
+        marginBottom: 16,
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div className="eyebrow">New invitation</div>
+      <input
+        autoFocus
+        type="email"
+        placeholder="email@theirdomain.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+        style={inputStyle}
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as InvitableRole)}
+          style={inputStyle}
+        >
+          {ROLE_OPTIONS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label} — {r.hint}
+            </option>
+          ))}
+        </select>
+        <select
+          value={departmentId}
+          onChange={(e) => setDepartmentId(e.target.value)}
+          style={inputStyle}
+        >
+          <option value="">No department</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </div>
+      {err && <div className="tiny" style={{ color: "var(--neg)" }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" className="btn btn-sm" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary btn-sm"
+          disabled={busy || !email.trim()}
+        >
+          {busy ? "Inviting…" : "Send invite"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function InvitationRowItem({
+  inv,
+  isFirst,
+  muted,
+  onChanged,
+}: {
+  inv: InvitationRow;
+  isFirst?: boolean;
+  muted?: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<"revoke" | "resend" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const onRevoke = async (): Promise<void> => {
+    if (busy) return;
+    if (!window.confirm(`Revoke invitation for ${inv.email}? Their link will stop working.`)) return;
+    setBusy("revoke");
+    setErr(null);
+    try {
+      await api.revokeInvitation(inv.id);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onResend = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("resend");
+    setErr(null);
+    try {
+      await api.resendInvitation(inv.id);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onCopy = async (): Promise<void> => {
+    if (!inv.invite_url) return;
+    try {
+      await navigator.clipboard.writeText(inv.invite_url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // ignore
+    }
+  };
+
+  const tone =
+    inv.status === "pending"   ? "var(--info)"
+    : inv.status === "accepted" ? "var(--pos)"
+    : inv.status === "revoked"  ? "var(--muted)"
+    : "var(--warn)";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 200px 220px",
+        gap: 12,
+        padding: "12px 16px",
+        borderTop: isFirst ? 0 : "1px solid var(--line)",
+        alignItems: "center",
+        opacity: muted ? 0.7 : 1,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{inv.email}</div>
+        <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 2 }}>
+          {inv.role}
+          {inv.department_name && ` · ${inv.department_name}`}
+          · expires {new Date(inv.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+        </div>
+        {err && <div className="tiny" style={{ color: "var(--neg)", marginTop: 4 }}>{err}</div>}
+      </div>
+      <div>
+        <span
+          className="mono"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: tone,
+          }}
+        >
+          {inv.status}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        {inv.status === "pending" && inv.invite_url && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onCopy}>
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        )}
+        {inv.status === "pending" && (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onResend}
+              disabled={busy !== null}
+            >
+              {busy === "resend" ? "…" : "Resend"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onRevoke}
+              disabled={busy !== null}
+            >
+              {busy === "revoke" ? "…" : "Revoke"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle: CSSProperties = {
+  height: 34,
+  padding: "0 10px",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius)",
+  background: "var(--bg)",
+  color: "var(--ink)",
+  fontFamily: "var(--font-sans)",
+  fontSize: 13,
+  outline: "none",
+};
 
 // -- Governance --------------------------------------------------------------
 

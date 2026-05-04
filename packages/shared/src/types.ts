@@ -736,6 +736,60 @@ export interface OrgMember {
   department_name: string | null;
 }
 
+// ---------- Invitations (Phase 6.b) ---------------------------------------
+
+export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
+export type InvitableRole = "owner" | "department_lead" | "team_member" | "auditor";
+
+export interface InvitationRow {
+  id: string;
+  org_id: string;
+  email: string;
+  role: string;
+  department_id: string | null;
+  department_name: string | null;
+  status: InvitationStatus;
+  invited_by_user_id: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Only present on POST /api/invitations response (and on resend). */
+  token?: string;
+  /** Always present on responses; convenient absolute URL for sharing. */
+  invite_url?: string;
+}
+
+export interface InvitationCreateBody {
+  email: string;
+  role?: InvitableRole;
+  department_id?: string | null;
+}
+
+export interface InvitationListQuery {
+  status?: InvitationStatus;
+  limit?: number;
+}
+
+export interface InvitationPublic {
+  id: string;
+  email: string;
+  role: string;
+  org: { slug: string | null; name: string | null };
+  department: { id: string; name: string | null } | null;
+  status: InvitationStatus;
+  expires_at: string;
+  invited_at: string;
+}
+
+export interface InvitationAcceptResult {
+  user_id: string;
+  org: { slug: string; name: string } | null;
+  role: InvitableRole;
+  department_id: string | null;
+  accepted_at: string | null;
+}
+
 export interface DispatchOk {
   run_id: string;
   status: "queued";

@@ -1444,6 +1444,48 @@ const ADDITIVE_MIGRATIONS = [
      AS PERMISSIVE FOR ALL
      USING      (current_setting('app.system_scope', true) = 'true')
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // -- core.invitation — Phase 6.b ----------------------------------------
+  // Outstanding invitations to join an org. Tokens are opaque hex strings
+  // exchanged via the public `/api/invitations/by-token/:token` path. One
+  // pending invite per (org, lower(email)); accepting clears the partial-
+  // unique index so a re-invite can be sent later if the user leaves.
+  `DO $$ BEGIN
+     CREATE TYPE core.invitation_status AS ENUM ('pending', 'accepted', 'revoked', 'expired');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `CREATE TABLE IF NOT EXISTS core.invitation (
+     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id              uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     email               text NOT NULL,
+     role                text NOT NULL DEFAULT 'team_member',
+     department_id       uuid REFERENCES core.department(id) ON DELETE SET NULL,
+     token               text NOT NULL UNIQUE,
+     status              core.invitation_status NOT NULL DEFAULT 'pending',
+     invited_by_user_id  uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     expires_at          timestamptz NOT NULL DEFAULT (now() + interval '7 days'),
+     accepted_at         timestamptz,
+     created_at          timestamptz NOT NULL DEFAULT now(),
+     updated_at          timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS invitation_pending_uniq
+     ON core.invitation (org_id, lower(email))
+     WHERE status = 'pending';`,
+  `CREATE INDEX IF NOT EXISTS invitation_org_idx
+     ON core.invitation (org_id, created_at DESC);`,
+  `ALTER TABLE core.invitation ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE core.invitation FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON core.invitation;`,
+  `CREATE POLICY app_scope_org ON core.invitation
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON core.invitation;`,
+  `CREATE POLICY app_system_scope ON core.invitation
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 ];
 
 /**
@@ -1500,6 +1542,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.outcome",
   "ops.outcome_metric",
   "ops.subtask",
+  "core.invitation",
 ];
 
 function buildStrictMigrations(): string[] {

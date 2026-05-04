@@ -109,6 +109,11 @@ export async function authPreHandler(
   // Only intercept API routes.
   if (!request.url.startsWith("/api/")) return;
 
+  // Public invitation endpoints — recipient may not have an account yet.
+  // Allow through unauthenticated; the route itself enforces email match
+  // when authEnforce is on and a JWT is present.
+  if (request.url.startsWith("/api/invitations/by-token/")) return;
+
   // Auth is OFF (no Supabase configured) → no-op.
   if (!config.supabaseJwtSecret) return;
 

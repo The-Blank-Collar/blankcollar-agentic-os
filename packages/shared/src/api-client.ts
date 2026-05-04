@@ -48,6 +48,11 @@ import type {
   KeyResult,
   KeyResultCreate,
   KeyResultPatch,
+  InvitationAcceptResult,
+  InvitationCreateBody,
+  InvitationListQuery,
+  InvitationPublic,
+  InvitationRow,
   OrgMember,
   Organization,
   OutcomeCreateBody,
@@ -139,6 +144,13 @@ export interface ApiClient {
   listDepartments(): Promise<Department[]>;
   listOrgMembers(): Promise<OrgMember[]>;
   whoami(): Promise<Whoami>;
+  // -- Invitations (Phase 6.b) ----
+  listInvitations(query?: InvitationListQuery): Promise<InvitationRow[]>;
+  createInvitation(body: InvitationCreateBody): Promise<InvitationRow>;
+  revokeInvitation(id: string): Promise<InvitationRow>;
+  resendInvitation(id: string): Promise<InvitationRow>;
+  getInvitationByToken(token: string): Promise<InvitationPublic>;
+  acceptInvitation(token: string, body?: { full_name?: string }): Promise<InvitationAcceptResult>;
   // -- Autonomy (Phase 5b / Sprint 5.1) ----
   listAutonomy(): Promise<AutonomyModeRow[]>;
   upsertAutonomy(body: AutonomyModeUpsert): Promise<AutonomyModeRow>;
@@ -330,6 +342,25 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     listDepartments: () => request<Department[]>("GET", "/api/departments"),
     listOrgMembers: () => request<OrgMember[]>("GET", "/api/orgs/members"),
     whoami: () => request<Whoami>("GET", "/api/whoami"),
+    listInvitations: (query) =>
+      request<InvitationRow[]>(
+        "GET",
+        `/api/invitations${qs({ status: query?.status, limit: query?.limit })}`,
+      ),
+    createInvitation: (body) =>
+      request<InvitationRow>("POST", "/api/invitations", body as unknown as Json),
+    revokeInvitation: (id) =>
+      request<InvitationRow>("POST", `/api/invitations/${encodeURIComponent(id)}/revoke`),
+    resendInvitation: (id) =>
+      request<InvitationRow>("POST", `/api/invitations/${encodeURIComponent(id)}/resend`),
+    getInvitationByToken: (token) =>
+      request<InvitationPublic>("GET", `/api/invitations/by-token/${encodeURIComponent(token)}`),
+    acceptInvitation: (token, body) =>
+      request<InvitationAcceptResult>(
+        "POST",
+        `/api/invitations/by-token/${encodeURIComponent(token)}/accept`,
+        (body ?? {}) as unknown as Json,
+      ),
     listAutonomy: () => request<AutonomyModeRow[]>("GET", "/api/autonomy"),
     upsertAutonomy: (body) =>
       request<AutonomyModeRow>("PUT", "/api/autonomy", body as unknown as Json),

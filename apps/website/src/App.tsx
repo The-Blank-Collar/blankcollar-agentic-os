@@ -17,6 +17,7 @@ import { Mobile } from "./pages/Mobile";
 import { goals } from "./data/fixtures";
 import { CommandPalette } from "./lib/cmdk";
 import { GoalComposer } from "./components/GoalComposer";
+import { InviteAccept } from "./components/InviteAccept";
 import {
   DEFAULT_TWEAKS,
   TweakRadio,
@@ -58,6 +59,11 @@ export default function App() {
   const [goalId, setGoalId] = useState<string | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("invite");
+    return t && /^[a-f0-9]{32,128}$/.test(t) ? t : null;
+  });
   const [printMode, setPrintMode] = useState<boolean>(
     typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "") === "print",
   );
@@ -216,6 +222,19 @@ export default function App() {
         onClose={() => setComposerOpen(false)}
         onCreated={(id) => openGoal(id)}
       />
+
+      {inviteToken && (
+        <InviteAccept
+          token={inviteToken}
+          onClose={() => {
+            setInviteToken(null);
+            // Strip the invite param so a refresh doesn't re-open the modal.
+            const url = new URL(window.location.href);
+            url.searchParams.delete("invite");
+            window.history.replaceState({}, "", url.toString());
+          }}
+        />
+      )}
 
       <TweaksPanel title="Tweaks">
         <TweakSection title="Surface">

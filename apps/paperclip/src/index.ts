@@ -27,6 +27,7 @@ import { keyResultRoutes } from "./routes/keyresults.js";
 import { documentRoutes } from "./routes/documents.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { upstreamRoutes } from "./routes/upstream.js";
+import { invitationRoutes } from "./routes/invitations.js";
 import { llmRoutes } from "./routes/llm.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
   await app.register(webhookRoutes);
   await app.register(healthRoutes);
   await app.register(orgRoutes);
+  await app.register(invitationRoutes);
   await app.register(outcomeRoutes);
   await app.register(goalRoutes);
   await app.register(keyResultRoutes);

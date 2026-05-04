@@ -782,3 +782,41 @@ export const AuditQuery = z
   })
   .strict();
 export type AuditQuery = z.infer<typeof AuditQuery>;
+
+// ---------- Invitations (Phase 6.b) ---------------------------------------
+
+export const InvitationStatus = z.enum(["pending", "accepted", "revoked", "expired"]);
+export type InvitationStatus = z.infer<typeof InvitationStatus>;
+
+/** Roles invitable from the UI — `agent` is reserved for the system. */
+export const InvitableRole = z.enum([
+  "owner",
+  "department_lead",
+  "team_member",
+  "auditor",
+]);
+export type InvitableRole = z.infer<typeof InvitableRole>;
+
+export const InvitationCreate = z
+  .object({
+    email: z.string().email().max(320),
+    role: InvitableRole.default("team_member"),
+    department_id: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+export type InvitationCreate = z.infer<typeof InvitationCreate>;
+
+export const InvitationListQuery = z
+  .object({
+    status: InvitationStatus.optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+export type InvitationListQuery = z.infer<typeof InvitationListQuery>;
+
+export const InvitationAccept = z
+  .object({
+    full_name: z.string().min(1).max(120).optional(),
+  })
+  .strict();
+export type InvitationAccept = z.infer<typeof InvitationAccept>;
