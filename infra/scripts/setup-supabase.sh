@@ -108,7 +108,7 @@ ${BOLD}=========================================================${RESET}
 
 This wires real auth so signups create real per-user orgs.
 
-You'll need 3 values from your Supabase dashboard
+You'll need 2 values from your Supabase dashboard
 (${CYAN}https://supabase.com/dashboard${RESET}):
 
   ${YELLOW}1. Project URL${RESET}
@@ -121,9 +121,10 @@ You'll need 3 values from your Supabase dashboard
      API keys"${RESET} tab → copy the ${BOLD}anon public${RESET} row
      (long string starting with ${DIM}eyJhbGc…${RESET})
 
-  ${YELLOW}3. JWT Secret${RESET}
-     Settings → JWT Keys → ${BOLD}JWT Secret${RESET} field
-     (~64-character hex string — click "Reveal" first)
+That's it. The JWT verification keys are fetched automatically from
+your project URL (modern Supabase asymmetric signing). If your project
+still uses the legacy HS256 secret, you can paste it as an optional
+fallback at the end.
 
 Existing values in .env are shown — press Enter to keep them.
 
@@ -181,13 +182,10 @@ case "$ANON" in
 esac
 
 JWT="$(prompt_value "SUPABASE_JWT_SECRET" \
-  "JWT Secret" \
-  "Settings → JWT Keys → JWT Secret (a hex string ~64 chars)")"
+  "JWT Secret (optional)" \
+  "OPTIONAL — leave blank if your project uses asymmetric signing (default for new projects). Only paste if Settings → JWT Keys → Legacy JWT Secret tab shows a value you want as fallback.")"
 
-if [ -z "$JWT" ]; then
-  printf '%s× empty JWT secret — aborting%s\n' "$YELLOW" "$RESET"; exit 1
-fi
-if [ "${#JWT}" -lt 32 ]; then
+if [ -n "$JWT" ] && [ "${#JWT}" -lt 32 ]; then
   printf '%s⚠ JWT secret looks short (%d chars). Real ones are typically 64+%s\n' "$YELLOW" "${#JWT}" "$RESET"
   printf '  continue anyway? [y/N] '
   IFS= read -r ok
@@ -201,11 +199,17 @@ set_env "PAPERCLIP_AUTO_BOOTSTRAP" "true"
 
 # --- summary -----------------------------------------------------------------
 
+if [ -n "$JWT" ]; then
+  JWT_LINE="    SUPABASE_JWT_SECRET          = ${JWT:0:8}…${JWT: -4} (HS256 fallback)"
+else
+  JWT_LINE="    SUPABASE_JWT_SECRET          = (empty — using JWKS at ${URL}/auth/v1/.well-known/jwks.json)"
+fi
+
 cat <<EOF
 
-${GREEN}✓ Wrote 5 values to .env:${RESET}
+${GREEN}✓ Wrote values to .env:${RESET}
     SUPABASE_URL                 = ${URL}
-    SUPABASE_JWT_SECRET          = ${JWT:0:8}…${JWT: -4}
+${JWT_LINE}
     VITE_SUPABASE_URL            = ${URL}
     VITE_SUPABASE_ANON_KEY       = ${ANON:0:12}…
     PAPERCLIP_AUTH_ENFORCE       = true
