@@ -16,6 +16,7 @@ import { dueLabel, progressPercent, relativeTime, runDot, statusDot, statusLabel
 import { useFetch } from "../lib/useFetch";
 import { Empty, ErrorState, Loading } from "../components/States";
 import { GoalKindActions } from "../components/GoalKindActions";
+import { RunDrilldown } from "../components/RunDrilldown";
 
 type Props = {
   goalId: string | null;
@@ -80,6 +81,7 @@ function GoalDetailInner({
 
   const [archiving, setArchiving] = useState(false);
   const [archiveErr, setArchiveErr] = useState<string | null>(null);
+  const [drilldownRunId, setDrilldownRunId] = useState<string | null>(null);
 
   const onArchive = async (): Promise<void> => {
     if (archiving) return;
@@ -185,7 +187,12 @@ function GoalDetailInner({
                     <div className="date">{day.date}</div>
                     <div className="events">
                       {day.runs.map((r) => (
-                        <RunRow key={r.id} run={r} onCancel={onCancelRun} />
+                        <RunRow
+                          key={r.id}
+                          run={r}
+                          onCancel={onCancelRun}
+                          onOpen={() => setDrilldownRunId(r.id)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -238,6 +245,16 @@ function GoalDetailInner({
           </div>
         </div>
       </div>
+
+      {drilldownRunId && (
+        <RunDrilldown
+          runId={drilldownRunId}
+          onClose={() => {
+            setDrilldownRunId(null);
+            runsQ.refetch();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -987,10 +1004,23 @@ function groupRunsByDay(runs: Run[]): { date: string; runs: Run[] }[] {
   return Array.from(groups, ([date, items]) => ({ date, runs: items }));
 }
 
-const RunRow = ({ run, onCancel }: { run: Run; onCancel: (id: string) => void }) => {
+const RunRow = ({
+  run,
+  onCancel,
+  onOpen,
+}: {
+  run: Run;
+  onCancel: (id: string) => void;
+  onOpen?: () => void;
+}) => {
   const cancellable = run.status === "queued" || run.status === "running";
   return (
-    <div className="hbev">
+    <div
+      className="hbev"
+      onClick={onOpen}
+      style={{ cursor: onOpen ? "pointer" : undefined }}
+      title={onOpen ? "Open drilldown" : undefined}
+    >
       <div className={`marker ${runDot(run.status)}`} />
       <div className="body">
         <b>Run {run.id.slice(0, 8)}</b>{" "}
@@ -1002,7 +1032,7 @@ const RunRow = ({ run, onCancel }: { run: Run; onCancel: (id: string) => void })
           <div className="quote">{JSON.stringify(run.output).slice(0, 280)}</div>
         )}
       </div>
-      <div className="when">
+      <div className="when" onClick={(e) => e.stopPropagation()}>
         <div>{relativeTime(run.created_at)}</div>
         {cancellable && (
           <button

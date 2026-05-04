@@ -147,7 +147,7 @@ export default function App() {
       content = <Tools />;
       break;
     case "activity":
-      content = <Activity />;
+      content = <Activity onOpenGoal={openGoal} />;
       break;
     case "inbox":
       content = <Inbox onOpenGoal={openGoal} />;

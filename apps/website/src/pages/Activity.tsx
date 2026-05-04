@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
 import { Empty, ErrorState, Loading } from "../components/States";
+import { RunDrilldown } from "../components/RunDrilldown";
 
 const ACTION_GROUPS: { key: string; label: string; prefix?: string }[] = [
   { key: "all",      label: "All" },
@@ -17,12 +18,17 @@ const ACTION_GROUPS: { key: string; label: string; prefix?: string }[] = [
   { key: "tool",     label: "Tools",     prefix: "tool." },
 ];
 
-export function Activity() {
+type Props = {
+  onOpenGoal?: (id: string) => void;
+};
+
+export function Activity({ onOpenGoal }: Props = {}) {
   const { data, error, loading, refetch } = useFetch<AuditEntry[]>(
     () => api.listAudit({ limit: 200 }),
     [],
   );
   const [filter, setFilter] = useState<string>("all");
+  const [drilldownRunId, setDrilldownRunId] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data?.length ?? 0 };
@@ -84,19 +90,44 @@ export function Activity() {
       )}
       {!loading && !error && filtered.length > 0 && (
         <div style={{ padding: "0 var(--pad-x)" }}>
-          {filtered.map((e) => <Row key={e.id} entry={e} />)}
+          {filtered.map((e) => (
+            <Row
+              key={e.id}
+              entry={e}
+              onOpenRun={
+                e.target_type === "run" && e.target_id
+                  ? () => setDrilldownRunId(e.target_id!)
+                  : undefined
+              }
+            />
+          ))}
         </div>
+      )}
+
+      {drilldownRunId && (
+        <RunDrilldown
+          runId={drilldownRunId}
+          onClose={() => setDrilldownRunId(null)}
+          onOpenGoal={onOpenGoal}
+        />
       )}
     </div>
   );
 }
 
-const Row = ({ entry }: { entry: AuditEntry }) => {
+const Row = ({
+  entry,
+  onOpenRun,
+}: {
+  entry: AuditEntry;
+  onOpenRun?: () => void;
+}) => {
   const meta = entry.metadata && Object.keys(entry.metadata).length > 0
     ? JSON.stringify(entry.metadata)
     : null;
   return (
     <div
+      onClick={onOpenRun}
       style={{
         display: "grid",
         gridTemplateColumns: "140px 32px 1fr",
@@ -104,7 +135,9 @@ const Row = ({ entry }: { entry: AuditEntry }) => {
         padding: "16px 0",
         borderTop: "1px solid var(--line)",
         alignItems: "flex-start",
+        cursor: onOpenRun ? "pointer" : undefined,
       }}
+      title={onOpenRun ? "Open run drilldown" : undefined}
     >
       <div className="tiny mono" style={{ paddingTop: 6, color: "var(--muted)" }}>
         {relativeTime(entry.created_at)}
