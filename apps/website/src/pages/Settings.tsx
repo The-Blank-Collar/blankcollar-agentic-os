@@ -12,6 +12,8 @@ import type {
   Department,
   InvitableRole,
   InvitationRow,
+  OnboardingDerived,
+  OnboardingProfile,
   OrgMember,
   Organization,
   SubscriptionRow,
@@ -33,6 +35,7 @@ import { Empty, ErrorState, Loading } from "../components/States";
 
 type SectionId =
   | "overview"
+  | "onboarding"
   | "autonomy"
   | "safeguards"
   | "connectors"
@@ -47,6 +50,7 @@ type SectionId =
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview",    label: "Overview" },
+  { id: "onboarding",  label: "Onboarding" },
   { id: "autonomy",    label: "Autonomy" },
   { id: "safeguards",  label: "Safeguards" },
   { id: "connectors",  label: "Connectors" },
@@ -64,7 +68,11 @@ const DEFAULT_ORG_SLUG: string =
   ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
     ?.VITE_DEFAULT_ORG_SLUG ?? "blankcollar-demo");
 
-export function Settings() {
+type Props = {
+  onOpenOnboarding?: () => void;
+};
+
+export function Settings({ onOpenOnboarding }: Props = {}) {
   const [section, setSection] = useState<SectionId>("overview");
   return (
     <div className="page">
@@ -109,6 +117,7 @@ export function Settings() {
 
         <div style={{ padding: "var(--pad-y) var(--pad-x)", overflow: "auto" }}>
           {section === "overview"    && <OverviewTab />}
+          {section === "onboarding"  && <OnboardingTab onReopen={onOpenOnboarding} />}
           {section === "autonomy"    && <AutonomyTab />}
           {section === "safeguards"  && <SafeguardsTab />}
           {section === "connectors"  && <ConnectorsTab />}
@@ -2181,6 +2190,209 @@ function ChannelsTab() {
       <div className="tiny" style={{ marginTop: 12, color: "var(--muted)" }}>
         Real OAuth flows wire in via the Nango gateway in a future phase.
       </div>
+    </Section>
+  );
+}
+
+// -- Onboarding --------------------------------------------------------------
+
+const DERIVED_LABELS: Array<{ key: keyof OnboardingDerived; label: string }> = [
+  { key: "voice_words",         label: "Voice" },
+  { key: "banned_words",        label: "Banned" },
+  { key: "decision_categories", label: "Always asks you" },
+  { key: "channels",            label: "Active channels" },
+  { key: "routine_hints",       label: "Cadence cues" },
+];
+
+function OnboardingTab({ onReopen }: { onReopen?: () => void }) {
+  const profileQ = useFetch<OnboardingProfile | null>(() => api.onboardingProfile(), []);
+  const profile = profileQ.data;
+  const derived = (profile?.derived ?? {}) as OnboardingDerived;
+  const totalAnswered = profile?.answers.length ?? 0;
+  const completed = Boolean(profile?.completed_at);
+  const briefingHour = derived.briefing_hour_utc;
+
+  const reopen = (): void => {
+    // Clear the dismissal flag so first-run detection can re-fire on the
+    // next mount; also fire the parent callback to open the wizard now.
+    window.localStorage.removeItem("bc.onboarding.dismissed");
+    onReopen?.();
+  };
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Onboarding.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Your answers from the welcome interview shape the studio's voice, the
+        decisions Hermes always asks you about, and the routine drafts in your
+        Goals list. Re-open the wizard any time to refine them.
+      </div>
+
+      {profileQ.loading && !profile && (
+        <div className="empty-hint" style={{ padding: 16 }}>Loading profile…</div>
+      )}
+      {profileQ.error && (
+        <div className="empty-hint" style={{ padding: 16, color: "var(--neg)" }}>
+          Couldn't load · {profileQ.error.message}
+        </div>
+      )}
+
+      {!profileQ.loading && !profile && (
+        <div className="card" style={{ padding: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>No profile yet</div>
+          <div className="small" style={{ color: "var(--ink-2)", marginBottom: 14 }}>
+            Run the wizard to capture your studio's voice and seed routine drafts.
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={reopen}
+            disabled={!onReopen}
+          >
+            Start onboarding
+          </button>
+        </div>
+      )}
+
+      {profile && (
+        <>
+          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
+              <div className="eyebrow">Status</div>
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10.5,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: completed ? "var(--pos)" : "var(--warn)",
+                }}
+              >
+                {completed ? "complete" : "in progress"}
+              </span>
+            </div>
+            <div style={{ fontSize: 14, marginBottom: 6 }}>
+              {totalAnswered} answer{totalAnswered === 1 ? "" : "s"} on file
+              {completed && profile.completed_at
+                ? ` · finished ${relativeTime(profile.completed_at)}`
+                : ""}
+            </div>
+            <div className="tiny mono" style={{ color: "var(--muted)" }}>
+              mode={profile.mode} · started {relativeTime(profile.created_at)}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={reopen}
+                disabled={!onReopen}
+              >
+                {completed ? "Re-open wizard" : "Resume wizard"}
+              </button>
+            </div>
+          </div>
+
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Derived from your answers</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: 10,
+              marginBottom: 16,
+            }}
+          >
+            {DERIVED_LABELS.map(({ key, label }) => {
+              const value = derived[key];
+              const hasValue = Array.isArray(value) && value.length > 0;
+              return (
+                <div
+                  key={String(key)}
+                  style={{
+                    padding: "12px 14px",
+                    border: "1px solid var(--line)",
+                    borderRadius: "var(--radius)",
+                    background: "var(--bg-1)",
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "var(--muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {label}
+                  </div>
+                  <div style={{ fontSize: 13, color: hasValue ? "var(--ink)" : "var(--muted)" }}>
+                    {hasValue ? (value as string[]).join(", ") : "—"}
+                  </div>
+                </div>
+              );
+            })}
+            {briefingHour !== undefined && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  border: "1px solid var(--line)",
+                  borderRadius: "var(--radius)",
+                  background: "var(--bg-1)",
+                }}
+              >
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Briefing hour (UTC)
+                </div>
+                <div style={{ fontSize: 13 }}>{briefingHour}</div>
+              </div>
+            )}
+          </div>
+
+          {profile.answers.length > 0 && (
+            <>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Answers</div>
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                {profile.answers.map((a, i) => (
+                  <div
+                    key={a.question_id}
+                    style={{
+                      padding: "14px 16px",
+                      borderTop: i ? "1px solid var(--line)" : 0,
+                    }}
+                  >
+                    <div className="tiny mono" style={{ color: "var(--muted)", marginBottom: 4 }}>
+                      {a.question_id} · {relativeTime(a.asked_at)}
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 4 }}>
+                      {a.question}
+                    </div>
+                    <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>
+                      {a.answer || <span style={{ color: "var(--muted)" }}>(skipped)</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
     </Section>
   );
 }

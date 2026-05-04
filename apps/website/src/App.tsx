@@ -186,7 +186,7 @@ export default function App() {
       content = <Inbox onOpenGoal={openGoal} />;
       break;
     case "settings":
-      content = <Settings />;
+      content = <Settings onOpenOnboarding={() => setOnboardingOpen(true)} />;
       break;
     default:
       content = (

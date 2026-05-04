@@ -153,6 +153,7 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_CHECKOUT_URL: ${STRIPE_CHECKOUT_URL:-}
       STRIPE_BILLING_PORTAL_URL: ${STRIPE_BILLING_PORTAL_URL:-}
+      BLANKCOLLAR_BILLING_ENFORCE: ${BLANKCOLLAR_BILLING_ENFORCE:-false}
       # Direct LLM access for prose (briefings). Hermes still owns the agent
       # loop; this is just a side door for editorial copy. Empty key = templated.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
