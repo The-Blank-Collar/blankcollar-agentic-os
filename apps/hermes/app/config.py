@@ -47,21 +47,32 @@ settings = Settings()
 
 
 def require_runtime_config() -> None:
-    """Hard-fail at app startup if required env is missing.
+    """Soft-validate at app startup; warn loudly without throwing.
 
-    Called from main.py's lifespan. Tests do not run lifespan, so they can
-    construct FakeLLM via make_llm() without hitting this guard.
+    OSS-friendly: a fresh clone with no Portkey credentials still boots —
+    `make_llm()` returns the deterministic FakeLLM and Hermes serves
+    canned but valid agent responses. Set PORTKEY_API_KEY (and either
+    a `@workspace/model` reference in HERMES_MODEL or
+    PORTKEY_VIRTUAL_KEY_ANTHROPIC for legacy routing) to switch to
+    real Claude.
+
+    Called from main.py's lifespan. Tests do not run lifespan, so they
+    construct FakeLLM via make_llm() without hitting this path.
     """
-    missing: list[str] = []
+    import logging
+
+    log = logging.getLogger("hermes.config")
     if not settings.portkey_api_key:
-        missing.append("PORTKEY_API_KEY")
-    if not settings.portkey_virtual_key_anthropic:
-        missing.append("PORTKEY_VIRTUAL_KEY_ANTHROPIC")
-    if missing:
-        raise RuntimeError(
-            "[hermes.config] required env var(s) not set: "
-            + ", ".join(missing)
-            + ". Get a Portkey key at https://app.portkey.ai/, create an "
-            "Anthropic virtual key, and set both in .env. "
-            "See docs/ENVIRONMENT.md."
+        log.warning(
+            "[hermes.config] PORTKEY_API_KEY is unset — running in FakeLLM mode. "
+            "Hermes returns canned responses until you set a Portkey key."
+        )
+        return
+    using_model_catalog = settings.model.startswith("@")
+    if not using_model_catalog and not settings.portkey_virtual_key_anthropic:
+        log.warning(
+            "[hermes.config] PORTKEY_API_KEY is set but PORTKEY_VIRTUAL_KEY_ANTHROPIC "
+            "is missing AND HERMES_MODEL is a plain name (legacy routing). LLM calls "
+            "will 401 until you either set the virtual key or switch HERMES_MODEL "
+            "to a `@workspace/model` reference."
         )

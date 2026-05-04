@@ -87,13 +87,27 @@ export async function chatComplete(
   input: ChatCompleteInput,
   opts: ChatCompleteOptions = {},
 ): Promise<ChatCompleteResult> {
-  if (!config.portkeyApiKey) {
-    throw new GatewayError(
-      0,
-      null,
-      "PORTKEY_API_KEY must be set before any LLM call. " +
-        "Did boot skip requireConfig()?",
-    );
+  // OSS-friendly fallback. When Portkey isn't configured (or the operator
+  // explicitly toggles BLANKCOLLAR_FAKE_LLM=true to develop offline), every
+  // chatComplete call returns a clearly-labelled canned response. Real
+  // LLM credentials light up the cloud path automatically.
+  const fakeMode =
+    !config.portkeyApiKey ||
+    (process.env.BLANKCOLLAR_FAKE_LLM ?? "").toLowerCase() === "true";
+  if (fakeMode) {
+    const lastUser = [...input.messages].reverse().find((m) => m.role === "user");
+    const echo = (lastUser?.content ?? "").slice(0, 200).replace(/\s+/g, " ").trim();
+    const text =
+      "[FakeLLM mode — set PORTKEY_API_KEY in .env to enable real Claude] " +
+      (echo
+        ? `noted: "${echo}". I'd normally reply with prose; for now you'll see this canned message until Portkey is wired.`
+        : "no user message provided.");
+    return {
+      text,
+      usage: { input_tokens: 0, output_tokens: 0 },
+      model: "fake-llm",
+      trace_id: null,
+    };
   }
 
   const model = input.model ?? config.llmModel;

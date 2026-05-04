@@ -86,21 +86,37 @@ export const config = {
 export type Config = typeof config;
 
 /**
- * Hard-fail at boot if any required env is missing. The gateway and its
- * downstream callers (briefings, capture classifier) all assume Portkey
- * is configured — silent fallbacks would mask the problem.
+ * Soft validation at boot: warn loudly if Portkey isn't configured but
+ * don't throw. The gateway transparently falls back to a FakeLLM that
+ * returns canned responses, so a fresh clone can `make bootstrap` and
+ * play with the stack before hooking up real LLM credentials.
+ *
+ * Set `PORTKEY_API_KEY` (and either a `@workspace/model` reference in
+ * `PAPERCLIP_LLM_MODEL` or `PORTKEY_VIRTUAL_KEY_ANTHROPIC` for legacy
+ * routing) to switch from FakeLLM to real Claude.
  *
  * Called from index.ts before any route is registered.
  */
-export function requireConfig(): void {
-  const missing: string[] = [];
-  if (!config.portkeyApiKey) missing.push("PORTKEY_API_KEY");
-  if (!config.portkeyVirtualKeyAnthropic) missing.push("PORTKEY_VIRTUAL_KEY_ANTHROPIC");
-  if (missing.length > 0) {
-    throw new Error(
-      `[config] required env var(s) not set: ${missing.join(", ")}. ` +
-        "Get a Portkey key at https://app.portkey.ai/, create an Anthropic " +
-        "virtual key, and set both in .env. See docs/ENVIRONMENT.md.",
+export function requireConfig(): { fakeLlm: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  const usingModelCatalog = config.llmModel.startsWith("@");
+  if (!config.portkeyApiKey) {
+    warnings.push(
+      "PORTKEY_API_KEY is unset — running in FakeLLM mode. Real LLM calls " +
+        "(briefings, classifier, Telegram, Hermes) will return canned text. " +
+        "Set PORTKEY_API_KEY in .env to enable Claude.",
+    );
+  } else if (!usingModelCatalog && !config.portkeyVirtualKeyAnthropic) {
+    warnings.push(
+      "PORTKEY_API_KEY is set but PORTKEY_VIRTUAL_KEY_ANTHROPIC is not — " +
+        "and PAPERCLIP_LLM_MODEL is a plain name (legacy routing). LLM " +
+        "calls will fail until you either (a) set the virtual key OR (b) " +
+        "switch PAPERCLIP_LLM_MODEL to a `@workspace/model` reference.",
     );
   }
+  for (const w of warnings) {
+    // eslint-disable-next-line no-console
+    console.warn(`[config] ${w}`);
+  }
+  return { fakeLlm: !config.portkeyApiKey, warnings };
 }
