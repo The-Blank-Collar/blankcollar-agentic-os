@@ -1524,21 +1524,62 @@ function buildStrictMigrations(): string[] {
 }
 
 export async function applyAdditiveMigrations(
-  log: { info: (msg: string) => void },
+  log: { info: (msg: string) => void; warn?: (msg: string) => void },
 ): Promise<void> {
+  // Per-statement try/catch — one bad SQL doesn't kill the rest. Each
+  // failure is logged with a 1-line excerpt so the operator can spot
+  // the real error in the boot log without grepping a 1500-line file.
+  // The loop's resilience is critical: we ship dozens of additive
+  // tables across phases, and a transient quirk in one shouldn't keep
+  // the others (and any features that depend on them) from existing.
+  let ok = 0;
+  const failures: { excerpt: string; error: string }[] = [];
   for (const sql of ADDITIVE_MIGRATIONS) {
-    await query(sql);
+    try {
+      await query(sql);
+      ok++;
+    } catch (err) {
+      const excerpt = sql.replace(/\s+/g, " ").trim().slice(0, 120);
+      const message = err instanceof Error ? err.message : String(err);
+      failures.push({ excerpt, error: message });
+    }
   }
-  log.info(`bootstrap: additive migrations applied (${ADDITIVE_MIGRATIONS.length} statements)`);
+  log.info(`bootstrap: additive migrations applied (${ok}/${ADDITIVE_MIGRATIONS.length} statements)`);
+  if (failures.length > 0) {
+    const warn = log.warn ?? log.info;
+    warn(`bootstrap: ${failures.length} additive migration(s) failed — see details below:`);
+    for (const f of failures.slice(0, 20)) {
+      warn(`  ✗ ${f.excerpt} … → ${f.error}`);
+    }
+    if (failures.length > 20) {
+      warn(`  …and ${failures.length - 20} more.`);
+    }
+  }
 
   if (config.rlsStrict) {
     const strict = buildStrictMigrations();
+    let strictOk = 0;
+    const strictFailures: { excerpt: string; error: string }[] = [];
     for (const sql of strict) {
-      await query(sql);
+      try {
+        await query(sql);
+        strictOk++;
+      } catch (err) {
+        const excerpt = sql.replace(/\s+/g, " ").trim().slice(0, 120);
+        const message = err instanceof Error ? err.message : String(err);
+        strictFailures.push({ excerpt, error: message });
+      }
     }
     log.info(
-      `bootstrap: RLS=strict — ${STRICT_RLS_TABLES_NULLABLE_ORG.length + STRICT_RLS_TABLES_REQUIRED_ORG.length} tables re-policied without permissive-on-unset (${strict.length} statements)`,
+      `bootstrap: RLS=strict — ${strictOk}/${strict.length} statements applied across ${STRICT_RLS_TABLES_NULLABLE_ORG.length + STRICT_RLS_TABLES_REQUIRED_ORG.length} tables`,
     );
+    if (strictFailures.length > 0) {
+      const warn = log.warn ?? log.info;
+      warn(`bootstrap: ${strictFailures.length} strict-RLS statement(s) failed — likely safe (table missing or already strict):`);
+      for (const f of strictFailures.slice(0, 10)) {
+        warn(`  ✗ ${f.excerpt} … → ${f.error}`);
+      }
+    }
   } else {
     log.info(
       "bootstrap: RLS=permissive — `app.org_id` IS NULL falls through to allow. " +
