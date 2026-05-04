@@ -151,6 +151,8 @@ services:
       # Stripe webhook receiver — returns 503 when STRIPE_WEBHOOK_SECRET unset.
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_CHECKOUT_URL: ${STRIPE_CHECKOUT_URL:-}
+      STRIPE_BILLING_PORTAL_URL: ${STRIPE_BILLING_PORTAL_URL:-}
       # Direct LLM access for prose (briefings). Hermes still owns the agent
       # loop; this is just a side door for editorial copy. Empty key = templated.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

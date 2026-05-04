@@ -866,6 +866,43 @@ export interface OnboardingFinishResult {
   routines_created: number;
 }
 
+// ---------- Billing (Phase 7.b) -------------------------------------------
+
+export type SubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete"
+  | "incomplete_expired"
+  | "paused";
+
+export interface SubscriptionRow {
+  id: string;
+  org_id: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  tier: string;
+  status: SubscriptionStatus;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  trial_end: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  /** Convenience flag from /api/billing/subscription (always present). */
+  is_free?: boolean;
+}
+
+export interface BillingPortal {
+  portal_url: string | null;
+  checkout_url: string | null;
+  configured: boolean;
+  tier: string;
+}
+
 export interface DispatchOk {
   run_id: string;
   status: "queued";

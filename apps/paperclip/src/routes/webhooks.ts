@@ -17,6 +17,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { audit } from "../audit.js";
+import { applyStripeSubscriptionEvent } from "../billing/subscription.js";
 import { withOrgScope } from "../db.js";
 import { resolveCallerScope } from "../scope.js";
 import {
@@ -105,7 +106,29 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       payload: event,
     });
 
-    return reply.send({ received: true, id: event.id, type: event.type, duplicate: !isNew });
+    // Materialize subscription state for the events we care about. Only
+    // run on new (non-duplicate) deliveries; replays don't need a re-write.
+    let materialized: { org_id: string; tier: string; status: string } | null = null;
+    if (isNew && event.type.startsWith("customer.subscription.")) {
+      try {
+        const row = await applyStripeSubscriptionEvent(event as never);
+        if (row) {
+          materialized = { org_id: row.org_id, tier: row.tier, status: row.status };
+        }
+      } catch (err) {
+        // Don't 500 Stripe — they'd retry forever. Just log + ack so the
+        // operator can investigate via /Activity → stripe.* audit rows.
+        app.log.error({ err, event_id: event.id }, "stripe subscription materialization failed");
+      }
+    }
+
+    return reply.send({
+      received: true,
+      id: event.id,
+      type: event.type,
+      duplicate: !isNew,
+      ...(materialized ? { materialized } : {}),
+    });
   });
 
   // ----- Capture webhook -------------------------------------------------

@@ -14,6 +14,7 @@ import { agentRoutes } from "./routes/agents.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { autonomyRoutes } from "./routes/autonomy.js";
 import { auditRoutes } from "./routes/audit.js";
+import { billingRoutes } from "./routes/billing.js";
 import { brainRoutes } from "./routes/brain.js";
 import { briefingRoutes } from "./routes/briefings.js";
 import { captureRoutes } from "./routes/captures.js";
@@ -129,6 +130,7 @@ async function main(): Promise<void> {
   await app.register(routineRoutes);
   await app.register(onboardingRoutes);
   await app.register(paymentRoutes);
+  await app.register(billingRoutes);
   await app.register(policyRoutes);
   await app.register(selfImprovementRoutes);
   await app.register(knowledgeRoutes);

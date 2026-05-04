@@ -17,6 +17,7 @@ import type {
   AuditEntry,
   AuditQuery,
   AutonomyModeRow,
+  BillingPortal,
   AutonomyModeUpsert,
   AutonomyResolved,
   BrainGraph,
@@ -78,6 +79,7 @@ import type {
   SkillDraftStatus,
   SkillRow,
   SimilarOutcome,
+  SubscriptionRow,
   SubtaskRow,
   SwarmDispatchResult,
   SwarmPlanResult,
@@ -150,6 +152,9 @@ export interface ApiClient {
   listDepartments(): Promise<Department[]>;
   listOrgMembers(): Promise<OrgMember[]>;
   whoami(): Promise<Whoami>;
+  // -- Billing (Phase 7.b) ----
+  getSubscription(): Promise<SubscriptionRow>;
+  getBillingPortal(): Promise<BillingPortal>;
   // -- Onboarding (Phase 7 / wizard) ----
   onboardingStart(body: OnboardingStartBody): Promise<OnboardingStartResult>;
   onboardingNext(profileId: string): Promise<OnboardingNextResult>;
@@ -354,6 +359,10 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     listDepartments: () => request<Department[]>("GET", "/api/departments"),
     listOrgMembers: () => request<OrgMember[]>("GET", "/api/orgs/members"),
     whoami: () => request<Whoami>("GET", "/api/whoami"),
+    getSubscription: () =>
+      request<SubscriptionRow>("GET", "/api/billing/subscription"),
+    getBillingPortal: () =>
+      request<BillingPortal>("GET", "/api/billing/portal-url"),
     onboardingStart: (body) =>
       request<OnboardingStartResult>("POST", "/api/onboarding/start", body as unknown as Json),
     onboardingNext: (profileId) =>

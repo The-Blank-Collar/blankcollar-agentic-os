@@ -8,11 +8,13 @@ import type {
   ConnectorProviderKey,
   ConnectorRow,
   ConnectorSyncResult,
+  BillingPortal,
   Department,
   InvitableRole,
   InvitationRow,
   OrgMember,
   Organization,
+  SubscriptionRow,
   OutcomeMetricRow,
   OutcomeRow,
   PolicyEffect,
@@ -2185,24 +2187,115 @@ function ChannelsTab() {
 
 // -- Billing -----------------------------------------------------------------
 
+const STATUS_TONE: Record<SubscriptionRow["status"], string> = {
+  trialing:           "var(--info)",
+  active:             "var(--pos)",
+  past_due:           "var(--warn)",
+  canceled:           "var(--muted)",
+  unpaid:             "var(--neg)",
+  incomplete:         "var(--warn)",
+  incomplete_expired: "var(--neg)",
+  paused:             "var(--muted)",
+};
+
 function BillingTab() {
+  const subQ = useFetch<SubscriptionRow>(() => api.getSubscription(), []);
+  const portalQ = useFetch<BillingPortal>(() => api.getBillingPortal(), []);
+  const sub = subQ.data;
+  const portal = portalQ.data;
+
   return (
     <Section>
-      <div className="h3" style={{ marginBottom: 24 }}>Billing.</div>
-      <ReadOnlyBanner what="Plan management" />
-      <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-        <div className="eyebrow" style={{ marginBottom: 8 }}>Current plan</div>
-        <div className="h2" style={{ marginBottom: 4 }}>
-          Studio · $1,200<span style={{ fontSize: 18, color: "var(--muted)" }}>/mo</span>
-        </div>
-        <div className="small" style={{ color: "var(--ink-2)" }}>
-          Up to 15 agents · unlimited humans · all MCPs
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <button className="btn btn-sm" disabled>Manage plan</button>
-          <button className="btn btn-sm" disabled>Invoices</button>
-        </div>
+      <div className="h3" style={{ marginBottom: 8 }}>Billing.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Subscription state mirrors Stripe via webhook. Free tier is the default
+        — paid plans light up automatically once a Stripe checkout completes.
       </div>
+
+      {subQ.loading && !sub && (
+        <div className="empty-hint" style={{ padding: 16 }}>Loading subscription…</div>
+      )}
+      {subQ.error && (
+        <div
+          style={{
+            padding: 14,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--neg)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            marginBottom: 16,
+          }}
+        >
+          <div className="eyebrow" style={{ color: "var(--neg)", marginBottom: 6 }}>
+            Couldn't load subscription
+          </div>
+          <div className="small">{subQ.error.message}</div>
+        </div>
+      )}
+
+      {sub && (
+        <div className="card" style={{ padding: 24, marginBottom: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
+          >
+            <div className="eyebrow">Current plan</div>
+            <span
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: STATUS_TONE[sub.status],
+              }}
+            >
+              {sub.status}
+            </span>
+          </div>
+          <div className="h2" style={{ marginBottom: 4, textTransform: "capitalize" }}>
+            {sub.tier}
+            {sub.is_free && (
+              <span style={{ fontSize: 18, color: "var(--muted)", marginLeft: 8 }}>
+                · OSS
+              </span>
+            )}
+          </div>
+          <div className="small" style={{ color: "var(--ink-2)" }}>
+            {sub.is_free
+              ? "Self-hosted local mode. No subscription needed."
+              : sub.current_period_end
+              ? sub.cancel_at_period_end
+                ? `Ends ${new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                : `Renews ${new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+              : "Active subscription"}
+            {sub.trial_end && new Date(sub.trial_end) > new Date() && (
+              <>
+                {" · trial ends "}
+                {new Date(sub.trial_end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            {sub.is_free
+              ? portal?.checkout_url
+                ? <a className="btn btn-primary btn-sm" href={portal.checkout_url} target="_blank" rel="noopener noreferrer">Upgrade</a>
+                : <button className="btn btn-sm" disabled>Upgrade — set STRIPE_CHECKOUT_URL</button>
+              : portal?.portal_url
+                ? <a className="btn btn-sm" href={portal.portal_url} target="_blank" rel="noopener noreferrer">Manage plan</a>
+                : <button className="btn btn-sm" disabled>Manage plan — set STRIPE_BILLING_PORTAL_URL</button>}
+            {sub.stripe_customer_id && (
+              <span className="tiny mono" style={{ color: "var(--muted)", alignSelf: "center" }}>
+                stripe.{sub.stripe_customer_id.slice(0, 14)}…
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div
           style={{ padding: "12px 20px", borderBottom: "1px solid var(--line)" }}

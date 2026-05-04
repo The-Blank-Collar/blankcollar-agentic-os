@@ -1445,6 +1445,52 @@ const ADDITIVE_MIGRATIONS = [
      USING      (current_setting('app.system_scope', true) = 'true')
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 
+  // -- billing.subscription — Phase 7.b ------------------------------------
+  // One row per (org, stripe_subscription_id). Materialized from
+  // customer.subscription.* events. `tier` is derived from the price's
+  // metadata.tier (or `lookup_key`) so we don't have to know the live
+  // price IDs at compile time. NULL stripe_subscription_id = free tier
+  // / not yet subscribed.
+  `CREATE SCHEMA IF NOT EXISTS billing;`,
+  `DO $$ BEGIN
+     CREATE TYPE billing.subscription_status AS ENUM (
+       'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused'
+     );
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `CREATE TABLE IF NOT EXISTS billing.subscription (
+     id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id                   uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     stripe_customer_id       text,
+     stripe_subscription_id   text UNIQUE,
+     tier                     text NOT NULL DEFAULT 'free',
+     status                   billing.subscription_status NOT NULL DEFAULT 'active',
+     current_period_start     timestamptz,
+     current_period_end       timestamptz,
+     cancel_at_period_end     boolean NOT NULL DEFAULT false,
+     trial_end                timestamptz,
+     metadata                 jsonb NOT NULL DEFAULT '{}'::jsonb,
+     created_at               timestamptz NOT NULL DEFAULT now(),
+     updated_at               timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS subscription_org_uniq
+     ON billing.subscription (org_id);`,
+  `CREATE INDEX IF NOT EXISTS subscription_customer_idx
+     ON billing.subscription (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;`,
+  `ALTER TABLE billing.subscription ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE billing.subscription FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON billing.subscription;`,
+  `CREATE POLICY app_scope_org ON billing.subscription
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON billing.subscription;`,
+  `CREATE POLICY app_system_scope ON billing.subscription
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- core.invitation — Phase 6.b ----------------------------------------
   // Outstanding invitations to join an org. Tokens are opaque hex strings
   // exchanged via the public `/api/invitations/by-token/:token` path. One
@@ -1543,6 +1589,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.outcome_metric",
   "ops.subtask",
   "core.invitation",
+  "billing.subscription",
 ];
 
 function buildStrictMigrations(): string[] {
