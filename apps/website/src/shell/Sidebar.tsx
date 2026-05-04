@@ -1,5 +1,8 @@
+import type { Whoami } from "@blankcollar/shared";
+
 import { I, ChannelMark, type IconName } from "../icons";
-import { you } from "../data/fixtures";
+import { api } from "../lib/api";
+import { useFetch } from "../lib/useFetch";
 import type { PageId } from "../App";
 
 export type NavItem = { id: PageId; label: string; icon: IconName; count?: string };
@@ -37,6 +40,23 @@ type Props = {
 };
 
 export function Sidebar({ page, setPage, role }: Props) {
+  const whoamiQ = useFetch<Whoami>(() => api.whoami(), []);
+  const me = whoamiQ.data;
+  const orgName = me?.org.name ?? "Your studio";
+  const orgInitials = (orgName.match(/\b[A-Z]/g)?.join("") ?? orgName.slice(0, 2)).slice(0, 2).toUpperCase();
+  const displayName = me?.user?.full_name
+    ?? me?.user?.email
+    ?? (me?.mode === "demo" ? "Demo operator" : "You");
+  const displayInitials = (
+    me?.user?.full_name
+      ? me.user.full_name.split(/\s+/).map((p) => p[0] ?? "").join("")
+      : me?.user?.email
+        ? me.user.email.slice(0, 2)
+        : "DO"
+  ).slice(0, 2).toUpperCase();
+  const subline = me?.mode === "demo"
+    ? `demo · ${me.role ?? role}`
+    : `${me?.role ?? role}`;
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -47,10 +67,10 @@ export function Sidebar({ page, setPage, role }: Props) {
       </div>
 
       <div className="org-switcher" title="Switch organization">
-        <div className="org-mark">TB</div>
+        <div className="org-mark">{orgInitials}</div>
         <div className="org-info">
-          <div className="name">The Blank Collar</div>
-          <div className="meta">studio · {role}</div>
+          <div className="name">{orgName}</div>
+          <div className="meta">{subline}</div>
         </div>
         <I name="chevd" size={14} style={{ color: "var(--muted)" }} />
       </div>
@@ -96,10 +116,12 @@ export function Sidebar({ page, setPage, role }: Props) {
 
       <div className="sidebar-footer">
         <div className="you" onClick={() => setPage("settings")}>
-          <div className="avatar h">{you.initials}</div>
+          <div className="avatar h">{displayInitials}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{you.name}</div>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{role}</div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{displayName}</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+              {me?.mode === "demo" ? "demo mode" : me?.user?.email ?? me?.role ?? role}
+            </div>
           </div>
           <I name="settings" size={14} style={{ color: "var(--muted)" }} />
         </div>

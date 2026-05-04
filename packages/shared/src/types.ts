@@ -198,6 +198,12 @@ export interface AuditEntry {
 export interface AuditQuery {
   action?: string;
   target_type?: string;
+  /** UUID of a specific actor (user or agent). */
+  actor_id?: string;
+  /** ISO timestamp; rows with created_at >= since. */
+  since?: string;
+  /** ISO timestamp; rows with created_at < until. */
+  until?: string;
   limit?: number;
 }
 
@@ -702,11 +708,32 @@ export interface Organization {
   created_at: string;
 }
 
+export type WhoamiMode = "demo" | "verified";
+
+export interface WhoamiUser {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+}
+
 export interface Whoami {
   org: { id: string; slug: string | null; name: string | null };
   role: string;
   department: { id: string; name: string } | null;
   goal_id: string | null;
+  user: WhoamiUser | null;
+  mode: WhoamiMode;
+}
+
+export interface OrgMember {
+  id: string;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  created_at: string;
+  role: string | null;
+  department_id: string | null;
+  department_name: string | null;
 }
 
 export interface DispatchOk {

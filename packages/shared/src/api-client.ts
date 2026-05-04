@@ -48,6 +48,7 @@ import type {
   KeyResult,
   KeyResultCreate,
   KeyResultPatch,
+  OrgMember,
   Organization,
   OutcomeCreateBody,
   OutcomeMetricCreateBody,
@@ -136,6 +137,7 @@ export interface ApiClient {
   // -- Org + departments + whoami ----
   getOrgBySlug(slug: string): Promise<Organization>;
   listDepartments(): Promise<Department[]>;
+  listOrgMembers(): Promise<OrgMember[]>;
   whoami(): Promise<Whoami>;
   // -- Autonomy (Phase 5b / Sprint 5.1) ----
   listAutonomy(): Promise<AutonomyModeRow[]>;
@@ -326,6 +328,7 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     getOrgBySlug: (slug) =>
       request<Organization>("GET", `/api/orgs/by-slug/${encodeURIComponent(slug)}`),
     listDepartments: () => request<Department[]>("GET", "/api/departments"),
+    listOrgMembers: () => request<OrgMember[]>("GET", "/api/orgs/members"),
     whoami: () => request<Whoami>("GET", "/api/whoami"),
     listAutonomy: () => request<AutonomyModeRow[]>("GET", "/api/autonomy"),
     upsertAutonomy: (body) =>

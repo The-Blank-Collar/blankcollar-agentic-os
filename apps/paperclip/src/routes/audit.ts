@@ -32,6 +32,18 @@ export async function auditRoutes(app: FastifyInstance): Promise<void> {
       params.push(parsed.data.target_type);
       where.push(`target_type = $${params.length}`);
     }
+    if (parsed.data.actor_id) {
+      params.push(parsed.data.actor_id);
+      where.push(`actor_id = $${params.length}`);
+    }
+    if (parsed.data.since) {
+      params.push(parsed.data.since);
+      where.push(`created_at >= $${params.length}`);
+    }
+    if (parsed.data.until) {
+      params.push(parsed.data.until);
+      where.push(`created_at < $${params.length}`);
+    }
     params.push(parsed.data.limit);
     const sql = `
       SELECT id::text, actor_id, actor_role, action, target_type, target_id, metadata, created_at

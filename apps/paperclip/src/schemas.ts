@@ -772,6 +772,12 @@ export const AuditQuery = z
   .object({
     action: z.string().optional(),
     target_type: z.string().optional(),
+    /** Filter to a specific actor (user or agent) UUID. */
+    actor_id: z.string().uuid().optional(),
+    /** ISO timestamp; rows with created_at >= since. */
+    since: z.string().datetime().optional(),
+    /** ISO timestamp; rows with created_at < until. */
+    until: z.string().datetime().optional(),
     limit: z.coerce.number().int().min(1).max(500).default(100),
   })
   .strict();

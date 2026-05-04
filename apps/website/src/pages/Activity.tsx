@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import type { AuditEntry } from "@blankcollar/shared";
+import type { AuditEntry, OrgMember } from "@blankcollar/shared";
 
 import { I } from "../icons";
 import { api } from "../lib/api";
@@ -18,17 +18,40 @@ const ACTION_GROUPS: { key: string; label: string; prefix?: string }[] = [
   { key: "tool",     label: "Tools",     prefix: "tool." },
 ];
 
+const RANGE_OPTIONS: { key: string; label: string; hours: number | null }[] = [
+  { key: "all",  label: "All time", hours: null },
+  { key: "24h",  label: "24h",      hours: 24 },
+  { key: "7d",   label: "7d",       hours: 24 * 7 },
+  { key: "30d",  label: "30d",      hours: 24 * 30 },
+];
+
 type Props = {
   onOpenGoal?: (id: string) => void;
 };
 
 export function Activity({ onOpenGoal }: Props = {}) {
-  const { data, error, loading, refetch } = useFetch<AuditEntry[]>(
-    () => api.listAudit({ limit: 200 }),
-    [],
-  );
   const [filter, setFilter] = useState<string>("all");
+  const [rangeKey, setRangeKey] = useState<string>("all");
+  const [actorId, setActorId] = useState<string>("");
   const [drilldownRunId, setDrilldownRunId] = useState<string | null>(null);
+
+  const sinceIso = useMemo(() => {
+    const range = RANGE_OPTIONS.find((r) => r.key === rangeKey);
+    if (!range?.hours) return undefined;
+    return new Date(Date.now() - range.hours * 3_600_000).toISOString();
+  }, [rangeKey]);
+
+  const { data, error, loading, refetch } = useFetch<AuditEntry[]>(
+    () =>
+      api.listAudit({
+        limit: 200,
+        ...(sinceIso ? { since: sinceIso } : {}),
+        ...(actorId ? { actor_id: actorId } : {}),
+      }),
+    [sinceIso, actorId],
+  );
+
+  const membersQ = useFetch<OrgMember[]>(() => api.listOrgMembers(), []);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data?.length ?? 0 };
@@ -81,6 +104,44 @@ export function Activity({ onOpenGoal }: Props = {}) {
             {g.label} <span className="v">{counts[g.key] ?? 0}</span>
           </span>
         ))}
+      </div>
+
+      <div
+        className="filterbar"
+        style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
+      >
+        <span className="tiny mono" style={{ color: "var(--muted)" }}>RANGE</span>
+        {RANGE_OPTIONS.map((r) => (
+          <span
+            key={r.key}
+            className={`filter-chip ${rangeKey === r.key ? "active" : ""}`}
+            onClick={() => setRangeKey(r.key)}
+          >
+            {r.label}
+          </span>
+        ))}
+        <span className="tiny mono" style={{ color: "var(--muted)", marginLeft: 8 }}>ACTOR</span>
+        <select
+          value={actorId}
+          onChange={(e) => setActorId(e.target.value)}
+          style={{
+            height: 28,
+            padding: "0 8px",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg)",
+            color: "var(--ink)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+          }}
+        >
+          <option value="">Anyone</option>
+          {(membersQ.data ?? []).map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.full_name ?? m.email} · {m.role ?? "no role"}
+            </option>
+          ))}
+        </select>
       </div>
 
       {loading && <Loading label="Loading audit feed…" />}

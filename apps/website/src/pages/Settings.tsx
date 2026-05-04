@@ -9,6 +9,7 @@ import type {
   ConnectorRow,
   ConnectorSyncResult,
   Department,
+  OrgMember,
   Organization,
   OutcomeMetricRow,
   OutcomeRow,
@@ -1437,6 +1438,7 @@ const ROLE_MATRIX: [string, string, string, string, string][] = [
 ];
 
 function PeopleTab() {
+  const membersQ = useFetch<OrgMember[]>(() => api.listOrgMembers(), []);
   return (
     <Section>
       <div className="h3" style={{ marginBottom: 8 }}>People & roles.</div>
@@ -1444,7 +1446,79 @@ function PeopleTab() {
         Three roles: <b>Founder</b> sees everything and decides. <b>Manager</b> runs a department.
         <b> Contributor</b> works on assigned tasks. Agents inherit the role of their manager.
       </div>
-      <ReadOnlyBanner what="Role assignment" />
+
+      <div className="eyebrow" style={{ marginBottom: 8 }}>
+        Members ({membersQ.data?.length ?? "—"})
+      </div>
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 200px 140px 90px",
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--line)",
+            background: "var(--bg-2)",
+          }}
+        >
+          {["Member", "Role · Department", "Joined", "Active"].map((h) => (
+            <div key={h} className="eyebrow">{h}</div>
+          ))}
+        </div>
+        {membersQ.loading && !membersQ.data && (
+          <div className="empty-hint" style={{ padding: 16 }}>Loading members…</div>
+        )}
+        {membersQ.error && (
+          <div className="empty-hint" style={{ padding: 16, color: "var(--neg)" }}>
+            Couldn't load · {membersQ.error.message}
+          </div>
+        )}
+        {(membersQ.data ?? []).length === 0 && !membersQ.loading && (
+          <div className="empty-hint" style={{ padding: 16 }}>
+            No members yet. Invite flow lands in Phase 6.b.
+          </div>
+        )}
+        {(membersQ.data ?? []).map((m, i) => (
+          <div
+            key={m.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 200px 140px 90px",
+              padding: "12px 16px",
+              borderTop: i ? "1px solid var(--line)" : 0,
+              fontSize: 13,
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 500 }}>{m.full_name ?? m.email}</div>
+              {m.full_name && (
+                <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 2 }}>
+                  {m.email}
+                </div>
+              )}
+            </div>
+            <div className="tiny mono" style={{ color: "var(--ink-2)" }}>
+              {(m.role ?? "no role")}
+              {m.department_name && ` · ${m.department_name}`}
+            </div>
+            <div className="tiny mono" style={{ color: "var(--muted)" }}>
+              {new Date(m.created_at).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </div>
+            <div className="tiny mono">
+              <span className={`dot ${m.is_active ? "pos" : "idle"}`} />{" "}
+              {m.is_active ? "active" : "inactive"}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <ReadOnlyBanner what="Role assignment + invitations" />
+
+      <div className="eyebrow" style={{ marginTop: 8, marginBottom: 8 }}>Capability matrix</div>
       <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
         <div
           style={{
