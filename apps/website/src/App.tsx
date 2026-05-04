@@ -13,7 +13,7 @@ import { Inbox } from "./pages/Inbox";
 import { Kanban } from "./pages/Kanban";
 import { Settings } from "./pages/Settings";
 import { Print } from "./pages/Print";
-import { MobilePlaceholder } from "./pages/MobilePlaceholder";
+import { Mobile } from "./pages/Mobile";
 import { goals } from "./data/fixtures";
 import { CommandPalette } from "./lib/cmdk";
 import { GoalComposer } from "./components/GoalComposer";
@@ -184,9 +184,7 @@ export default function App() {
       </div>
 
       {surface === "mobile" ? (
-        <div className="mobile-stage">
-          <MobilePlaceholder />
-        </div>
+        <Mobile onCapture={() => setComposerOpen(true)} />
       ) : (
         <div className="shell">
           <Sidebar
