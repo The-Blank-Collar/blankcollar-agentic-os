@@ -45,6 +45,7 @@ import type {
   GoalContext,
   GoalCreate,
   GoalMemoryEntry,
+  MemoryExploreResponse,
   GoalListQuery,
   GoalPatch,
   GoalWithDetail,
@@ -154,6 +155,8 @@ export interface ApiClient {
   updateGoalContext(goalId: string, body: { content_md: string }): Promise<GoalContext>;
   // -- Goal memory timeline (Phase 9.2) ----
   listGoalMemory(goalId: string, opts?: { limit?: number }): Promise<GoalMemoryEntry[]>;
+  // -- Memory Explorer (Phase 9.3) ----
+  exploreMemory(opts?: { historyLimit?: number }): Promise<MemoryExploreResponse>;
   // -- Key results ----
   listKeyResults(goalId: string): Promise<KeyResult[]>;
   createKeyResult(goalId: string, body: KeyResultCreate): Promise<KeyResult>;
@@ -359,6 +362,11 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       request<GoalMemoryEntry[]>(
         "GET",
         `/api/goals/${encodeURIComponent(goalId)}/memory${qs({ limit: opts?.limit })}`,
+      ),
+    exploreMemory: (opts) =>
+      request<MemoryExploreResponse>(
+        "GET",
+        `/api/memory/explore${qs({ history_limit: opts?.historyLimit })}`,
       ),
     listKeyResults: (goalId) =>
       request<KeyResult[]>(

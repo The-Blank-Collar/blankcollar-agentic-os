@@ -687,6 +687,46 @@ export interface GoalMemoryEntry {
   created_at: string;
 }
 
+// ---------- Memory Explorer (Phase 9.3) -----------------------------------
+
+export interface MemoryIdentityRow {
+  id: string;
+  slug: string;
+  title: string;
+  scope: string;
+  hot: boolean;
+  content_md: string;
+  tags: string[];
+  updated_at: string;
+}
+
+export interface MemoryContextRow {
+  goal_id: string;
+  goal_title: string;
+  goal_kind: string;
+  goal_status: string;
+  content_md: string;
+  content_hash: string | null;
+  updated_at: string;
+}
+
+export interface MemoryHistoryRow {
+  id: string;
+  goal_id: string | null;
+  goal_title: string | null;
+  kind: string;
+  title: string | null;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MemoryExploreResponse {
+  identity: MemoryIdentityRow[];
+  context: MemoryContextRow[];
+  history: MemoryHistoryRow[];
+}
+
 // ---------- Captures (Phase 4 / capture-first composer) -------------------
 
 export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";

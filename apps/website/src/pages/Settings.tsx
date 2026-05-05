@@ -11,6 +11,7 @@ import type {
   Department,
   InvitableRole,
   InvitationRow,
+  MemoryExploreResponse,
   OnboardingDerived,
   OnboardingProfile,
   OrgMember,
@@ -36,6 +37,7 @@ import { Empty, ErrorState, InlineError, Loading } from "../components/States";
 type SectionId =
   | "overview"
   | "onboarding"
+  | "memory"
   | "autonomy"
   | "safeguards"
   | "connectors"
@@ -51,6 +53,7 @@ type SectionId =
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview",    label: "Overview" },
   { id: "onboarding",  label: "Onboarding" },
+  { id: "memory",      label: "Memory" },
   { id: "autonomy",    label: "Autonomy" },
   { id: "safeguards",  label: "Safeguards" },
   { id: "connectors",  label: "Connectors" },
@@ -118,6 +121,7 @@ export function Settings({ onOpenOnboarding }: Props = {}) {
         <div style={{ padding: "var(--pad-y) var(--pad-x)", overflow: "auto" }}>
           {section === "overview"    && <OverviewTab />}
           {section === "onboarding"  && <OnboardingTab onReopen={onOpenOnboarding} />}
+          {section === "memory"      && <MemoryTab />}
           {section === "autonomy"    && <AutonomyTab />}
           {section === "safeguards"  && <SafeguardsTab />}
           {section === "connectors"  && <ConnectorsTab />}
@@ -2405,6 +2409,218 @@ function OnboardingTab({ onReopen }: { onReopen?: () => void }) {
         </>
       )}
     </Section>
+  );
+}
+
+// -- Memory ------------------------------------------------------------------
+//
+// Read-only surface over the three memory layers we already store:
+//   - Identity:  ops.knowledge_doc (hot or scope=company)
+//   - Context:   ops.goal_context (per-goal markdown)
+//   - History:   brain.memory (Hermes episodes + Phase 9.2 wrap-ups)
+//
+// Editing flows live in their natural homes (Goal Detail for context,
+// the existing knowledge tooling for identity). This tab is the
+// single pane that says "here is what your agents know."
+
+function MemoryTab() {
+  const memQ = useFetch<MemoryExploreResponse>(
+    () => api.exploreMemory({ historyLimit: 50 }),
+    [],
+  );
+  const data = memQ.data;
+  const counts = {
+    identity: data?.identity.length ?? 0,
+    context: data?.context.length ?? 0,
+    history: data?.history.length ?? 0,
+  };
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Memory.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Three layers. <b>Identity</b> is what every agent always knows about
+        your studio. <b>Context</b> is what each goal carries between runs.
+        <b> History</b> is the narrative record — what your agents have done
+        and learned. All loaded automatically; nothing to wire by hand.
+      </div>
+
+      {memQ.loading && !data && (
+        <div className="empty-hint" style={{ padding: 16 }}>Loading memory…</div>
+      )}
+      {memQ.error && (
+        <InlineError
+          error={memQ.error}
+          context="memory"
+          onRetry={() => memQ.refetch()}
+          style={{ marginBottom: 14 }}
+        />
+      )}
+
+      {data && (
+        <>
+          <MemoryLayerHeader
+            label="Layer 1 · Identity"
+            sub="loaded into every agent prompt"
+            count={counts.identity}
+          />
+          {data.identity.length === 0 ? (
+            <div className="empty-hint" style={{ padding: 14 }}>
+              No identity docs yet. The onboarding wizard creates one
+              automatically; you can also paste your own under Skills →
+              Knowledge.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+              {data.identity.map((d, i) => (
+                <div
+                  key={d.id}
+                  style={{
+                    padding: "14px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{d.title}</div>
+                    <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                      {d.hot ? "hot · " : ""}{d.scope} · {relativeTime(d.updated_at)}
+                    </div>
+                  </div>
+                  <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap", maxHeight: 90, overflow: "hidden" }}>
+                    {d.content_md.slice(0, 360)}
+                    {d.content_md.length > 360 && <span style={{ color: "var(--muted)" }}>…</span>}
+                  </div>
+                  {d.tags.length > 0 && (
+                    <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 6 }}>
+                      {d.tags.map((t) => `#${t}`).join(" ")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <MemoryLayerHeader
+            label="Layer 2 · Context"
+            sub="loaded when the agent works on a specific goal"
+            count={counts.context}
+          />
+          {data.context.length === 0 ? (
+            <div className="empty-hint" style={{ padding: 14 }}>
+              No goal contexts yet. Open any goal → the <b>Context</b> section
+              accepts notes the agent should always remember about that goal.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+              {data.context.map((c, i) => (
+                <div
+                  key={c.goal_id}
+                  style={{
+                    padding: "14px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{c.goal_title}</div>
+                    <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                      {c.goal_kind} · {c.goal_status} · {relativeTime(c.updated_at)}
+                    </div>
+                  </div>
+                  <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap", maxHeight: 90, overflow: "hidden" }}>
+                    {c.content_md.slice(0, 360)}
+                    {c.content_md.length > 360 && <span style={{ color: "var(--muted)" }}>…</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <MemoryLayerHeader
+            label="Layer 3 · History"
+            sub="auto-recorded after each run"
+            count={counts.history}
+          />
+          {data.history.length === 0 ? (
+            <div className="empty-hint" style={{ padding: 14 }}>
+              No memories yet. As runs complete, summaries land here.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {data.history.map((h, i) => (
+                <div
+                  key={h.id}
+                  style={{
+                    padding: "12px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: h.kind === "episode" ? "var(--info)" : h.kind === "fact" ? "var(--warn)" : "var(--muted)",
+                      paddingTop: 2,
+                    }}
+                  >
+                    {h.kind}
+                  </span>
+                  <div>
+                    {h.title && (
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{h.title}</div>
+                    )}
+                    <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      {h.content.slice(0, 320)}
+                      {h.content.length > 320 && <span style={{ color: "var(--muted)" }}>…</span>}
+                    </div>
+                    {h.goal_title && (
+                      <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 4 }}>
+                        goal: {h.goal_title}
+                      </div>
+                    )}
+                  </div>
+                  <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                    {relativeTime(h.created_at)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+function MemoryLayerHeader({
+  label,
+  sub,
+  count,
+}: {
+  label: string;
+  sub: string;
+  count: number;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        marginBottom: 10,
+      }}
+    >
+      <div>
+        <div className="eyebrow">{label}</div>
+        <div className="tiny" style={{ color: "var(--muted)", marginTop: 2 }}>{sub}</div>
+      </div>
+      <span className="pill">{count}</span>
+    </div>
   );
 }
 
