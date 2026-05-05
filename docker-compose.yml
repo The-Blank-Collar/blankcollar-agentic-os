@@ -577,7 +577,10 @@ services:
       args:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
-        VITE_PAPERCLIP_URL: ${VITE_PAPERCLIP_URL:-}
+        # Default to localhost:3001 — the paperclip API port. If you
+        # serve the API on a different host (e.g. api.blankcollar.ai
+        # in prod), set VITE_PAPERCLIP_URL in .env before building.
+        VITE_PAPERCLIP_URL: ${VITE_PAPERCLIP_URL:-http://localhost:3001}
         VITE_DEFAULT_ORG_SLUG: ${VITE_DEFAULT_ORG_SLUG:-}
     image: blankcollar/website:0.1.0
     container_name: bc_website
