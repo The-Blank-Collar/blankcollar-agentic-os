@@ -120,7 +120,14 @@ export default function App() {
     (async () => {
       try {
         const fullName = (auth.user?.user_metadata?.full_name as string | undefined) ?? undefined;
-        await api.bootstrapOrg(fullName ? { full_name: fullName } : undefined);
+        const result = await api.bootstrapOrg(fullName ? { full_name: fullName } : undefined);
+        // Fresh provision → make sure the wizard auto-opens for them
+        // even if a stale dismissal flag is sitting in storage from
+        // earlier testing.
+        if (result.created) {
+          window.localStorage.removeItem("bc.onboarding.dismissed");
+          window.sessionStorage.removeItem("bc.onboarding.dismissed");
+        }
       } catch {
         // Best-effort. If bootstrap fails we still let the app render —
         // whoami will surface the issue with a friendlier shape.
@@ -133,13 +140,15 @@ export default function App() {
   }, [auth.mode, auth.session, auth.user]);
 
   // First-run onboarding. If no profile exists yet (404), or one exists but
-  // hasn't been completed, offer the wizard. Skipped if the user has
-  // already dismissed it this session via localStorage.
+  // hasn't been completed, offer the wizard. Suppressed only for the
+  // current TAB via sessionStorage — so the dismissal doesn't follow the
+  // user across browser sessions or across distinct sign-ins. Honours the
+  // legacy localStorage flag too, but writes the new one going forward.
   useEffect(() => {
     if (!bootstrapped) return;
     if (inviteToken) return; // Don't compete with the invite landing.
-    const dismissed = window.localStorage.getItem("bc.onboarding.dismissed") === "true";
-    if (dismissed) return;
+    const dismissedSession = window.sessionStorage.getItem("bc.onboarding.dismissed") === "true";
+    if (dismissedSession) return;
     let cancelled = false;
     (async () => {
       try {
@@ -342,14 +351,14 @@ export default function App() {
         open={onboardingOpen}
         onClose={() => {
           setOnboardingOpen(false);
-          // Remember dismissal for this session so we don't badger the
-          // operator on every page navigation. They can re-open from
-          // Settings → Onboarding (Phase 7.b follow-up) or by clearing
-          // localStorage.
-          window.localStorage.setItem("bc.onboarding.dismissed", "true");
+          // Suppress for this TAB only (sessionStorage). A fresh tab,
+          // a new sign-in, or a re-bootstrap will surface the wizard
+          // again automatically. Re-open any time from
+          // Settings → Onboarding without clearing storage.
+          window.sessionStorage.setItem("bc.onboarding.dismissed", "true");
         }}
         onCompleted={() => {
-          window.localStorage.setItem("bc.onboarding.dismissed", "true");
+          window.sessionStorage.setItem("bc.onboarding.dismissed", "true");
         }}
       />
 

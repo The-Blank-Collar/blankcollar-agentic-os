@@ -2225,9 +2225,12 @@ function OnboardingTab({ onReopen }: { onReopen?: () => void }) {
   const briefingHour = derived.briefing_hour_utc;
 
   const reopen = (): void => {
-    // Clear the dismissal flag so first-run detection can re-fire on the
-    // next mount; also fire the parent callback to open the wizard now.
+    // Clear both storages — sessionStorage is the new home for the
+    // dismissal flag, but legacy users might still have it in
+    // localStorage from before the bug fix. Wipe both, then ask the
+    // App to open the wizard now.
     window.localStorage.removeItem("bc.onboarding.dismissed");
+    window.sessionStorage.removeItem("bc.onboarding.dismissed");
     onReopen?.();
   };
 
