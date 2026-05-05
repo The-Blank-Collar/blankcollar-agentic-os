@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
 import type {
+  GoalContext,
   GoalWithDetail,
   KeyResult,
   KeyResultCreate,
@@ -151,6 +152,8 @@ function GoalDetailInner({
       <div className="gd-grid">
         <div className="left">
           {g.kind === "decision" && <DecisionReasoning g={g} />}
+
+          <GoalContextSection goalId={g.id} />
 
           {(g.kind === "standing" || g.key_results.length > 0) && (
             <KeyResultsSection
@@ -1044,6 +1047,126 @@ const RunRow = ({
           </button>
         )}
       </div>
+    </div>
+  );
+};
+
+// -- Goal context (Phase 9.1) --------------------------------------------
+// Per-goal markdown blob auto-loaded into every Hermes run. Editing is
+// instant — no draft state, no version history, just one Save click. We
+// intentionally keep this section lean (one textarea, one button) so the
+// memory layer doesn't sprout into its own subapp.
+
+const GOAL_CONTEXT_MAX = 8000;
+const GOAL_CONTEXT_SOFT_WARN = 4000;
+
+const GoalContextSection = ({ goalId }: { goalId: string }) => {
+  const ctxQ = useFetch<GoalContext>(() => api.getGoalContext(goalId), [goalId]);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  // Initialise the draft once the first GET resolves; subsequent edits
+  // live entirely in `draft` until the user clicks Save.
+  React.useEffect(() => {
+    if (ctxQ.data && draft === null) {
+      setDraft(ctxQ.data.content_md);
+    }
+  }, [ctxQ.data, draft]);
+
+  const value = draft ?? ctxQ.data?.content_md ?? "";
+  const dirty = ctxQ.data ? value !== ctxQ.data.content_md : value.length > 0;
+  const overCap = value.length > GOAL_CONTEXT_MAX;
+  const soft = value.length >= GOAL_CONTEXT_SOFT_WARN && !overCap;
+
+  const onSave = async (): Promise<void> => {
+    if (busy || overCap) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const updated = await api.updateGoalContext(goalId, { content_md: value });
+      setDraft(updated.content_md);
+      setSavedAt(updated.updated_at);
+      ctxQ.refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="section">
+      <div className="section-head">
+        <div className="stack-h">
+          <span className="title">Context</span>
+          <span className="tiny mono" style={{ color: "var(--muted)" }}>
+            {ctxQ.data?.updated_at && ctxQ.data.content_md
+              ? `loaded into every run · updated ${relativeTime(ctxQ.data.updated_at)}`
+              : "loaded into every run · empty"}
+          </span>
+        </div>
+        <div className="stack-h">
+          <span
+            className="tiny mono"
+            style={{
+              color: overCap ? "var(--neg)" : soft ? "var(--warn)" : "var(--muted)",
+            }}
+          >
+            {value.length} / {GOAL_CONTEXT_MAX}
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={onSave}
+            disabled={busy || overCap || !dirty}
+          >
+            {busy ? "Saving…" : savedAt && !dirty ? "Saved" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {ctxQ.loading && !ctxQ.data && <Loading label="Loading context…" />}
+      {ctxQ.error && <ErrorState error={ctxQ.error} onRetry={ctxQ.refetch} />}
+
+      {ctxQ.data !== null && !ctxQ.error && (
+        <>
+          <textarea
+            value={value}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Notes the agent should always remember about this goal — audience, tone, banned phrases, key constraints, prior decisions. Markdown welcome."
+            rows={8}
+            style={{
+              width: "100%",
+              padding: 14,
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius-lg)",
+              background: "var(--bg)",
+              color: "var(--ink)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              lineHeight: 1.55,
+              resize: "vertical",
+              outline: "none",
+              minHeight: 160,
+            }}
+          />
+          {err && (
+            <div className="tiny" style={{ color: "var(--neg)", marginTop: 6 }}>{err}</div>
+          )}
+          {soft && (
+            <div className="tiny" style={{ color: "var(--warn)", marginTop: 6 }}>
+              Long contexts cost tokens on every run. Trim to under {GOAL_CONTEXT_SOFT_WARN.toLocaleString()} chars when you can.
+            </div>
+          )}
+          {overCap && (
+            <div className="tiny" style={{ color: "var(--neg)", marginTop: 6 }}>
+              Over the {GOAL_CONTEXT_MAX.toLocaleString()}-char cap. Trim before saving.
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };

@@ -662,6 +662,18 @@ export interface ActivityRow {
   subtask_title: string | null;
 }
 
+// ---------- Goal context (Phase 9.1) --------------------------------------
+
+export interface GoalContext {
+  id: string;
+  org_id: string;
+  goal_id: string;
+  content_md: string;
+  content_hash: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------- Captures (Phase 4 / capture-first composer) -------------------
 
 export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";

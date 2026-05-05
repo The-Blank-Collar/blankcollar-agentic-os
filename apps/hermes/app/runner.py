@@ -131,15 +131,32 @@ def _format_task(
     sub_input: dict[str, Any],
     memory_block: str,
 ) -> str:
-    lines = [
-        f"Subtask: {title}",
-        f"Description: {description}",
-        "",
-        "Recent company memories you may rely on:",
-        memory_block,
-        "",
-        "Task input:",
-    ]
+    # Phase 9.1 — pull the goal context out of sub_input (set by the
+    # worker dispatcher when ops.goal_context has a row for this goal).
+    # Promoted to its own block at the top of the user message so the
+    # model treats it as standing instructions rather than per-call data.
+    goal_context = sub_input.pop("goal_context", None)
+
+    lines: list[str] = []
+    if isinstance(goal_context, str) and goal_context.strip():
+        lines.extend(
+            [
+                "Context for this goal (loaded from goal_context):",
+                goal_context.strip(),
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            f"Subtask: {title}",
+            f"Description: {description}",
+            "",
+            "Recent company memories you may rely on:",
+            memory_block,
+            "",
+            "Task input:",
+        ]
+    )
     for k, v in sub_input.items():
         if isinstance(v, str) and len(v) > 1500:
             v = v[:1500] + "…(truncated)"

@@ -1445,6 +1445,36 @@ const ADDITIVE_MIGRATIONS = [
      USING      (current_setting('app.system_scope', true) = 'true')
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 
+  // -- ops.goal_context — Phase 9.1 ---------------------------------------
+  // One markdown blob per goal, auto-loaded into every Hermes run scoped
+  // to that goal_id. Closes the "agents forget the project context
+  // between runs" gap. Lean by design — exactly one row per goal (UNIQUE
+  // constraint), no version history, no separate indexes (the unique
+  // covers the only lookup we do).
+  `CREATE TABLE IF NOT EXISTS ops.goal_context (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     goal_id       uuid NOT NULL UNIQUE REFERENCES ops.goal(id) ON DELETE CASCADE,
+     content_md    text NOT NULL DEFAULT '',
+     content_hash  text,
+     created_at    timestamptz NOT NULL DEFAULT now(),
+     updated_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `ALTER TABLE ops.goal_context ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.goal_context FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.goal_context;`,
+  `CREATE POLICY app_scope_org ON ops.goal_context
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.goal_context;`,
+  `CREATE POLICY app_system_scope ON ops.goal_context
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
   // -- core.user_account additive columns (Phase 8.1) ---------------------
   // The legacy schema has display_name + no updated_at. New code uses
   // full_name and updated_at. Both columns coexist; new writes set
@@ -1598,6 +1628,7 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.subtask",
   "core.invitation",
   "billing.subscription",
+  "ops.goal_context",
 ];
 
 function buildStrictMigrations(): string[] {

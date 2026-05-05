@@ -42,6 +42,7 @@ import type {
   DispatchAllResult,
   DispatchResult,
   Goal,
+  GoalContext,
   GoalCreate,
   GoalListQuery,
   GoalPatch,
@@ -147,6 +148,9 @@ export interface ApiClient {
   // -- Agents ----
   listAgents(opts?: { isActive?: boolean }): Promise<AgentSummary[]>;
   getAgentState(id: string): Promise<AgentState>;
+  // -- Goal context (Phase 9.1) ----
+  getGoalContext(goalId: string): Promise<GoalContext>;
+  updateGoalContext(goalId: string, body: { content_md: string }): Promise<GoalContext>;
   // -- Key results ----
   listKeyResults(goalId: string): Promise<KeyResult[]>;
   createKeyResult(goalId: string, body: KeyResultCreate): Promise<KeyResult>;
@@ -340,6 +344,14 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       ),
     getAgentState: (id) =>
       request<AgentState>("GET", `/api/agents/${encodeURIComponent(id)}/state`),
+    getGoalContext: (goalId) =>
+      request<GoalContext>("GET", `/api/goals/${encodeURIComponent(goalId)}/context`),
+    updateGoalContext: (goalId, body) =>
+      request<GoalContext>(
+        "PUT",
+        `/api/goals/${encodeURIComponent(goalId)}/context`,
+        body as unknown as Json,
+      ),
     listKeyResults: (goalId) =>
       request<KeyResult[]>(
         "GET",

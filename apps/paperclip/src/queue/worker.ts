@@ -158,11 +158,28 @@ export class Worker {
       role: "agent",
     };
 
+    // Phase 9.1 — load the goal's context document, if any. One row per
+    // goal (UNIQUE constraint), capped at 8000 chars server-side, so the
+    // payload is bounded. Skipped silently when the goal has no context
+    // yet, which is the common case for ephemeral one-shot goals.
+    const goalContext = await withOrgScope(goal.org_id, async (client) => {
+      const { rows } = await client.query<{ content_md: string }>(
+        "SELECT content_md FROM ops.goal_context WHERE goal_id = $1",
+        [goal.id],
+      );
+      const md = rows[0]?.content_md?.trim();
+      return md && md.length > 0 ? md : null;
+    });
+
+    const subtaskWithContext = goalContext
+      ? { ...subtask, input: { ...subtask.input, goal_context: goalContext } }
+      : subtask;
+
     try {
       await adapter.startRun({
         goal_id: goal.id,
         run_id: run.id,
-        input: { subtask },
+        input: { subtask: subtaskWithContext },
         scope,
       });
     } catch (err) {
