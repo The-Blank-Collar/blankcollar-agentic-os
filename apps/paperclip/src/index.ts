@@ -95,11 +95,23 @@ async function main(): Promise<void> {
     maxAge: 86_400,
   });
 
-  // Supabase JWT auth (no-op when SUPABASE_JWT_SECRET unset).
+  // Supabase JWT auth (no-op when neither SUPABASE_URL nor
+  // SUPABASE_JWT_SECRET is set). Modern Supabase projects sign with
+  // asymmetric keys we fetch via JWKS at SUPABASE_URL; legacy projects
+  // hand out HS256 tokens verified with the shared secret.
   app.addHook("preHandler", authPreHandler);
-  if (config.supabaseJwtSecret) {
+  if (config.supabaseProjectUrl && config.supabaseJwtSecret) {
     app.log.info(
-      `auth=supabase enforce=${config.authEnforce} (set PAPERCLIP_AUTH_ENFORCE=true to require tokens)`,
+      `auth=supabase (jwks + hs256 fallback) enforce=${config.authEnforce}`,
+    );
+  } else if (config.supabaseProjectUrl) {
+    app.log.info(
+      `auth=supabase (jwks via ${config.supabaseProjectUrl}/auth/v1/.well-known/jwks.json) ` +
+        `enforce=${config.authEnforce}`,
+    );
+  } else if (config.supabaseJwtSecret) {
+    app.log.info(
+      `auth=supabase (hs256 legacy) enforce=${config.authEnforce}`,
     );
   } else {
     app.log.info("auth=stub (Supabase not configured; demo-org owner for all callers)");
