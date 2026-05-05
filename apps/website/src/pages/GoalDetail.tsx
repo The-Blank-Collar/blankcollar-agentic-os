@@ -2,6 +2,7 @@ import React, { useState } from "react";
 
 import type {
   GoalContext,
+  GoalMemoryEntry,
   GoalWithDetail,
   KeyResult,
   KeyResultCreate,
@@ -154,6 +155,8 @@ function GoalDetailInner({
           {g.kind === "decision" && <DecisionReasoning g={g} />}
 
           <GoalContextSection goalId={g.id} />
+
+          <GoalMemorySection goalId={g.id} runs={runs} />
 
           {(g.kind === "standing" || g.key_results.length > 0) && (
             <KeyResultsSection
@@ -1166,6 +1169,116 @@ const GoalContextSection = ({ goalId }: { goalId: string }) => {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+};
+
+// -- Goal memory timeline (Phase 9.2) ------------------------------------
+// Surfaces brain.memory rows scoped to this goal. Hermes' runner records
+// successful runs as `episode` rows; the worker's wrap-up writer records
+// non-Hermes successes + failures the same way (kind=fact for failures).
+// Read-only — editing the brain is out of scope here.
+
+const MEMORY_KIND_TONE: Record<string, string> = {
+  episode:      "var(--info)",
+  fact:         "var(--warn)",
+  document:     "var(--muted)",
+  conversation: "var(--ink-2)",
+};
+
+const GoalMemorySection = ({ goalId, runs }: { goalId: string; runs: Run[] }) => {
+  const memQ = useFetch<GoalMemoryEntry[]>(
+    () => api.listGoalMemory(goalId, { limit: 20 }),
+    // Refetch when the run list changes — new run finished → new memory.
+    [goalId, runs.length],
+  );
+
+  const entries = memQ.data ?? [];
+
+  return (
+    <div className="section">
+      <div className="section-head">
+        <div className="stack-h">
+          <span className="title">Memory</span>
+          <span className="pill">{entries.length}</span>
+        </div>
+        <span className="tiny mono" style={{ color: "var(--muted)" }}>
+          narrative · auto-recorded after each run
+        </span>
+      </div>
+
+      {memQ.loading && !memQ.data && <Loading label="Reading the brain…" />}
+      {memQ.error && <ErrorState error={memQ.error} onRetry={memQ.refetch} />}
+
+      {!memQ.loading && !memQ.error && entries.length === 0 && (
+        <div className="empty-hint">
+          No memories yet. As runs complete, summaries land here automatically.
+        </div>
+      )}
+
+      {entries.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          {entries.map((m, i) => {
+            const tone = MEMORY_KIND_TONE[m.kind] ?? "var(--muted)";
+            const meta = m.metadata ?? {};
+            const runStatus = (meta as { run_status?: string }).run_status;
+            const agentKind = (meta as { agent_kind?: string }).agent_kind;
+            return (
+              <div
+                key={m.id}
+                style={{
+                  padding: "12px 16px",
+                  borderTop: i ? "1px solid var(--line)" : 0,
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 12,
+                  alignItems: "flex-start",
+                }}
+              >
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: tone,
+                    paddingTop: 2,
+                  }}
+                >
+                  {m.kind}
+                </span>
+                <div>
+                  {m.title && (
+                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+                      {m.title}
+                    </div>
+                  )}
+                  <div
+                    className="small"
+                    style={{
+                      color: "var(--ink-2)",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {m.content}
+                  </div>
+                  {(runStatus || agentKind) && (
+                    <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 6 }}>
+                      {agentKind && `agent=${agentKind}`}
+                      {agentKind && runStatus && " · "}
+                      {runStatus && `status=${runStatus}`}
+                    </div>
+                  )}
+                </div>
+                <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                  {relativeTime(m.created_at)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

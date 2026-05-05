@@ -23,6 +23,7 @@
 import { audit } from "../audit.js";
 import { config } from "../config.js";
 import { withOrgScope, withSystemScope } from "../db.js";
+import { recordRunWrapUp } from "../runs/wrap-up.js";
 import type { Scope } from "../schemas.js";
 import { cascadeFromRun } from "../swarms/dispatch.js";
 import type { AdapterClient } from "./adapter-client.js";
@@ -83,7 +84,7 @@ export class Worker {
   /** Claim one queued run, dispatch to its adapter, and start polling. */
   private async claimAndDispatch(log: Logger): Promise<void> {
     type ClaimedRun = { id: string; goal_id: string; input: Record<string, unknown> };
-    type ClaimedGoal = { id: string; org_id: string; department_id: string | null };
+    type ClaimedGoal = { id: string; org_id: string; department_id: string | null; title: string };
 
     // Cross-org claim: the worker doesn't yet know which org the run
      // belongs to, so we run under withSystemScope. The downstream
@@ -106,7 +107,7 @@ export class Worker {
       if (rows.length === 0) return undefined;
       const run = rows[0]!;
       const { rows: goalRows } = await client.query<ClaimedGoal>(
-        "SELECT id, org_id, department_id FROM ops.goal WHERE id = $1",
+        "SELECT id, org_id, department_id, title FROM ops.goal WHERE id = $1",
         [run.goal_id],
       );
       if (goalRows.length === 0) {
@@ -197,7 +198,7 @@ export class Worker {
   /** Long-lived poll that mirrors adapter state into ops.run. */
   private async pollUntilTerminal(
     runId: string,
-    goal: { id: string; org_id: string; department_id: string | null },
+    goal: WorkerGoal,
     kind: string,
     adapter: AdapterClient,
     log: Logger,
@@ -255,7 +256,7 @@ export class Worker {
 
   private async succeed(
     runId: string,
-    goal: { id: string; org_id: string; department_id: string | null },
+    goal: WorkerGoal,
     output: Record<string, unknown>,
   ): Promise<void> {
     await withOrgScope(goal.org_id, async (client) => {
@@ -291,12 +292,30 @@ export class Worker {
       } catch {
         // swallow — channel-replies handles its own logging
       }
+      // Phase 9.2 — narrative wrap-up to brain.memory. Skipped when
+      // Hermes already wrote a memory (output.memory_id present), so
+      // we only fill the gap for non-Hermes successes.
+      try {
+        const subtask = (output as { agent_kind?: unknown }).agent_kind;
+        await recordRunWrapUp(client, {
+          runId,
+          goalId: goal.id,
+          goalTitle: goal.title,
+          departmentId: goal.department_id,
+          agentKind: typeof subtask === "string" ? subtask : null,
+          status: "succeeded",
+          output,
+          error: null,
+        });
+      } catch {
+        // best-effort
+      }
     });
   }
 
   private async fail(
     runId: string,
-    goal: { id: string; org_id: string; department_id: string | null },
+    goal: WorkerGoal,
     error: string,
   ): Promise<void> {
     await withOrgScope(goal.org_id, async (client) => {
@@ -328,12 +347,28 @@ export class Worker {
       } catch {
         // swallow
       }
+      // Phase 9.2 — record the failure as a brain.memory fact so the
+      // next run on this goal is primed against repeating the mistake.
+      try {
+        await recordRunWrapUp(client, {
+          runId,
+          goalId: goal.id,
+          goalTitle: goal.title,
+          departmentId: goal.department_id,
+          agentKind: null,
+          status: "failed",
+          output: null,
+          error,
+        });
+      } catch {
+        // best-effort
+      }
     });
   }
 
   private async cancelLocal(
     runId: string,
-    goal: { id: string; org_id: string; department_id: string | null },
+    goal: WorkerGoal,
   ): Promise<void> {
     await withOrgScope(goal.org_id, async (client) => {
       const { rowCount } = await client.query(
@@ -366,7 +401,15 @@ type SubtaskShape = {
   agent_kind?: string;
 };
 
-function scopeFor(goal: { org_id: string; department_id: string | null; id: string }): Scope {
+/** Shared goal envelope used across succeed/fail/cancelLocal/poll. */
+type WorkerGoal = {
+  id: string;
+  org_id: string;
+  department_id: string | null;
+  title: string;
+};
+
+function scopeFor(goal: WorkerGoal): Scope {
   return {
     org_id: goal.org_id,
     department_id: goal.department_id,

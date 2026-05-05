@@ -674,6 +674,19 @@ export interface GoalContext {
   updated_at: string;
 }
 
+// ---------- Goal memory timeline (Phase 9.2) ------------------------------
+
+export type MemoryKind = "fact" | "episode" | "document" | "conversation";
+
+export interface GoalMemoryEntry {
+  id: string;
+  kind: MemoryKind | string;
+  title: string | null;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 // ---------- Captures (Phase 4 / capture-first composer) -------------------
 
 export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";

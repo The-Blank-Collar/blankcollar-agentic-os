@@ -1,5 +1,5 @@
 /**
- * Goal Context (Phase 9.1).
+ * Goal Context + Memory (Phase 9.1 + 9.2).
  *
  * Per-goal markdown blob auto-loaded into every Hermes run scoped to
  * that goal_id. Closes the "agents forget the project context between
@@ -8,6 +8,8 @@
  *
  *   GET /api/goals/:id/context     reads (returns synthetic empty doc if none)
  *   PUT /api/goals/:id/context     upserts; audited as goal.context_update
+ *   GET /api/goals/:id/memory      narrative timeline — brain.memory rows
+ *                                  written by Hermes' runner + Phase 9.2 wrap-ups
  *
  * Cap is enforced server-side at 8000 chars to keep the system-prompt
  * budget predictable. The UI shows a soft warning past 4000.
@@ -74,6 +76,43 @@ export async function goalContextRoutes(app: FastifyInstance): Promise<void> {
           [req.params.id],
         );
         return rows[0] ?? syntheticEmpty(scope.org_id, req.params.id);
+      });
+    },
+  );
+
+  // Phase 9.2 — narrative timeline for a single goal. Surfaces the
+  // brain.memory rows Hermes' runner writes (kind=episode) plus the
+  // wrap-up rows the worker writes for non-Hermes / failed runs.
+  // Bounded result set so the UI can render it cheaply.
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    "/api/goals/:id/memory",
+    async (req, reply) => {
+      const scope = await resolveCallerScope(req);
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 20), 1), 100);
+      return withOrgScope(scope.org_id, async (client) => {
+        const { rows: own } = await client.query<{ id: string }>(
+          "SELECT id FROM ops.goal WHERE id = $1 AND org_id = $2",
+          [req.params.id, scope.org_id],
+        );
+        if (own.length === 0) {
+          return reply.code(404).send({ error: "goal_not_found" });
+        }
+        const { rows } = await client.query<{
+          id: string;
+          kind: string;
+          title: string | null;
+          content: string;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }>(
+          `SELECT id::text, kind::text, title, content, metadata, created_at
+             FROM brain.memory
+            WHERE goal_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2`,
+          [req.params.id, limit],
+        );
+        return rows;
       });
     },
   );
