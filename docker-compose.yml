@@ -321,7 +321,7 @@ services:
 
   nango-redis:
     <<: [*restart-policy, *default-logging]
-    image: redis:7.2.4
+    image: redis:8.6.2
     container_name: bc_nango_redis
     networks: [bc_net]
 
