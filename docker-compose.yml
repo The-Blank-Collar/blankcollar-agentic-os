@@ -431,7 +431,7 @@ services:
   # =========================================================================
   neo4j:
     <<: [*restart-policy, *default-logging]
-    image: neo4j:5.26.2
+    image: neo4j:5.26.25
     container_name: bc_neo4j
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
