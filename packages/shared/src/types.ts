@@ -727,6 +727,21 @@ export interface MemoryExploreResponse {
   history: MemoryHistoryRow[];
 }
 
+export interface MemoryIngestUrlBody {
+  url: string;
+  title?: string;
+  goal_id?: string;
+  tags?: string[];
+}
+
+export interface MemoryIngestUrlResult {
+  memory_id: string;
+  title: string;
+  length: number;
+  truncated: boolean;
+  url: string;
+}
+
 // ---------- Captures (Phase 4 / capture-first composer) -------------------
 
 export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";

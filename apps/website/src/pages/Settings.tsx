@@ -2435,6 +2435,30 @@ function MemoryTab() {
     history: data?.history.length ?? 0,
   };
 
+  // Phase 9.5 — inline web ingest. One URL input, one button. Lean.
+  const [url, setUrl] = useState("");
+  const [ingestBusy, setIngestBusy] = useState(false);
+  const [ingestErr, setIngestErr] = useState<string | null>(null);
+  const [ingestOk, setIngestOk] = useState<string | null>(null);
+
+  const onIngest = async (): Promise<void> => {
+    const trimmed = url.trim();
+    if (!trimmed || ingestBusy) return;
+    setIngestBusy(true);
+    setIngestErr(null);
+    setIngestOk(null);
+    try {
+      const result = await api.ingestUrlToMemory({ url: trimmed });
+      setIngestOk(`Ingested "${result.title}" (${result.length.toLocaleString()} chars${result.truncated ? ", truncated" : ""})`);
+      setUrl("");
+      memQ.refetch();
+    } catch (e) {
+      setIngestErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIngestBusy(false);
+    }
+  };
+
   return (
     <Section>
       <div className="h3" style={{ marginBottom: 8 }}>Memory.</div>
@@ -2443,6 +2467,68 @@ function MemoryTab() {
         your studio. <b>Context</b> is what each goal carries between runs.
         <b> History</b> is the narrative record — what your agents have done
         and learned. All loaded automatically; nothing to wire by hand.
+      </div>
+
+      <div
+        style={{
+          padding: 14,
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-lg)",
+          background: "var(--bg-1)",
+          marginBottom: 24,
+        }}
+      >
+        <div className="eyebrow" style={{ marginBottom: 8 }}>Ingest a web page</div>
+        <div className="small" style={{ color: "var(--ink-2)", marginBottom: 12 }}>
+          Drop any URL — we fetch it, extract the text, and store it as a
+          memory your agents can recall. Works for articles, docs, blog
+          posts. JavaScript-only sites won't extract well.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="url"
+            placeholder="https://…"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void onIngest();
+              }
+            }}
+            disabled={ingestBusy}
+            style={{
+              flex: 1,
+              height: 34,
+              padding: "0 12px",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius)",
+              background: "var(--bg)",
+              color: "var(--ink)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12.5,
+              outline: "none",
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => void onIngest()}
+            disabled={ingestBusy || !url.trim()}
+          >
+            {ingestBusy ? "Fetching…" : "Ingest"}
+          </button>
+        </div>
+        {ingestErr && (
+          <div className="tiny" style={{ color: "var(--neg)", marginTop: 8 }}>
+            {ingestErr}
+          </div>
+        )}
+        {ingestOk && (
+          <div className="tiny" style={{ color: "var(--pos)", marginTop: 8 }}>
+            {ingestOk}
+          </div>
+        )}
       </div>
 
       {memQ.loading && !data && (

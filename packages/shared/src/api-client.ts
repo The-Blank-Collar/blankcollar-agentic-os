@@ -46,6 +46,8 @@ import type {
   GoalCreate,
   GoalMemoryEntry,
   MemoryExploreResponse,
+  MemoryIngestUrlBody,
+  MemoryIngestUrlResult,
   GoalListQuery,
   GoalPatch,
   GoalWithDetail,
@@ -157,6 +159,8 @@ export interface ApiClient {
   listGoalMemory(goalId: string, opts?: { limit?: number }): Promise<GoalMemoryEntry[]>;
   // -- Memory Explorer (Phase 9.3) ----
   exploreMemory(opts?: { historyLimit?: number }): Promise<MemoryExploreResponse>;
+  // -- Web ingest (Phase 9.5) ----
+  ingestUrlToMemory(body: MemoryIngestUrlBody): Promise<MemoryIngestUrlResult>;
   // -- Key results ----
   listKeyResults(goalId: string): Promise<KeyResult[]>;
   createKeyResult(goalId: string, body: KeyResultCreate): Promise<KeyResult>;
@@ -368,6 +372,8 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
         "GET",
         `/api/memory/explore${qs({ history_limit: opts?.historyLimit })}`,
       ),
+    ingestUrlToMemory: (body) =>
+      request<MemoryIngestUrlResult>("POST", "/api/memory/ingest-url", body as unknown as Json),
     listKeyResults: (goalId) =>
       request<KeyResult[]>(
         "GET",

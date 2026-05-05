@@ -23,6 +23,7 @@ import { connectorRoutes } from "./routes/connectors.js";
 import { goalContextRoutes } from "./routes/goal-context.js";
 import { goalRoutes } from "./routes/goals.js";
 import { memoryRoutes } from "./routes/memory.js";
+import { memoryIngestRoutes } from "./routes/memory-ingest.js";
 import { healthRoutes } from "./routes/health.js";
 import { heartbeatRoutes } from "./routes/heartbeat.js";
 import { inboxRoutes } from "./routes/inbox.js";
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
   await app.register(goalRoutes);
   await app.register(goalContextRoutes);
   await app.register(memoryRoutes);
+  await app.register(memoryIngestRoutes);
   await app.register(keyResultRoutes);
   await app.register(captureRoutes);
   await app.register(briefingRoutes);
