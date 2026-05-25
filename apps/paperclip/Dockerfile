@@ -1,9 +1,9 @@
 # =============================================================================
 # Paperclip — orchestrator + dashboard
-# Multi-stage Node 22 image. Runtime ships only production node_modules + dist.
+# Multi-stage Node 24 image. Runtime ships only production node_modules + dist.
 # =============================================================================
 
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /build
@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # -----------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /build
@@ -24,7 +24,7 @@ RUN npm run build
 
 # -----------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS prod-deps
+FROM node:24-bookworm-slim AS prod-deps
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /build
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # -----------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 ENV NODE_ENV=production \
     PAPERCLIP_INTERNAL_PORT=80 \

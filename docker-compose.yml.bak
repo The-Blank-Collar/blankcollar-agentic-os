@@ -64,7 +64,9 @@ services:
   # =========================================================================
   postgres:
     <<: [*restart-policy, *default-logging]
+
     image: postgres:18.4-alpine
+>>>>>>> ff9d8f1 (chore(deps): upstream bump across the whole stack to latest)
     container_name: bc_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -88,7 +90,9 @@ services:
   # =========================================================================
   qdrant:
     <<: [*restart-policy, *default-logging]
+
     image: qdrant/qdrant:v1.18.1
+>>>>>>> ff9d8f1 (chore(deps): upstream bump across the whole stack to latest)
     container_name: bc_qdrant
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
@@ -597,7 +601,9 @@ services:
   # =========================================================================
   pgadmin:
     <<: [*restart-policy, *default-logging]
+
     image: dpage/pgadmin4:9.15.0
+>>>>>>> ff9d8f1 (chore(deps): upstream bump across the whole stack to latest)
     container_name: bc_pgadmin
     profiles: ["tools"]
     environment:

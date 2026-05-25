@@ -33,9 +33,9 @@ const MAX_CHARS = 16_000;
 
 const IngestUrlBody = z
   .object({
-    url: z.string().url().max(2048),
+    url: z.url().max(2048),
     title: z.string().max(200).optional(),
-    goal_id: z.string().uuid().optional(),
+    goal_id: z.guid().optional(),
     tags: z.array(z.string().max(40)).max(10).optional(),
   })
   .strict();
