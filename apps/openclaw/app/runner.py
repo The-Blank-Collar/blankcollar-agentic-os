@@ -15,7 +15,7 @@ from app.fetch import FetchError, web_fetch
 from app.models import RunRequest
 from app.nango import NangoError, nango_invoke
 from app.search import SearchError, web_search
-from app.state import RunState, RunStatus, runs
+from app.state import RunState, runs
 
 log = logging.getLogger("openclaw.runner")
 

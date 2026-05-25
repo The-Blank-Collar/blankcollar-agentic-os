@@ -11,7 +11,7 @@ from app.brain import brain
 from app.config import settings
 from app.llm import LLM
 from app.models import RunRequest
-from app.state import RunState, RunStatus, runs
+from app.state import RunState, runs
 
 log = logging.getLogger("hermes.runner")
 

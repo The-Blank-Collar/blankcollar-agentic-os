@@ -24,11 +24,12 @@ jobs:
         run: |
           set -e
           missing=0
-          # Extract ${VAR} references from compose
-          grep -oE '\$\{[A-Z_]+' docker-compose.yml \
+          # Extract ${VAR} references from compose. Allow digits so names like
+          # NEO4J_URI aren't truncated to "NEO".
+          grep -oE '\$\{[A-Z0-9_]+' docker-compose.yml \
             | sed 's/\${//' | sort -u > /tmp/compose_vars.txt
           # Vars defined in .env.example
-          grep -oE '^[A-Z_]+=' .env.example | sed 's/=//' | sort -u > /tmp/env_vars.txt
+          grep -oE '^[A-Z0-9_]+=' .env.example | sed 's/=//' | sort -u > /tmp/env_vars.txt
           while read -r v; do
             if ! grep -qx "$v" /tmp/env_vars.txt; then
               echo "::error::Variable '$v' is used in docker-compose.yml but missing from .env.example"
@@ -48,7 +49,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
 
       - name: Install package + dev deps
@@ -76,7 +77,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
 
       - name: Install package + dev deps
@@ -104,7 +105,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
 
       - name: Install package + dev deps
@@ -121,6 +122,90 @@ jobs:
       - name: Build Docker image
         run: docker build -t blankcollar/openclaw:ci .
 
+  langgraph:
+    name: langgraph — unit tests + image build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/langgraph
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest -q
+
+      - name: Build Docker image
+        run: docker build -t blankcollar/langgraph:ci .
+
+  graphiti:
+    name: graphiti — unit tests + image build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/graphiti
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest -q
+
+      - name: Build Docker image
+        run: docker build -t blankcollar/graphiti:ci .
+
+  email-ingest:
+    name: email-ingest — unit tests + image build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/email-ingest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest -q
+
+      - name: Build Docker image
+        run: docker build -t blankcollar/email-ingest:ci .
+
   paperclip:
     name: paperclip — typecheck + tests + image build
     runs-on: ubuntu-latest
@@ -132,7 +217,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: apps/paperclip/package-lock.json
 
@@ -160,7 +245,7 @@ jobs:
             -e POSTGRES_DB=blankcollar \
             -v "$PWD/infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro" \
             -p 5432:5432 \
-            postgres:16-alpine
+            postgres:18-alpine
           for i in $(seq 1 30); do
             if docker exec pg pg_isready -U postgres -d blankcollar >/dev/null 2>&1; then
               break

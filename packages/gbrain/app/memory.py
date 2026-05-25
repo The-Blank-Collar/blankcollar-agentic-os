@@ -83,7 +83,7 @@ async def remember(req: RememberRequest, embedder: Embedder) -> RememberResponse
 
     # Best-effort fan-out to graphiti (temporal knowledge graph). Fire-and-
     # forget; never blocks /remember and never raises.
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006 — intentional fire-and-forget
         push_to_graphiti(
             title=req.title,
             content=req.content,
@@ -183,4 +183,4 @@ async def forget(req: ForgetRequest) -> ForgetResponse:
 
 
 # Defensive helper — referenced from routes for symmetry / future use.
-__all__ = ["remember", "recall", "forget", "can_role_see"]
+__all__ = ["can_role_see", "forget", "recall", "remember"]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models import RunStateResponse, RunStatus
@@ -14,7 +14,7 @@ class RunState:
         self.status: RunStatus = RunStatus.running
         self.output: dict[str, Any] | None = None
         self.error: str | None = None
-        self.started_at: datetime = datetime.now(timezone.utc)
+        self.started_at: datetime = datetime.now(UTC)
         self.finished_at: datetime | None = None
         self.cancel_event: asyncio.Event = asyncio.Event()
         self.task: asyncio.Task[None] | None = None
@@ -31,17 +31,17 @@ class RunState:
     def mark_succeeded(self, output: dict[str, Any]) -> None:
         self.status = RunStatus.succeeded
         self.output = output
-        self.finished_at = datetime.now(timezone.utc)
+        self.finished_at = datetime.now(UTC)
 
     def mark_failed(self, error: str) -> None:
         self.status = RunStatus.failed
         self.error = error
-        self.finished_at = datetime.now(timezone.utc)
+        self.finished_at = datetime.now(UTC)
 
     def mark_cancelled(self) -> None:
         if self.status not in (RunStatus.succeeded, RunStatus.failed):
             self.status = RunStatus.cancelled
-            self.finished_at = datetime.now(timezone.utc)
+            self.finished_at = datetime.now(UTC)
 
 
 # Process-local map keyed by run_id (string).

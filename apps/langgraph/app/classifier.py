@@ -108,7 +108,7 @@ async def classify_with_llm(
 
     try:
         if provider in ("nexos", "openai"):
-            from openai import AsyncOpenAI  # noqa: WPS433
+            from openai import AsyncOpenAI
 
             api_key = settings.nexos_api_key or settings.openai_api_key
             base_url = settings.nexos_base_url if provider == "nexos" else None
@@ -123,7 +123,7 @@ async def classify_with_llm(
             )
             content = (r.choices[0].message.content or "").strip().lower()
         else:  # anthropic
-            from anthropic import AsyncAnthropic  # noqa: WPS433
+            from anthropic import AsyncAnthropic
 
             client = AsyncAnthropic(api_key=settings.anthropic_api_key)
             msg = await client.messages.create(

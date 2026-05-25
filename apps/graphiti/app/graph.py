@@ -5,6 +5,7 @@ client only when an LLM is configured so the service can start (and serve
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 from typing import Any
 
 from app.config import settings
@@ -37,7 +38,7 @@ class GraphitiWrapper:
     async def neo4j_ok(self) -> bool:
         """Cheap probe of the Neo4j backend for the healthcheck."""
         try:
-            from neo4j import AsyncGraphDatabase  # noqa: WPS433
+            from neo4j import AsyncGraphDatabase
 
             if self._driver is None:
                 self._driver = AsyncGraphDatabase.driver(
@@ -124,13 +125,13 @@ class GraphitiWrapper:
         try:
             # graphiti-core's signature has shifted across versions; we keep
             # the call defensive and pass only commonly-supported args.
-            from datetime import datetime, timezone  # noqa: WPS433
+            from datetime import datetime
 
             kwargs: dict[str, Any] = {
                 "name": name,
                 "episode_body": body,
                 "source_description": source_description,
-                "reference_time": reference_time or datetime.now(timezone.utc),
+                "reference_time": reference_time or datetime.now(UTC),
                 "group_id": self.group_id_for(scope),
             }
             result = await client.add_episode(**kwargs)
