@@ -106,7 +106,7 @@ async def classify_with_llm(
     try:
         # Single path: Anthropic SDK routed through Portkey via base_url +
         # x-portkey-* headers. Wire format unchanged.
-        from anthropic import AsyncAnthropic  # noqa: WPS433
+        from anthropic import AsyncAnthropic
 
         client = AsyncAnthropic(
             api_key="portkey-handles-this",

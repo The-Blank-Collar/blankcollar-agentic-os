@@ -7,7 +7,7 @@ import logging
 
 from app.dispatcher import get_compiled_graph
 from app.models import RunRequest
-from app.state import RunState, RunStatus, runs
+from app.state import RunState, runs
 
 log = logging.getLogger("langgraph.runner")
 

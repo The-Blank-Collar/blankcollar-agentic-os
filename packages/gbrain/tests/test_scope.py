@@ -12,7 +12,6 @@ from app.scope import (
     effective_visible_to,
 )
 
-
 # ---------- effective_visible_to -------------------------------------------
 
 
