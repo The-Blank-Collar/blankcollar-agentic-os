@@ -25,9 +25,9 @@ export type RunStatus = z.infer<typeof RunStatus>;
 
 export const Scope = z
   .object({
-    org_id: z.string().uuid(),
-    department_id: z.string().uuid().nullable().optional(),
-    goal_id: z.string().uuid().nullable().optional(),
+    org_id: z.guid(),
+    department_id: z.guid().nullable().optional(),
+    goal_id: z.guid().nullable().optional(),
     role: RoleKind,
   })
   .strict();
@@ -39,8 +39,8 @@ export const GoalCreate = z
   .object({
     title: z.string().min(1).max(200),
     description: z.string().max(5_000).optional(),
-    department_id: z.string().uuid().nullable().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    department_id: z.guid().nullable().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type GoalCreate = z.infer<typeof GoalCreate>;
@@ -49,7 +49,7 @@ export const GoalPatch = z
   .object({
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(5_000).optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     status: GoalStatus.optional(),
   })
   .strict();
@@ -58,7 +58,7 @@ export type GoalPatch = z.infer<typeof GoalPatch>;
 export const GoalListQuery = z
   .object({
     status: GoalStatus.optional(),
-    department_id: z.string().uuid().optional(),
+    department_id: z.guid().optional(),
     limit: z.coerce.number().int().min(1).max(200).default(50),
   })
   .strict();
@@ -69,7 +69,7 @@ export type GoalListQuery = z.infer<typeof GoalListQuery>;
 export const RunDispatch = z
   .object({
     subtask_index: z.number().int().min(0),
-    agent_id: z.string().uuid().optional(),
+    agent_id: z.guid().optional(),
   })
   .strict();
 export type RunDispatch = z.infer<typeof RunDispatch>;
@@ -80,7 +80,7 @@ export const AgentCreate = z
   .object({
     kind: z.string().min(1).max(50),
     name: z.string().min(1).max(120),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).default({}),
   })
   .strict();
 export type AgentCreate = z.infer<typeof AgentCreate>;
@@ -88,7 +88,7 @@ export type AgentCreate = z.infer<typeof AgentCreate>;
 export const AgentPatch = z
   .object({
     name: z.string().min(1).max(120).optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     is_active: z.boolean().optional(),
   })
   .strict();

@@ -64,7 +64,7 @@ services:
   # =========================================================================
   postgres:
     <<: [*restart-policy, *default-logging]
-    image: postgres:16-alpine
+    image: postgres:18.4-alpine
     container_name: bc_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -88,7 +88,7 @@ services:
   # =========================================================================
   qdrant:
     <<: [*restart-policy, *default-logging]
-    image: qdrant/qdrant:v1.12.4
+    image: qdrant/qdrant:v1.18.1
     container_name: bc_qdrant
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
@@ -304,7 +304,7 @@ services:
   # =========================================================================
   nango-db:
     <<: [*restart-policy, *default-logging]
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: bc_nango_db
     environment:
       POSTGRES_USER: ${NANGO_DB_USER:-nango}
@@ -321,13 +321,13 @@ services:
 
   nango-redis:
     <<: [*restart-policy, *default-logging]
-    image: redis:7.2.4
+    image: redis:7.4.9
     container_name: bc_nango_redis
     networks: [bc_net]
 
   nango:
     <<: [*restart-policy, *default-logging]
-    image: nangohq/nango-server:hosted
+    image: nangohq/nango-server:hosted-0.70.4
     container_name: bc_nango
     # Nango ships amd64 only. On Apple Silicon, Docker Desktop emulates via
     # Rosetta — slower first-run but works.
@@ -431,7 +431,7 @@ services:
   # =========================================================================
   neo4j:
     <<: [*restart-policy, *default-logging]
-    image: neo4j:5.26.2
+    image: neo4j:5.26.26
     container_name: bc_neo4j
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
@@ -491,7 +491,7 @@ services:
   # =========================================================================
   pgadmin:
     <<: [*restart-policy, *default-logging]
-    image: dpage/pgadmin4:8.13
+    image: dpage/pgadmin4:9.15.0
     container_name: bc_pgadmin
     profiles: ["tools"]
     environment:
