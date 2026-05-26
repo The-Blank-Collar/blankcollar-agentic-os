@@ -15,6 +15,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import type pg from "pg";
 
 import { createHash } from "node:crypto";
 
@@ -284,7 +285,7 @@ export async function outcomeRoutes(app: FastifyInstance): Promise<void> {
 // -- internals -------------------------------------------------------------
 
 async function insertOutcome(
-  client: import("pg").PoolClient,
+  client: pg.PoolClient,
   orgId: string,
   input: {
     run_id: string | null;

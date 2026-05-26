@@ -37,7 +37,6 @@ function fromAddress(): string {
 }
 
 const consoleProvider: Provider = async (letter) => {
-  // eslint-disable-next-line no-console
   console.log(
     `[mail/console] from=${fromAddress()} to=${letter.to} subject=${JSON.stringify(letter.subject)}\n` +
       `--- text ---\n${letter.text}\n--- end ---`,

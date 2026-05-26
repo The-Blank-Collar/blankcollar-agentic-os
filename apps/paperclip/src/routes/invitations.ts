@@ -35,11 +35,11 @@ import { withOrgScope, withSystemScope } from "../db.js";
 import { send as sendMail } from "../mail/index.js";
 import { invitation as invitationTemplate } from "../mail/templates.js";
 import {
-  InvitableRole,
   InvitationAccept,
   InvitationCreate,
   InvitationListQuery,
 } from "../schemas.js";
+import type { InvitableRole } from "../schemas.js";
 import { resolveCallerScope } from "../scope.js";
 
 type InvitationRow = {

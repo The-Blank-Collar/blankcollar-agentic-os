@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ORIG_ENV = { ...process.env };
 
-describe("requireConfig", () => {
+describe("requireConfig (Phase S2.7 — soft validation)", () => {
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...ORIG_ENV };
@@ -11,32 +11,50 @@ describe("requireConfig", () => {
     process.env = { ...ORIG_ENV };
   });
 
-  it("throws when PORTKEY_API_KEY is missing", async () => {
+  // Sprint S2.7 made Portkey OPTIONAL. requireConfig now warns + returns
+  // a { fakeLlm, warnings } result instead of throwing, so OSS local
+  // installs can `make bootstrap` without any API keys. The gateway
+  // transparently falls back to FakeLLM.
+
+  it("returns fakeLlm=true and a warning when PORTKEY_API_KEY is missing", async () => {
     delete process.env.PORTKEY_API_KEY;
     process.env.PORTKEY_VIRTUAL_KEY_ANTHROPIC = "vk-test";
     const { requireConfig } = await import("../src/config.js");
-    expect(() => requireConfig()).toThrowError(/PORTKEY_API_KEY/);
+    const result = requireConfig();
+    expect(result.fakeLlm).toBe(true);
+    expect(result.warnings.join(" ")).toMatch(/PORTKEY_API_KEY/);
   });
 
-  it("throws when PORTKEY_VIRTUAL_KEY_ANTHROPIC is missing", async () => {
+  it("warns when PORTKEY_API_KEY is set but legacy routing has no virtual key", async () => {
     process.env.PORTKEY_API_KEY = "pk-test";
     delete process.env.PORTKEY_VIRTUAL_KEY_ANTHROPIC;
+    process.env.PAPERCLIP_LLM_MODEL = "claude-sonnet-4-6"; // plain name → legacy routing
     const { requireConfig } = await import("../src/config.js");
-    expect(() => requireConfig()).toThrowError(/PORTKEY_VIRTUAL_KEY_ANTHROPIC/);
+    const result = requireConfig();
+    expect(result.fakeLlm).toBe(false);
+    expect(result.warnings.join(" ")).toMatch(/PORTKEY_VIRTUAL_KEY_ANTHROPIC/);
   });
 
-  it("lists all missing keys in a single error", async () => {
-    delete process.env.PORTKEY_API_KEY;
+  it("returns clean (no warnings) when Model Catalog routing is used with no VK", async () => {
+    process.env.PORTKEY_API_KEY = "pk-test";
     delete process.env.PORTKEY_VIRTUAL_KEY_ANTHROPIC;
+    // `@workspace/model` syntax means Portkey routes via Model Catalog,
+    // which doesn't need the legacy virtual-key header.
+    process.env.PAPERCLIP_LLM_MODEL = "@blankcollar/claude-sonnet-4-5-20250929";
     const { requireConfig } = await import("../src/config.js");
-    expect(() => requireConfig()).toThrowError(/PORTKEY_API_KEY.*PORTKEY_VIRTUAL_KEY_ANTHROPIC/s);
+    const result = requireConfig();
+    expect(result.fakeLlm).toBe(false);
+    expect(result.warnings).toEqual([]);
   });
 
-  it("succeeds when all required env vars are set", async () => {
+  it("returns clean when both Portkey vars are set (legacy routing)", async () => {
     process.env.PORTKEY_API_KEY = "pk-test";
     process.env.PORTKEY_VIRTUAL_KEY_ANTHROPIC = "vk-test";
+    process.env.PAPERCLIP_LLM_MODEL = "claude-sonnet-4-6";
     const { requireConfig } = await import("../src/config.js");
-    expect(() => requireConfig()).not.toThrow();
+    const result = requireConfig();
+    expect(result.fakeLlm).toBe(false);
+    expect(result.warnings).toEqual([]);
   });
 });
 

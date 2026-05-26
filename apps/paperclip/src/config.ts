@@ -134,7 +134,6 @@ export function requireConfig(): { fakeLlm: boolean; warnings: string[] } {
     );
   }
   for (const w of warnings) {
-    // eslint-disable-next-line no-console
     console.warn(`[config] ${w}`);
   }
   return { fakeLlm: !config.portkeyApiKey, warnings };
