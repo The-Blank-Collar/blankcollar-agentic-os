@@ -1661,19 +1661,42 @@ export async function applyAdditiveMigrations(
   // The loop's resilience is critical: we ship dozens of additive
   // tables across phases, and a transient quirk in one shouldn't keep
   // the others (and any features that depend on them) from existing.
+  //
+  // We also loop the whole array up to 3 times. A few statements in
+  // the list have forward-dependency bugs (e.g. ALTER TABLE ops.tool
+  // appears before CREATE TABLE ops.tool further down the array).
+  // Every statement is idempotent (IF NOT EXISTS / IF EXISTS guards),
+  // so a second pass catches anything that failed because of a still-
+  // unborn dependency in pass 1. Convergence is typically reached on
+  // pass 2; pass 3 is a defence-in-depth safety net.
+  const MAX_PASSES = 3;
+  let pass = 0;
+  let lastOk = -1;
   let ok = 0;
-  const failures: { excerpt: string; error: string }[] = [];
-  for (const sql of ADDITIVE_MIGRATIONS) {
-    try {
-      await query(sql);
-      ok++;
-    } catch (err) {
-      const excerpt = sql.replace(/\s+/g, " ").trim().slice(0, 120);
-      const message = err instanceof Error ? err.message : String(err);
-      failures.push({ excerpt, error: message });
+  let failures: { excerpt: string; error: string }[] = [];
+  while (pass < MAX_PASSES) {
+    pass++;
+    ok = 0;
+    failures = [];
+    for (const sql of ADDITIVE_MIGRATIONS) {
+      try {
+        await query(sql);
+        ok++;
+      } catch (err) {
+        const excerpt = sql.replace(/\s+/g, " ").trim().slice(0, 120);
+        const message = err instanceof Error ? err.message : String(err);
+        failures.push({ excerpt, error: message });
+      }
     }
+    // Converged when nothing failed, or when the success count stops
+    // improving (we've extracted all we can).
+    if (failures.length === 0 || ok === lastOk) break;
+    lastOk = ok;
   }
-  log.info(`bootstrap: additive migrations applied (${ok}/${ADDITIVE_MIGRATIONS.length} statements)`);
+  log.info(
+    `bootstrap: additive migrations applied (${ok}/${ADDITIVE_MIGRATIONS.length} statements` +
+      `${pass > 1 ? `, converged in ${pass} pass${pass === 1 ? "" : "es"}` : ""})`,
+  );
   if (failures.length > 0) {
     const warn = log.warn ?? log.info;
     warn(`bootstrap: ${failures.length} additive migration(s) failed — see details below:`);
