@@ -73,7 +73,12 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - bc_postgres_data:/var/lib/postgresql/data
+      # NOTE: Postgres 18 changed mount conventions — data lives in a
+      # major-version subdirectory inside this path, not directly here.
+      # See https://github.com/docker-library/postgres/pull/1259.
+      # Mounting at /var/lib/postgresql/data (the old PG ≤17 convention)
+      # makes PG 18 refuse to start with "unused mount/volume" error.
+      - bc_postgres_data:/var/lib/postgresql
       # Init scripts run on first boot only (when data dir is empty)
       - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     healthcheck:
