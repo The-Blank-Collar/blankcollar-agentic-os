@@ -41,6 +41,7 @@ ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL} \
 # Vite alias `../../packages/shared/src/` continues to resolve.
 COPY apps/website/package.json apps/website/tsconfig.json apps/website/vite.config.ts apps/website/index.html ./
 COPY apps/website/src ./src
+COPY apps/website/public ./public
 
 # Shared package — must land at `/repo/packages/shared` for the alias to work.
 COPY packages/shared /repo/packages/shared
