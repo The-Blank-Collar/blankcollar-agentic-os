@@ -7,3 +7,4 @@ dist
 # folder so future files there get tracked automatically.
 !src/data/
 !src/data/**
+.vercel
