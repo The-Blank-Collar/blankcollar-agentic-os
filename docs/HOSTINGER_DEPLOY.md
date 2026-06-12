@@ -294,6 +294,57 @@ The `probes.postgres.ok` field tells you if the DB connection works.
 
 ---
 
+## Personal headless mode
+
+Run the OS as your own assistant — backend + channels only, no dashboard.
+You talk to it through Telegram (later Slack / WhatsApp); it handles your
+goals, memory, email, and files. Single user, no billing, no sign-up flow.
+
+On top of the standard flow above (steps 0–8), three changes:
+
+### 1. Activate the personal overlay in `.env`
+
+```env
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.personal.yml
+```
+
+Every `docker compose` and `make` command picks this up automatically.
+The overlay parks the `website` container behind an opt-in profile, so the
+stack comes up headless. (Want the dashboard back temporarily?
+`docker compose --profile frontend up -d website`.)
+
+Since there's no dashboard, you can skip the Supabase + Stripe sections
+entirely. Leave `PAPERCLIP_AUTH_ENFORCE=false` — the API stays on the
+internal network, and the only public surfaces are the webhook receivers,
+each guarded by its own secret.
+
+### 2. Make it yours
+
+```bash
+make personal NAME="Kristian Kabashi" EMAIL=you@example.com
+```
+
+Idempotent: creates the `blankcollar-personal` org with you as owner, hires
+the Hermes / OpenClaw / LangGraph roster, seeds the weekly self-audit
+routine, persists `PAPERCLIP_DEFAULT_ORG_SLUG` into `.env`, and restarts
+paperclip pointed at your org.
+
+### 3. Wire Telegram (your phone is the frontend now)
+
+Follow `docs/TELEGRAM.md` steps 1–2 (BotFather token + webhook secret in
+`.env`) — then register the webhook against your public domain. No ngrok
+needed on a VPS:
+
+```bash
+./infra/scripts/setup-telegram.sh
+```
+
+Message your bot. The full cascade (capture → goal → Hermes → reply) lands
+back in the chat in ~4–6 s. The daily briefing routine and IMAP ingest
+(`agent@` mailbox, step 5) work the same as in the standard deploy.
+
+---
+
 ## Production sanity checklist
 
 - [ ] `make preflight` exits 0 (no hard errors; warnings reviewed)
