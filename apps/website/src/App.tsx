@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Sidebar } from "./shell/Sidebar";
 import { Topbar } from "./shell/Topbar";
 import { Dashboard } from "./pages/Dashboard";
@@ -232,7 +232,7 @@ export default function App() {
     return CRUMBS[page] ?? ["Studio"];
   })();
 
-  let content: JSX.Element;
+  let content: ReactElement;
   switch (page) {
     case "goal":
       content = (

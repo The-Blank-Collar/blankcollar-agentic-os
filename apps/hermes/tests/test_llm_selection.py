@@ -2,13 +2,14 @@
 
 Doesn't make real API calls — just checks `make_llm()` picks the right
 class based on which env vars are set, and `require_runtime_config()`
-fails fast on missing keys. We monkey-patch the SDK so the constructor
+soft-warns on missing keys without throwing (S2.7). We monkey-patch the SDK so the constructor
 doesn't try to validate credentials.
 """
 
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 import types
 
@@ -86,26 +87,35 @@ def test_fake_when_only_virtual_key_set(monkeypatch: pytest.MonkeyPatch) -> None
     assert instance.name == "fake"
 
 
-def test_require_runtime_config_raises_when_keys_missing(
+def test_require_runtime_config_warns_when_keys_missing(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """S2.7 soft-validation: missing creds warn into FakeLLM mode, never raise."""
     _clear_legacy(monkeypatch)
     monkeypatch.delenv("PORTKEY_API_KEY", raising=False)
     monkeypatch.delenv("PORTKEY_VIRTUAL_KEY_ANTHROPIC", raising=False)
     config_mod, _ = _reload_modules()
-    with pytest.raises(RuntimeError, match="PORTKEY_API_KEY"):
-        config_mod.require_runtime_config()
+    with caplog.at_level(logging.WARNING):
+        config_mod.require_runtime_config()  # must not raise
+    assert "PORTKEY_API_KEY" in caplog.text
+    assert "FakeLLM" in caplog.text
 
 
-def test_require_runtime_config_lists_all_missing(
+def test_require_runtime_config_warns_on_partial_legacy_config(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """API key alone with a plain model name is the legacy 401 trap —
+    the warning must name the missing virtual key."""
     _clear_legacy(monkeypatch)
-    monkeypatch.delenv("PORTKEY_API_KEY", raising=False)
+    monkeypatch.setenv("PORTKEY_API_KEY", "pk-test")
     monkeypatch.delenv("PORTKEY_VIRTUAL_KEY_ANTHROPIC", raising=False)
+    monkeypatch.setenv("HERMES_MODEL", "claude-sonnet-4-6")
     config_mod, _ = _reload_modules()
-    with pytest.raises(RuntimeError, match="PORTKEY_VIRTUAL_KEY_ANTHROPIC"):
+    with caplog.at_level(logging.WARNING):
         config_mod.require_runtime_config()
+    assert "PORTKEY_VIRTUAL_KEY_ANTHROPIC" in caplog.text
 
 
 def test_require_runtime_config_succeeds_when_set(

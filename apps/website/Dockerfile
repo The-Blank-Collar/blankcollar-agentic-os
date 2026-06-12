@@ -9,7 +9,7 @@
 # build entry uses `context: .` and `dockerfile: apps/website/Dockerfile`.
 # =============================================================================
 
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /repo/apps/website
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # -----------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /repo/apps/website
@@ -50,7 +50,7 @@ RUN npm run build
 
 # -----------------------------------------------------------------------------
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # SPA routing: rewrite anything that's not a real file to index.html.
 RUN printf 'server {\n\

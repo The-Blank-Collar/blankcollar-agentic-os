@@ -6,8 +6,9 @@ only you can make.
 
 > Code-side, the product is feature-complete for an MVP launch. Auth, billing,
 > the agent loop, the memory layers, the goal-first UX, the brand — all in.
-> Last verified: 375 tests pass; static QA gate 14/14 green on the upgraded
-> stack (Postgres 18, TypeScript 6, Zod 4, vitest 4, jose 6, Node 24).
+> Last verified: 437 tests pass across all 10 packages; static QA gates green
+> on the refreshed stack (Postgres 18, TypeScript 6, Zod 4, React 19, Vite 8,
+> vitest 4, jose 6, Node 24, structlog 26, neo4j 5.26 LTS).
 
 ## P0 — Required before you take a real payment
 

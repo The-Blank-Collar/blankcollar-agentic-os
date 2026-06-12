@@ -1,4 +1,4 @@
-import type { CSSProperties, SVGProps } from "react";
+import type { CSSProperties, ReactElement, SVGProps } from "react";
 
 export type IconName =
   | "home" | "target" | "brain" | "users" | "skills" | "plug" | "activity"
@@ -27,7 +27,7 @@ export const I = ({ name, size = 14, stroke = 1.5, ...rest }: IProps) => {
     strokeLinejoin: "round",
     ...rest,
   };
-  const paths: Record<IconName, JSX.Element> = {
+  const paths: Record<IconName, ReactElement> = {
     home: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
     target: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></>,
     brain: <><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 2-5 3 3 0 0 0-2-5 3 3 0 0 0-3-3 3 3 0 0 0-6 0Z" /><path d="M9 8v8M15 8v8M9 12h6" /></>,
@@ -118,7 +118,7 @@ export const Sigil = ({ seed = "A", size = 32 }: { seed?: string; size?: number 
   const b = 4 + r(8);
   const stroke = "var(--ink)";
   const fillSoft = "var(--ink)";
-  let inner: JSX.Element;
+  let inner: ReactElement;
   if (variant === 0) {
     inner = <>
       <rect x="6" y="6" width="20" height="20" stroke={stroke} fill="none" strokeWidth="1" />

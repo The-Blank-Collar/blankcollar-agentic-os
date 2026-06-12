@@ -8,12 +8,13 @@ dependencies = [
   "pydantic-settings>=2.14,<3",
   "httpx>=0.28,<1",
   "imap-tools>=1.13,<2",
-  "structlog>=25,<26",
+  "structlog>=26,<27",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=9,<10",
+  "pytest-asyncio>=1.4,<2",
   "ruff>=0.15,<1",
 ]
 
