@@ -1,0 +1,49 @@
+# =============================================================================
+# Blank Collar — Agentic OS · edge overlay (self-managed Caddy ingress)
+# -----------------------------------------------------------------------------
+# For VPS deploys WITHOUT Coolify (e.g. the Hostinger web-terminal path).
+# Runs Caddy as the only public-facing process: auto-TLS via Let's Encrypt
+# for the app domain + the two Nango OAuth domains, reverse-proxying into
+# bc_net. Config lives in infra/caddy/Caddyfile.
+#
+# Activate by appending it to COMPOSE_FILE in .env:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.personal.yml:docker-compose.caddy.yml
+#
+# Requires in .env: PUBLIC_DOMAIN, NANGO_PUBLIC_DOMAIN, NANGO_UI_DOMAIN,
+# ACME_EMAIL — and DNS A records for all three names → this VPS.
+#
+# NOT for Coolify deploys — Coolify runs its own proxy on 80/443.
+# =============================================================================
+
+services:
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: bc_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN}
+      NANGO_PUBLIC_DOMAIN: ${NANGO_PUBLIC_DOMAIN}
+      NANGO_UI_DOMAIN: ${NANGO_UI_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - bc_caddy_data:/data
+      - bc_caddy_config:/config
+    depends_on:
+      paperclip:
+        condition: service_started
+    networks: [bc_net]
+
+  # With Caddy terminating TLS on 80/443, paperclip no longer needs a host
+  # port of its own — it's reachable as paperclip:80 inside bc_net.
+  paperclip:
+    ports: !reset []
+
+volumes:
+  bc_caddy_data:
+  bc_caddy_config:

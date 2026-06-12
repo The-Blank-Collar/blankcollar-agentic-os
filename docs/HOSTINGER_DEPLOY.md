@@ -302,16 +302,36 @@ goals, memory, email, and files. Single user, no billing, no sign-up flow.
 
 On top of the standard flow above (steps 0–8), three changes:
 
-### 1. Activate the personal overlay in `.env`
+### 0. Prep the box (Hostinger web Terminal works fine — no SSH needed)
+
+If your VPS template shipped with Traefik (Hostinger's "Docker and
+Traefik" image), it owns ports 80/443. Hand them to our Caddy:
+
+```bash
+docker ps --format '{{.Names}}' | grep -i traefik         # find it
+docker stop <name> && docker update --restart=no <name>   # park it
+```
+
+Then harden + prep (swap, firewall, fail2ban — skips the Coolify install):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/The-Blank-Collar/blankcollar-agentic-os/main/infra/scripts/cloud-bootstrap.sh | sudo SKIP_COOLIFY=1 bash
+```
+
+### 1. Activate the personal + edge overlays in `.env`
 
 ```env
-COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.personal.yml
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.personal.yml:docker-compose.caddy.yml
+PUBLIC_DOMAIN=os.blankcollar.ai        # or whatever subdomain you chose
 ```
 
 Every `docker compose` and `make` command picks this up automatically.
-The overlay parks the `website` container behind an opt-in profile, so the
-stack comes up headless. (Want the dashboard back temporarily?
-`docker compose --profile frontend up -d website`.)
+The personal overlay parks the `website` container behind an opt-in
+profile, so the stack comes up headless. (Want the dashboard back
+temporarily? `docker compose --profile frontend up -d website`.)
+The caddy overlay runs the only public-facing process — auto-TLS for
+`PUBLIC_DOMAIN` + the two Nango domains, per `infra/caddy/Caddyfile`.
+DNS: A records for all three names → the VPS IP.
 
 Since there's no dashboard, you can skip the Supabase + Stripe sections
 entirely. Leave `PAPERCLIP_AUTH_ENFORCE=false` — the API stays on the
