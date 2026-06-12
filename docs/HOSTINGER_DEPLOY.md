@@ -300,7 +300,25 @@ Run the OS as your own assistant — backend + channels only, no dashboard.
 You talk to it through Telegram (later Slack / WhatsApp); it handles your
 goals, memory, email, and files. Single user, no billing, no sign-up flow.
 
-On top of the standard flow above (steps 0–8), three changes:
+### Fastest path — one command
+
+Point DNS first (A records for `os`, `nango`, `nango-ui` → the VPS IP),
+create a bot with @BotFather, then paste this into the VPS terminal
+(Hostinger's web Terminal button works — no SSH setup needed):
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/The-Blank-Collar/blankcollar-agentic-os/main/infra/scripts/personal-deploy.sh)
+```
+
+It parks the template's Traefik, hardens the box, clones the repo,
+generates every internal secret, prompts you for the bot token + Portkey
+keys (Enter to skip → FakeLLM mode), builds, health-checks, creates your
+single-user org, and registers the Telegram webhook. Idempotent — re-run
+it any time; it never rotates secrets a live database already uses.
+Everything logs to `/root/bc-deploy.log`.
+
+The sections below describe the same steps manually, for when you want
+to understand or customise what the script does:
 
 ### 0. Prep the box (Hostinger web Terminal works fine — no SSH needed)
 
