@@ -34,9 +34,9 @@ export type RunStatus = z.infer<typeof RunStatus>;
 
 export const Scope = z
   .object({
-    org_id: z.string().uuid(),
-    department_id: z.string().uuid().nullable().optional(),
-    goal_id: z.string().uuid().nullable().optional(),
+    org_id: z.guid(),
+    department_id: z.guid().nullable().optional(),
+    goal_id: z.guid().nullable().optional(),
     role: RoleKind,
   })
   .strict();
@@ -48,12 +48,12 @@ export const GoalCreate = z
   .object({
     title: z.string().min(1).max(200),
     description: z.string().max(5_000).optional(),
-    department_id: z.string().uuid().nullable().optional(),
+    department_id: z.guid().nullable().optional(),
     kind: GoalKind.optional(),
     cron_expr: z.string().max(120).nullable().optional(),
-    due_at: z.string().datetime().nullable().optional(),
+    due_at: z.iso.datetime().nullable().optional(),
     target_value: z.string().max(200).nullable().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type GoalCreate = z.infer<typeof GoalCreate>;
@@ -64,13 +64,13 @@ export const GoalPatch = z
     description: z.string().max(5_000).optional(),
     kind: GoalKind.optional(),
     cron_expr: z.string().max(120).nullable().optional(),
-    due_at: z.string().datetime().nullable().optional(),
+    due_at: z.iso.datetime().nullable().optional(),
     progress: z.number().min(0).max(100).nullable().optional(),
     target_value: z.string().max(200).nullable().optional(),
     actual_value: z.string().max(200).nullable().optional(),
     delta_label: z.string().max(120).nullable().optional(),
     track_state: z.string().max(40).nullable().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     status: GoalStatus.optional(),
   })
   .strict();
@@ -80,7 +80,7 @@ export const GoalListQuery = z
   .object({
     status: GoalStatus.optional(),
     kind: GoalKind.optional(),
-    department_id: z.string().uuid().optional(),
+    department_id: z.guid().optional(),
     // Filter to active/draft goals whose most-recent run is older than N days
     // (or have no runs at all and were created > N days ago). Backs the
     // "stalled" report — what isn't moving?
@@ -99,7 +99,7 @@ export const KeyResultCreate = z
     current_value: z.string().max(200).nullable().optional(),
     unit: z.string().max(40).nullable().optional(),
     weight: z.number().nonnegative().max(100).optional(),
-    due_at: z.string().datetime().nullable().optional(),
+    due_at: z.iso.datetime().nullable().optional(),
   })
   .strict();
 export type KeyResultCreate = z.infer<typeof KeyResultCreate>;
@@ -111,7 +111,7 @@ export const KeyResultPatch = z
     current_value: z.string().max(200).nullable().optional(),
     unit: z.string().max(40).nullable().optional(),
     weight: z.number().nonnegative().max(100).optional(),
-    due_at: z.string().datetime().nullable().optional(),
+    due_at: z.iso.datetime().nullable().optional(),
   })
   .strict();
 export type KeyResultPatch = z.infer<typeof KeyResultPatch>;
@@ -157,7 +157,7 @@ export const CaptureCreate = z
     raw_content: z.string().min(1).max(8_000),
     source: CaptureSource.default("text"),
     kind: GoalKind.optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type CaptureCreate = z.infer<typeof CaptureCreate>;
@@ -179,7 +179,7 @@ export const SkillManifest = z
     agent_kind: z.string().min(1).max(50),
     title: z.string().min(1).max(200),
     description: z.string().max(2_000).optional(),
-    inputs: z.record(z.unknown()).default({}),
+    inputs: z.record(z.string(), z.unknown()).default({}),
     side_effects: SideEffects.default("read"),
     permissions: z
       .object({
@@ -212,7 +212,7 @@ export const RoutineTriggerCreate = z
     // For event triggers: { action: "decision.approve", match: { ... } }
     // For api triggers:   { endpoint_token: "secret-token" } (auto-generated if omitted)
     // For schedule:       { cron_expr: "0 9 * * 1" }
-    trigger_spec: z.record(z.unknown()).default({}),
+    trigger_spec: z.record(z.string(), z.unknown()).default({}),
     enabled: z.boolean().default(true),
   })
   .strict();
@@ -220,7 +220,7 @@ export type RoutineTriggerCreate = z.infer<typeof RoutineTriggerCreate>;
 
 export const RoutineTriggerPatch = z
   .object({
-    trigger_spec: z.record(z.unknown()).optional(),
+    trigger_spec: z.record(z.string(), z.unknown()).optional(),
     enabled: z.boolean().optional(),
   })
   .strict();
@@ -234,7 +234,7 @@ export type OnboardingMode = z.infer<typeof OnboardingMode>;
 export const OnboardingStart = z
   .object({
     mode: OnboardingMode,
-    user_email: z.string().email().optional(),
+    user_email: z.email().optional(),
     user_name: z.string().max(120).optional(),
   })
   .strict();
@@ -257,7 +257,7 @@ export const AuditReportRunRequest = z
   .object({
     kind: AuditReportKind,
     period_hours: z.number().int().min(1).max(24 * 90).default(24 * 7),
-    user_id: z.string().uuid().optional(), // multi-user: scope to one teammate
+    user_id: z.guid().optional(), // multi-user: scope to one teammate
   })
   .strict();
 export type AuditReportRunRequest = z.infer<typeof AuditReportRunRequest>;
@@ -316,12 +316,12 @@ export type ApprovalResolution = z.infer<typeof ApprovalResolution>;
 export const ApprovalCreate = z
   .object({
     action_kind: z.string().min(1).max(120),
-    proposal: z.record(z.unknown()).default({}),
+    proposal: z.record(z.string(), z.unknown()).default({}),
     reason: z.string().max(2_000).optional(),
     urgency: ApprovalUrgency.default("normal"),
-    goal_id: z.string().uuid().optional(),
-    run_id: z.string().uuid().optional(),
-    requesting_agent_id: z.string().uuid().optional(),
+    goal_id: z.guid().optional(),
+    run_id: z.guid().optional(),
+    requesting_agent_id: z.guid().optional(),
     expires_in_hours: z.number().int().min(1).max(24 * 30).optional(),
   })
   .strict();
@@ -359,14 +359,14 @@ export const PaymentSettingsPatch = z
     default_limit_cents: z.number().int().min(0).max(1_000_000_000_000).optional(),
     default_period:      SpendingPeriod.optional(),
     approval_threshold:  z.number().int().min(0).max(1_000_000_000_000).optional(),
-    notify_email:        z.string().email().nullable().optional(),
+    notify_email:        z.email().nullable().optional(),
   })
   .strict();
 export type PaymentSettingsPatch = z.infer<typeof PaymentSettingsPatch>;
 
 export const SpendingLimitCreate = z
   .object({
-    agent_id:    z.string().uuid(),
+    agent_id:    z.guid(),
     limit_cents: z.number().int().min(0).max(1_000_000_000_000),
     period:      SpendingPeriod.default("monthly"),
     category:    z.string().min(1).max(80).nullable().optional(),
@@ -376,9 +376,9 @@ export type SpendingLimitCreate = z.infer<typeof SpendingLimitCreate>;
 
 export const PaymentRequestCreate = z
   .object({
-    agent_id:     z.string().uuid().nullable().optional(),
-    goal_id:      z.string().uuid().nullable().optional(),
-    run_id:       z.string().uuid().nullable().optional(),
+    agent_id:     z.guid().nullable().optional(),
+    goal_id:      z.guid().nullable().optional(),
+    run_id:       z.guid().nullable().optional(),
     amount_cents: z.number().int().min(1).max(1_000_000_000_000),
     currency:     z.string().length(3).default("USD"),
     vendor:       z.string().min(1).max(200),
@@ -401,7 +401,7 @@ export const DocumentMarkdownCreate = z
   .object({
     title:           z.string().min(1).max(500),
     content_md:      z.string().min(1).max(1_000_000),
-    source_url:      z.string().url().max(2_000).nullable().optional(),
+    source_url:      z.url().max(2_000).nullable().optional(),
     source_filename: z.string().min(1).max(255).nullable().optional(),
     mime_type:       z.string().min(1).max(120).default("text/markdown"),
     scope:           SkillScope.default("company"),
@@ -426,7 +426,7 @@ export type DocumentMarkdownCreate = z.infer<typeof DocumentMarkdownCreate>;
 export const UpstreamSourceCreate = z
   .object({
     name:                     z.string().min(1).max(200),
-    source_url:               z.string().url().max(2_000),
+    source_url:               z.url().max(2_000),
     scope:                    SkillScope.default("company"),
     tags:                     z.array(z.string().min(1).max(40)).max(20).default([]),
     refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).default(86_400),
@@ -460,7 +460,7 @@ export const ToolManifest = z
     transport:    ToolTransport,
     target:       z.string().min(1).max(500),
     env_keys:     z.array(z.string().min(1).max(120)).default([]),
-    input_schema: z.record(z.unknown()).default({}),
+    input_schema: z.record(z.string(), z.unknown()).default({}),
     /**
      * Tool name on the MCP server side. Defaults to the segment after
      * the last `.` in `id` (so `web.fetch` → `fetch`). Set explicitly
@@ -473,8 +473,8 @@ export type ToolManifest = z.infer<typeof ToolManifest>;
 
 export const ToolInvokeBody = z
   .object({
-    input:  z.record(z.unknown()).default({}),
-    run_id: z.string().uuid().nullable().optional(),
+    input:  z.record(z.string(), z.unknown()).default({}),
+    run_id: z.guid().nullable().optional(),
     /** Per-call timeout override in ms; capped server-side at 60s. */
     timeout_ms: z.number().int().min(1_000).max(60_000).optional(),
   })
@@ -502,7 +502,7 @@ export type RunMode = z.infer<typeof RunMode>;
 export const RunDispatch = z
   .object({
     subtask_index: z.number().int().min(0),
-    agent_id: z.string().uuid().optional(),
+    agent_id: z.guid().optional(),
     /** Phase 2.3.b: when 'simulation', no real runs are queued — the
      *  endpoint returns a "would have done" report instead. */
     mode: RunMode.default("live"),
@@ -528,7 +528,7 @@ export const AgentCreate = z
   .object({
     kind: z.string().min(1).max(50),
     name: z.string().min(1).max(120),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).default({}),
   })
   .strict();
 export type AgentCreate = z.infer<typeof AgentCreate>;
@@ -536,7 +536,7 @@ export type AgentCreate = z.infer<typeof AgentCreate>;
 export const AgentPatch = z
   .object({
     name: z.string().min(1).max(120).optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     is_active: z.boolean().optional(),
   })
   .strict();
@@ -563,7 +563,7 @@ export type AutonomyScopeKind = z.infer<typeof AutonomyScopeKind>;
 export const AutonomyModeUpsert = z
   .object({
     scope_kind: AutonomyScopeKind,
-    scope_id: z.string().uuid().nullable().optional(),
+    scope_id: z.guid().nullable().optional(),
     mode: AutonomyMode,
     spending_cap_cents: z.number().int().min(0).max(1_000_000_000_000).nullable().optional(),
     notes: z.string().max(500).nullable().optional(),
@@ -580,9 +580,9 @@ export type AutonomyModeUpsert = z.infer<typeof AutonomyModeUpsert>;
 
 export const AutonomyResolveQuery = z
   .object({
-    department_id: z.string().uuid().optional(),
-    agent_id: z.string().uuid().optional(),
-    skill_id: z.string().uuid().optional(),
+    department_id: z.guid().optional(),
+    agent_id: z.guid().optional(),
+    skill_id: z.guid().optional(),
   })
   .strict();
 export type AutonomyResolveQuery = z.infer<typeof AutonomyResolveQuery>;
@@ -595,7 +595,7 @@ export type SafeguardScopeKind = z.infer<typeof SafeguardScopeKind>;
 export const SafeguardUpsert = z
   .object({
     scope_kind: SafeguardScopeKind,
-    scope_id: z.string().uuid().nullable().optional(),
+    scope_id: z.guid().nullable().optional(),
     content_md: z.string().min(0).max(100_000),
   })
   .strict()
@@ -631,9 +631,9 @@ export const SkillDraftPatch = z
       .max(120)
       .regex(/^[a-z0-9._-]+$/, "slug must be lowercase [a-z0-9._-]")
       .optional(),
-    steps:          z.array(z.record(z.unknown())).max(50).optional(),
+    steps:          z.array(z.record(z.string(), z.unknown())).max(50).optional(),
     inferred_tools: z.array(z.string().max(120)).max(20).optional(),
-    params_schema:  z.record(z.unknown()).optional(),
+    params_schema:  z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type SkillDraftPatch = z.infer<typeof SkillDraftPatch>;
@@ -665,7 +665,7 @@ export const ConnectorCreate = z
     name:                     z.string().min(1).max(200),
     scope:                    SkillScope.default("company"),
     nango_connection_id:      z.string().max(200).nullable().optional(),
-    config:                   z.record(z.unknown()).default({}),
+    config:                   z.record(z.string(), z.unknown()).default({}),
     refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).default(3_600),
   })
   .strict();
@@ -676,7 +676,7 @@ export const ConnectorPatch = z
     name:                     z.string().min(1).max(200).optional(),
     scope:                    SkillScope.optional(),
     nango_connection_id:      z.string().max(200).nullable().optional(),
-    config:                   z.record(z.unknown()).optional(),
+    config:                   z.record(z.string(), z.unknown()).optional(),
     refresh_interval_seconds: z.number().int().min(60).max(30 * 24 * 3_600).optional(),
     enabled:                  z.boolean().optional(),
   })
@@ -688,7 +688,7 @@ export const ConnectorPaste = z
     external_id:  z.string().min(1).max(200),
     title:        z.string().min(1).max(500),
     content_md:   z.string().min(1).max(1_000_000),
-    metadata:     z.record(z.unknown()).optional(),
+    metadata:     z.record(z.string(), z.unknown()).optional(),
     tags:         z.array(z.string().min(1).max(40)).max(20).optional(),
   })
   .strict();
@@ -708,14 +708,14 @@ export type OutcomeMetricSource = z.infer<typeof OutcomeMetricSource>;
 
 export const OutcomeCreate = z
   .object({
-    run_id:      z.string().uuid().nullable().optional(),
-    goal_id:     z.string().uuid().nullable().optional(),
+    run_id:      z.guid().nullable().optional(),
+    goal_id:     z.guid().nullable().optional(),
     agent_kind:  z.string().min(1).max(40).nullable().optional(),
     skill_slug:  z.string().min(1).max(120).nullable().optional(),
     output_kind: z.string().min(1).max(60),
     title:       z.string().min(1).max(500),
     content_md:  z.string().min(1).max(1_000_000),
-    metadata:    z.record(z.unknown()).optional(),
+    metadata:    z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type OutcomeCreate = z.infer<typeof OutcomeCreate>;
@@ -737,7 +737,7 @@ export const OutcomeMetricCreate = z
     unit:      z.string().max(40).nullable().optional(),
     direction: OutcomeMetricDirection.default("higher_is_better"),
     source:    OutcomeMetricSource.default("manual"),
-    metadata:  z.record(z.unknown()).optional(),
+    metadata:  z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type OutcomeMetricCreate = z.infer<typeof OutcomeMetricCreate>;
@@ -772,7 +772,51 @@ export const AuditQuery = z
   .object({
     action: z.string().optional(),
     target_type: z.string().optional(),
+    /** Filter to a specific actor (user or agent) UUID. */
+    actor_id: z.guid().optional(),
+    /** ISO timestamp; rows with created_at >= since. */
+    since: z.iso.datetime().optional(),
+    /** ISO timestamp; rows with created_at < until. */
+    until: z.iso.datetime().optional(),
     limit: z.coerce.number().int().min(1).max(500).default(100),
   })
   .strict();
 export type AuditQuery = z.infer<typeof AuditQuery>;
+
+// ---------- Invitations (Phase 6.b) ---------------------------------------
+
+export const InvitationStatus = z.enum(["pending", "accepted", "revoked", "expired"]);
+export type InvitationStatus = z.infer<typeof InvitationStatus>;
+
+/** Roles invitable from the UI — `agent` is reserved for the system. */
+export const InvitableRole = z.enum([
+  "owner",
+  "department_lead",
+  "team_member",
+  "auditor",
+]);
+export type InvitableRole = z.infer<typeof InvitableRole>;
+
+export const InvitationCreate = z
+  .object({
+    email: z.email().max(320),
+    role: InvitableRole.default("team_member"),
+    department_id: z.guid().nullable().optional(),
+  })
+  .strict();
+export type InvitationCreate = z.infer<typeof InvitationCreate>;
+
+export const InvitationListQuery = z
+  .object({
+    status: InvitationStatus.optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+export type InvitationListQuery = z.infer<typeof InvitationListQuery>;
+
+export const InvitationAccept = z
+  .object({
+    full_name: z.string().min(1).max(120).optional(),
+  })
+  .strict();
+export type InvitationAccept = z.infer<typeof InvitationAccept>;

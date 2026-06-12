@@ -1,7 +1,7 @@
 {
   "name": "@blankcollar/cli",
   "version": "0.1.0",
-  "description": "bc — Blank Collar Agentic OS command-line interface",
+  "description": "bc \u2014 Blank Collar Agentic OS command-line interface",
   "private": true,
   "type": "module",
   "bin": {
@@ -22,11 +22,11 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "@types/node": "^22.9.0",
-    "eslint": "^9.14.0",
-    "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "typescript-eslint": "^8.13.0",
-    "vitest": "^2.1.5"
+    "@types/node": "^24.12.4",
+    "eslint": "^10.4.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
   }
 }

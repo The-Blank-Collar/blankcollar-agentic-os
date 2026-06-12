@@ -44,6 +44,9 @@ data/
 logs/
 *.log
 
+# --- TypeScript incremental build cache ---
+*.tsbuildinfo
+
 # --- claude / cursor scratch ---
 .claude/local/
 .cursor/local/

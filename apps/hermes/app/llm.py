@@ -55,13 +55,17 @@ class PortkeyLLM:
     ) -> None:
         from anthropic import AsyncAnthropic as _Client
 
+        # Model Catalog routing (`@workspace/model`) carries provider info
+        # in the model name; passing the legacy virtual-key header is a 400
+        # in that case. Only attach it when set.
+        headers: dict[str, str] = {"x-portkey-api-key": portkey_api_key}
+        if virtual_key:
+            headers["x-portkey-virtual-key"] = virtual_key
+
         self._client = _Client(
             api_key="portkey-handles-this",
             base_url=base_url,
-            default_headers={
-                "x-portkey-api-key": portkey_api_key,
-                "x-portkey-virtual-key": virtual_key,
-            },
+            default_headers=headers,
         )
         self._model = model
         self._max_tokens = max_tokens
@@ -107,7 +111,18 @@ class FakeLLM:
 
 
 def make_llm() -> LLM:
-    if settings.portkey_api_key and settings.portkey_virtual_key_anthropic:
+    import os
+
+    fake_override = os.environ.get("BLANKCOLLAR_FAKE_LLM", "").lower() == "true"
+    if fake_override:
+        log.warning("hermes.llm=FAKE (BLANKCOLLAR_FAKE_LLM=true)")
+        return FakeLLM()
+
+    using_model_catalog = settings.model.startswith("@")
+    has_creds = settings.portkey_api_key and (
+        using_model_catalog or settings.portkey_virtual_key_anthropic
+    )
+    if has_creds:
         log.info(
             "hermes.llm=portkey base=%s model=%s",
             settings.portkey_base_url,
@@ -115,14 +130,15 @@ def make_llm() -> LLM:
         )
         return PortkeyLLM(
             portkey_api_key=settings.portkey_api_key,
-            virtual_key=settings.portkey_virtual_key_anthropic,
+            virtual_key=settings.portkey_virtual_key_anthropic or "",
             base_url=settings.portkey_base_url,
             model=settings.model,
             max_tokens=settings.max_tokens,
         )
 
     log.warning(
-        "hermes.llm=FAKE — set PORTKEY_API_KEY + PORTKEY_VIRTUAL_KEY_ANTHROPIC "
-        "for real reasoning. Service stays runnable; answers are deterministic stand-ins."
+        "hermes.llm=FAKE — set PORTKEY_API_KEY (and either HERMES_MODEL=@workspace/model "
+        "or PORTKEY_VIRTUAL_KEY_ANTHROPIC) for real reasoning. Service stays runnable; "
+        "answers are deterministic stand-ins."
     )
     return FakeLLM()

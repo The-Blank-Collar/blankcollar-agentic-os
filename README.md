@@ -260,10 +260,12 @@ Paperclip is **Portkey-required at boot** — it refuses to start without a Port
 make setup-keys
 ```
 
-You'll be walked through 8 keys (only the first two are required):
+You'll be walked through 8 keys (**all optional** — the stack boots in
+FakeLLM mode out of the box and returns clearly-labelled canned
+responses until you wire up real credentials):
 
-1. `PORTKEY_API_KEY` — get one at [app.portkey.ai](https://app.portkey.ai/api-keys)
-2. `PORTKEY_VIRTUAL_KEY_ANTHROPIC` — create in Portkey dashboard → Virtual Keys → + Add → Anthropic
+1. `PORTKEY_API_KEY` — get one at [app.portkey.ai](https://app.portkey.ai/api-keys); flips paperclip + hermes from FakeLLM to real Claude
+2. `PORTKEY_VIRTUAL_KEY_ANTHROPIC` — create in Portkey dashboard → Virtual Keys → + Add → Anthropic; only needed for legacy routing (skip if you use Model Catalog refs like `@workspace/model-id`)
 3. `PORTKEY_VIRTUAL_KEY_OPENROUTER` — *(optional)* sibling virtual key for non-Anthropic models
 4. `ANTHROPIC_API_KEY` — *(optional)* used by Graphiti directly
 5. `OPENAI_API_KEY` — *(optional)* used by Graphiti + gbrain embeddings
@@ -271,7 +273,7 @@ You'll be walked through 8 keys (only the first two are required):
 7. `NANGO_SECRET_KEY` — *(optional)* for Workspace OAuth
 8. `SUPABASE_JWT_SECRET` — *(optional, Phase 6)*
 
-Hit Enter to skip any optional key. Walkthrough: [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md).
+Hit Enter to skip any key. Walkthrough: [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md).
 
 ### 4. Start the stack
 

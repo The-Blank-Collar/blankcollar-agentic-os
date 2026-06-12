@@ -1444,6 +1444,132 @@ const ADDITIVE_MIGRATIONS = [
      AS PERMISSIVE FOR ALL
      USING      (current_setting('app.system_scope', true) = 'true')
      WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // -- ops.goal_context — Phase 9.1 ---------------------------------------
+  // One markdown blob per goal, auto-loaded into every Hermes run scoped
+  // to that goal_id. Closes the "agents forget the project context
+  // between runs" gap. Lean by design — exactly one row per goal (UNIQUE
+  // constraint), no version history, no separate indexes (the unique
+  // covers the only lookup we do).
+  `CREATE TABLE IF NOT EXISTS ops.goal_context (
+     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id        uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     goal_id       uuid NOT NULL UNIQUE REFERENCES ops.goal(id) ON DELETE CASCADE,
+     content_md    text NOT NULL DEFAULT '',
+     content_hash  text,
+     created_at    timestamptz NOT NULL DEFAULT now(),
+     updated_at    timestamptz NOT NULL DEFAULT now()
+   );`,
+  `ALTER TABLE ops.goal_context ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE ops.goal_context FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON ops.goal_context;`,
+  `CREATE POLICY app_scope_org ON ops.goal_context
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON ops.goal_context;`,
+  `CREATE POLICY app_system_scope ON ops.goal_context
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // -- core.user_account additive columns (Phase 8.1) ---------------------
+  // The legacy schema has display_name + no updated_at. New code uses
+  // full_name and updated_at. Both columns coexist; new writes set
+  // full_name, old reads of display_name keep working.
+  `ALTER TABLE core.user_account
+     ADD COLUMN IF NOT EXISTS full_name  text,
+     ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();`,
+
+  // -- billing.subscription — Phase 7.b ------------------------------------
+  // One row per (org, stripe_subscription_id). Materialized from
+  // customer.subscription.* events. `tier` is derived from the price's
+  // metadata.tier (or `lookup_key`) so we don't have to know the live
+  // price IDs at compile time. NULL stripe_subscription_id = free tier
+  // / not yet subscribed.
+  `CREATE SCHEMA IF NOT EXISTS billing;`,
+  `DO $$ BEGIN
+     CREATE TYPE billing.subscription_status AS ENUM (
+       'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused'
+     );
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `CREATE TABLE IF NOT EXISTS billing.subscription (
+     id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id                   uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     stripe_customer_id       text,
+     stripe_subscription_id   text UNIQUE,
+     tier                     text NOT NULL DEFAULT 'free',
+     status                   billing.subscription_status NOT NULL DEFAULT 'active',
+     current_period_start     timestamptz,
+     current_period_end       timestamptz,
+     cancel_at_period_end     boolean NOT NULL DEFAULT false,
+     trial_end                timestamptz,
+     metadata                 jsonb NOT NULL DEFAULT '{}'::jsonb,
+     created_at               timestamptz NOT NULL DEFAULT now(),
+     updated_at               timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS subscription_org_uniq
+     ON billing.subscription (org_id);`,
+  `CREATE INDEX IF NOT EXISTS subscription_customer_idx
+     ON billing.subscription (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;`,
+  `ALTER TABLE billing.subscription ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE billing.subscription FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON billing.subscription;`,
+  `CREATE POLICY app_scope_org ON billing.subscription
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON billing.subscription;`,
+  `CREATE POLICY app_system_scope ON billing.subscription
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
+
+  // -- core.invitation — Phase 6.b ----------------------------------------
+  // Outstanding invitations to join an org. Tokens are opaque hex strings
+  // exchanged via the public `/api/invitations/by-token/:token` path. One
+  // pending invite per (org, lower(email)); accepting clears the partial-
+  // unique index so a re-invite can be sent later if the user leaves.
+  `DO $$ BEGIN
+     CREATE TYPE core.invitation_status AS ENUM ('pending', 'accepted', 'revoked', 'expired');
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+  `CREATE TABLE IF NOT EXISTS core.invitation (
+     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id              uuid NOT NULL REFERENCES core.organization(id) ON DELETE CASCADE,
+     email               text NOT NULL,
+     role                text NOT NULL DEFAULT 'team_member',
+     department_id       uuid REFERENCES core.department(id) ON DELETE SET NULL,
+     token               text NOT NULL UNIQUE,
+     status              core.invitation_status NOT NULL DEFAULT 'pending',
+     invited_by_user_id  uuid REFERENCES core.user_account(id) ON DELETE SET NULL,
+     expires_at          timestamptz NOT NULL DEFAULT (now() + interval '7 days'),
+     accepted_at         timestamptz,
+     created_at          timestamptz NOT NULL DEFAULT now(),
+     updated_at          timestamptz NOT NULL DEFAULT now()
+   );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS invitation_pending_uniq
+     ON core.invitation (org_id, lower(email))
+     WHERE status = 'pending';`,
+  `CREATE INDEX IF NOT EXISTS invitation_org_idx
+     ON core.invitation (org_id, created_at DESC);`,
+  `ALTER TABLE core.invitation ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE core.invitation FORCE  ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS app_scope_org ON core.invitation;`,
+  `CREATE POLICY app_scope_org ON core.invitation
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true))
+     WITH CHECK (current_setting('app.org_id', true) = ''
+                 OR org_id::text = current_setting('app.org_id', true));`,
+  `DROP POLICY IF EXISTS app_system_scope ON core.invitation;`,
+  `CREATE POLICY app_system_scope ON core.invitation
+     AS PERMISSIVE FOR ALL
+     USING      (current_setting('app.system_scope', true) = 'true')
+     WITH CHECK (current_setting('app.system_scope', true) = 'true');`,
 ];
 
 /**
@@ -1500,6 +1626,9 @@ const STRICT_RLS_TABLES_REQUIRED_ORG = [
   "ops.outcome",
   "ops.outcome_metric",
   "ops.subtask",
+  "core.invitation",
+  "billing.subscription",
+  "ops.goal_context",
 ];
 
 function buildStrictMigrations(): string[] {
@@ -1532,19 +1661,42 @@ export async function applyAdditiveMigrations(
   // The loop's resilience is critical: we ship dozens of additive
   // tables across phases, and a transient quirk in one shouldn't keep
   // the others (and any features that depend on them) from existing.
+  //
+  // We also loop the whole array up to 3 times. A few statements in
+  // the list have forward-dependency bugs (e.g. ALTER TABLE ops.tool
+  // appears before CREATE TABLE ops.tool further down the array).
+  // Every statement is idempotent (IF NOT EXISTS / IF EXISTS guards),
+  // so a second pass catches anything that failed because of a still-
+  // unborn dependency in pass 1. Convergence is typically reached on
+  // pass 2; pass 3 is a defence-in-depth safety net.
+  const MAX_PASSES = 3;
+  let pass = 0;
+  let lastOk = -1;
   let ok = 0;
-  const failures: { excerpt: string; error: string }[] = [];
-  for (const sql of ADDITIVE_MIGRATIONS) {
-    try {
-      await query(sql);
-      ok++;
-    } catch (err) {
-      const excerpt = sql.replace(/\s+/g, " ").trim().slice(0, 120);
-      const message = err instanceof Error ? err.message : String(err);
-      failures.push({ excerpt, error: message });
+  let failures: { excerpt: string; error: string }[] = [];
+  while (pass < MAX_PASSES) {
+    pass++;
+    ok = 0;
+    failures = [];
+    for (const sql of ADDITIVE_MIGRATIONS) {
+      try {
+        await query(sql);
+        ok++;
+      } catch (err) {
+        const excerpt = sql.replace(/\s+/g, " ").trim().slice(0, 120);
+        const message = err instanceof Error ? err.message : String(err);
+        failures.push({ excerpt, error: message });
+      }
     }
+    // Converged when nothing failed, or when the success count stops
+    // improving (we've extracted all we can).
+    if (failures.length === 0 || ok === lastOk) break;
+    lastOk = ok;
   }
-  log.info(`bootstrap: additive migrations applied (${ok}/${ADDITIVE_MIGRATIONS.length} statements)`);
+  log.info(
+    `bootstrap: additive migrations applied (${ok}/${ADDITIVE_MIGRATIONS.length} statements` +
+      `${pass > 1 ? `, converged in ${pass} pass${pass === 1 ? "" : "es"}` : ""})`,
+  );
   if (failures.length > 0) {
     const warn = log.warn ?? log.info;
     warn(`bootstrap: ${failures.length} additive migration(s) failed — see details below:`);

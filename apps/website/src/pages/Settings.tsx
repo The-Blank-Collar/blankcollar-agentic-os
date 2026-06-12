@@ -9,7 +9,15 @@ import type {
   ConnectorRow,
   ConnectorSyncResult,
   Department,
+  InvitableRole,
+  InvitationRow,
+  MemoryExploreResponse,
+  OnboardingDerived,
+  OnboardingProfile,
+  OrgMember,
   Organization,
+  PricingPlan,
+  SubscriptionRow,
   OutcomeMetricRow,
   OutcomeRow,
   PolicyEffect,
@@ -24,10 +32,12 @@ import { ChannelMark, I } from "../icons";
 import { api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { Empty, ErrorState, Loading } from "../components/States";
+import { Empty, ErrorState, InlineError, Loading } from "../components/States";
 
 type SectionId =
   | "overview"
+  | "onboarding"
+  | "memory"
   | "autonomy"
   | "safeguards"
   | "connectors"
@@ -42,6 +52,8 @@ type SectionId =
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "overview",    label: "Overview" },
+  { id: "onboarding",  label: "Onboarding" },
+  { id: "memory",      label: "Memory" },
   { id: "autonomy",    label: "Autonomy" },
   { id: "safeguards",  label: "Safeguards" },
   { id: "connectors",  label: "Connectors" },
@@ -59,7 +71,11 @@ const DEFAULT_ORG_SLUG: string =
   ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
     ?.VITE_DEFAULT_ORG_SLUG ?? "blankcollar-demo");
 
-export function Settings() {
+type Props = {
+  onOpenOnboarding?: () => void;
+};
+
+export function Settings({ onOpenOnboarding }: Props = {}) {
   const [section, setSection] = useState<SectionId>("overview");
   return (
     <div className="page">
@@ -104,6 +120,8 @@ export function Settings() {
 
         <div style={{ padding: "var(--pad-y) var(--pad-x)", overflow: "auto" }}>
           {section === "overview"    && <OverviewTab />}
+          {section === "onboarding"  && <OnboardingTab onReopen={onOpenOnboarding} />}
+          {section === "memory"      && <MemoryTab />}
           {section === "autonomy"    && <AutonomyTab />}
           {section === "safeguards"  && <SafeguardsTab />}
           {section === "connectors"  && <ConnectorsTab />}
@@ -1437,6 +1455,14 @@ const ROLE_MATRIX: [string, string, string, string, string][] = [
 ];
 
 function PeopleTab() {
+  const membersQ = useFetch<OrgMember[]>(() => api.listOrgMembers(), []);
+  const invitesQ = useFetch<InvitationRow[]>(() => api.listInvitations({ limit: 50 }), []);
+  const deptsQ = useFetch<Department[]>(() => api.listDepartments(), []);
+  const [composing, setComposing] = useState(false);
+
+  const pendingInvites = (invitesQ.data ?? []).filter((i) => i.status === "pending");
+  const otherInvites = (invitesQ.data ?? []).filter((i) => i.status !== "pending");
+
   return (
     <Section>
       <div className="h3" style={{ marginBottom: 8 }}>People & roles.</div>
@@ -1444,7 +1470,158 @@ function PeopleTab() {
         Three roles: <b>Founder</b> sees everything and decides. <b>Manager</b> runs a department.
         <b> Contributor</b> works on assigned tasks. Agents inherit the role of their manager.
       </div>
-      <ReadOnlyBanner what="Role assignment" />
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 8,
+        }}
+      >
+        <div className="eyebrow">Pending invitations ({pendingInvites.length})</div>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => setComposing(true)}
+        >
+          <I name="plus" size={12} /> Invite person
+        </button>
+      </div>
+
+      {composing && (
+        <InviteComposer
+          departments={deptsQ.data ?? []}
+          onClose={() => setComposing(false)}
+          onCreated={() => {
+            setComposing(false);
+            invitesQ.refetch();
+          }}
+        />
+      )}
+
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        {invitesQ.loading && !invitesQ.data && (
+          <div className="empty-hint" style={{ padding: 14 }}>Loading invitations…</div>
+        )}
+        {invitesQ.error && (
+          <div style={{ padding: 14 }}>
+            <InlineError
+              error={invitesQ.error}
+              context="invitations"
+              onRetry={() => invitesQ.refetch()}
+            />
+          </div>
+        )}
+        {!invitesQ.loading && pendingInvites.length === 0 && (
+          <div className="empty-hint" style={{ padding: 14 }}>
+            No pending invitations. Use <span className="mono">Invite person</span> to send one.
+          </div>
+        )}
+        {pendingInvites.map((inv, i) => (
+          <InvitationRowItem
+            key={inv.id}
+            inv={inv}
+            isFirst={i === 0}
+            onChanged={() => invitesQ.refetch()}
+          />
+        ))}
+        {otherInvites.length > 0 && (
+          <div
+            style={{
+              padding: "10px 16px",
+              borderTop: "1px solid var(--line)",
+              background: "var(--bg-2)",
+              fontSize: 11,
+              color: "var(--muted)",
+              fontFamily: "var(--font-mono)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            History · {otherInvites.length}
+          </div>
+        )}
+        {otherInvites.map((inv) => (
+          <InvitationRowItem key={inv.id} inv={inv} muted onChanged={() => invitesQ.refetch()} />
+        ))}
+      </div>
+
+      <div className="eyebrow" style={{ marginBottom: 8 }}>
+        Members ({membersQ.data?.length ?? "—"})
+      </div>
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 200px 140px 90px",
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--line)",
+            background: "var(--bg-2)",
+          }}
+        >
+          {["Member", "Role · Department", "Joined", "Active"].map((h) => (
+            <div key={h} className="eyebrow">{h}</div>
+          ))}
+        </div>
+        {membersQ.loading && !membersQ.data && (
+          <div className="empty-hint" style={{ padding: 16 }}>Loading members…</div>
+        )}
+        {membersQ.error && (
+          <div style={{ padding: 14 }}>
+            <InlineError
+              error={membersQ.error}
+              context="members"
+              onRetry={() => membersQ.refetch()}
+            />
+          </div>
+        )}
+        {(membersQ.data ?? []).length === 0 && !membersQ.loading && (
+          <div className="empty-hint" style={{ padding: 16 }}>
+            No members yet. Invite flow lands in Phase 6.b.
+          </div>
+        )}
+        {(membersQ.data ?? []).map((m, i) => (
+          <div
+            key={m.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 200px 140px 90px",
+              padding: "12px 16px",
+              borderTop: i ? "1px solid var(--line)" : 0,
+              fontSize: 13,
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 500 }}>{m.full_name ?? m.email}</div>
+              {m.full_name && (
+                <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 2 }}>
+                  {m.email}
+                </div>
+              )}
+            </div>
+            <div className="tiny mono" style={{ color: "var(--ink-2)" }}>
+              {(m.role ?? "no role")}
+              {m.department_name && ` · ${m.department_name}`}
+            </div>
+            <div className="tiny mono" style={{ color: "var(--muted)" }}>
+              {new Date(m.created_at).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </div>
+            <div className="tiny mono">
+              <span className={`dot ${m.is_active ? "pos" : "idle"}`} />{" "}
+              {m.is_active ? "active" : "inactive"}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <ReadOnlyBanner what="Role mutations on existing members" />
+
+      <div className="eyebrow" style={{ marginTop: 8, marginBottom: 8 }}>Capability matrix</div>
       <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
         <div
           style={{
@@ -1489,6 +1666,323 @@ function PeopleTab() {
     </Section>
   );
 }
+
+// -- Invitations -------------------------------------------------------------
+
+const ROLE_OPTIONS: { value: InvitableRole; label: string; hint: string }[] = [
+  { value: "team_member",     label: "Team member",     hint: "works on assigned tasks" },
+  { value: "department_lead", label: "Department lead", hint: "runs a department" },
+  { value: "auditor",         label: "Auditor",         hint: "read-only across the org" },
+  { value: "owner",           label: "Owner",           hint: "full access · use sparingly" },
+];
+
+function InviteComposer({
+  departments,
+  onClose,
+  onCreated,
+}: {
+  departments: Department[];
+  onClose: () => void;
+  onCreated: (created: InvitationRow) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<InvitableRole>("team_member");
+  const [departmentId, setDepartmentId] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState<InvitationRow | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (busy || !email.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const inv = await api.createInvitation({
+        email: email.trim(),
+        role,
+        department_id: departmentId || null,
+      });
+      setCreated(inv);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const close = (): void => {
+    if (created) onCreated(created);
+    onClose();
+  };
+
+  if (created) {
+    const url = created.invite_url ?? "";
+    return (
+      <div
+        style={{
+          padding: 16,
+          border: "1px solid var(--line)",
+          borderLeft: "2px solid var(--pos)",
+          borderRadius: "var(--radius-lg)",
+          background: "var(--bg-1)",
+          marginBottom: 16,
+        }}
+      >
+        <div className="eyebrow" style={{ color: "var(--pos)", marginBottom: 6 }}>
+          Invitation created
+        </div>
+        <div className="small" style={{ color: "var(--ink-2)", marginBottom: 12 }}>
+          Send this link to <span className="mono">{created.email}</span>. It expires in 7 days.
+          Email delivery isn't wired yet — share the link via your channel of choice.
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "stretch",
+            marginBottom: 12,
+          }}
+        >
+          <input
+            readOnly
+            value={url}
+            onFocus={(e) => e.currentTarget.select()}
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius)",
+              background: "var(--bg)",
+              color: "var(--ink-2)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+        <button type="button" className="btn btn-sm" onClick={close}>
+          Done
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      style={{
+        padding: 16,
+        border: "1px solid var(--line)",
+        borderRadius: "var(--radius-lg)",
+        background: "var(--bg-1)",
+        marginBottom: 16,
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div className="eyebrow">New invitation</div>
+      <input
+        autoFocus
+        type="email"
+        placeholder="email@theirdomain.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+        style={inputStyle}
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as InvitableRole)}
+          style={inputStyle}
+        >
+          {ROLE_OPTIONS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label} — {r.hint}
+            </option>
+          ))}
+        </select>
+        <select
+          value={departmentId}
+          onChange={(e) => setDepartmentId(e.target.value)}
+          style={inputStyle}
+        >
+          <option value="">No department</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </div>
+      {err && <div className="tiny" style={{ color: "var(--neg)" }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" className="btn btn-sm" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary btn-sm"
+          disabled={busy || !email.trim()}
+        >
+          {busy ? "Inviting…" : "Send invite"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function InvitationRowItem({
+  inv,
+  isFirst,
+  muted,
+  onChanged,
+}: {
+  inv: InvitationRow;
+  isFirst?: boolean;
+  muted?: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<"revoke" | "resend" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const onRevoke = async (): Promise<void> => {
+    if (busy) return;
+    if (!window.confirm(`Revoke invitation for ${inv.email}? Their link will stop working.`)) return;
+    setBusy("revoke");
+    setErr(null);
+    try {
+      await api.revokeInvitation(inv.id);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onResend = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("resend");
+    setErr(null);
+    try {
+      await api.resendInvitation(inv.id);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onCopy = async (): Promise<void> => {
+    if (!inv.invite_url) return;
+    try {
+      await navigator.clipboard.writeText(inv.invite_url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // ignore
+    }
+  };
+
+  const tone =
+    inv.status === "pending"   ? "var(--info)"
+    : inv.status === "accepted" ? "var(--pos)"
+    : inv.status === "revoked"  ? "var(--muted)"
+    : "var(--warn)";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 200px 220px",
+        gap: 12,
+        padding: "12px 16px",
+        borderTop: isFirst ? 0 : "1px solid var(--line)",
+        alignItems: "center",
+        opacity: muted ? 0.7 : 1,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{inv.email}</div>
+        <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 2 }}>
+          {inv.role}
+          {inv.department_name && ` · ${inv.department_name}`}
+          · expires {new Date(inv.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+        </div>
+        {err && <div className="tiny" style={{ color: "var(--neg)", marginTop: 4 }}>{err}</div>}
+      </div>
+      <div>
+        <span
+          className="mono"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: tone,
+          }}
+        >
+          {inv.status}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        {inv.status === "pending" && inv.invite_url && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onCopy}>
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        )}
+        {inv.status === "pending" && (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onResend}
+              disabled={busy !== null}
+            >
+              {busy === "resend" ? "…" : "Resend"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onRevoke}
+              disabled={busy !== null}
+            >
+              {busy === "revoke" ? "…" : "Revoke"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const inputStyle: CSSProperties = {
+  height: 34,
+  padding: "0 10px",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius)",
+  background: "var(--bg)",
+  color: "var(--ink)",
+  fontFamily: "var(--font-sans)",
+  fontSize: 13,
+  outline: "none",
+};
 
 // -- Governance --------------------------------------------------------------
 
@@ -1712,26 +2206,736 @@ function ChannelsTab() {
   );
 }
 
-// -- Billing -----------------------------------------------------------------
+// -- Onboarding --------------------------------------------------------------
 
-function BillingTab() {
+const DERIVED_LABELS: Array<{ key: keyof OnboardingDerived; label: string }> = [
+  { key: "voice_words",         label: "Voice" },
+  { key: "banned_words",        label: "Banned" },
+  { key: "decision_categories", label: "Always asks you" },
+  { key: "channels",            label: "Active channels" },
+  { key: "routine_hints",       label: "Cadence cues" },
+];
+
+function OnboardingTab({ onReopen }: { onReopen?: () => void }) {
+  const profileQ = useFetch<OnboardingProfile | null>(() => api.onboardingProfile(), []);
+  const profile = profileQ.data;
+  const derived = (profile?.derived ?? {}) as OnboardingDerived;
+  const totalAnswered = profile?.answers.length ?? 0;
+  const completed = Boolean(profile?.completed_at);
+  const briefingHour = derived.briefing_hour_utc;
+
+  const reopen = (): void => {
+    // Clear both storages — sessionStorage is the new home for the
+    // dismissal flag, but legacy users might still have it in
+    // localStorage from before the bug fix. Wipe both, then ask the
+    // App to open the wizard now.
+    window.localStorage.removeItem("bc.onboarding.dismissed");
+    window.sessionStorage.removeItem("bc.onboarding.dismissed");
+    onReopen?.();
+  };
+
   return (
     <Section>
-      <div className="h3" style={{ marginBottom: 24 }}>Billing.</div>
-      <ReadOnlyBanner what="Plan management" />
-      <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-        <div className="eyebrow" style={{ marginBottom: 8 }}>Current plan</div>
-        <div className="h2" style={{ marginBottom: 4 }}>
-          Studio · $1,200<span style={{ fontSize: 18, color: "var(--muted)" }}>/mo</span>
-        </div>
-        <div className="small" style={{ color: "var(--ink-2)" }}>
-          Up to 15 agents · unlimited humans · all MCPs
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <button className="btn btn-sm" disabled>Manage plan</button>
-          <button className="btn btn-sm" disabled>Invoices</button>
-        </div>
+      <div className="h3" style={{ marginBottom: 8 }}>Onboarding.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Your answers from the welcome interview shape the studio's voice, the
+        decisions Hermes always asks you about, and the routine drafts in your
+        Goals list. Re-open the wizard any time to refine them.
       </div>
+
+      {profileQ.loading && !profile && (
+        <div className="empty-hint" style={{ padding: 16 }}>Loading profile…</div>
+      )}
+      {profileQ.error && (
+        <InlineError
+          error={profileQ.error}
+          context="onboarding profile"
+          onRetry={() => profileQ.refetch()}
+          style={{ marginBottom: 14 }}
+        />
+      )}
+
+      {!profileQ.loading && !profile && (
+        <div className="card" style={{ padding: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>No profile yet</div>
+          <div className="small" style={{ color: "var(--ink-2)", marginBottom: 14 }}>
+            Run the wizard to capture your studio's voice and seed routine drafts.
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={reopen}
+            disabled={!onReopen}
+          >
+            Start onboarding
+          </button>
+        </div>
+      )}
+
+      {profile && (
+        <>
+          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
+              <div className="eyebrow">Status</div>
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10.5,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: completed ? "var(--pos)" : "var(--warn)",
+                }}
+              >
+                {completed ? "complete" : "in progress"}
+              </span>
+            </div>
+            <div style={{ fontSize: 14, marginBottom: 6 }}>
+              {totalAnswered} answer{totalAnswered === 1 ? "" : "s"} on file
+              {completed && profile.completed_at
+                ? ` · finished ${relativeTime(profile.completed_at)}`
+                : ""}
+            </div>
+            <div className="tiny mono" style={{ color: "var(--muted)" }}>
+              mode={profile.mode} · started {relativeTime(profile.created_at)}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={reopen}
+                disabled={!onReopen}
+              >
+                {completed ? "Re-open wizard" : "Resume wizard"}
+              </button>
+            </div>
+          </div>
+
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Derived from your answers</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: 10,
+              marginBottom: 16,
+            }}
+          >
+            {DERIVED_LABELS.map(({ key, label }) => {
+              const value = derived[key];
+              const hasValue = Array.isArray(value) && value.length > 0;
+              return (
+                <div
+                  key={String(key)}
+                  style={{
+                    padding: "12px 14px",
+                    border: "1px solid var(--line)",
+                    borderRadius: "var(--radius)",
+                    background: "var(--bg-1)",
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "var(--muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {label}
+                  </div>
+                  <div style={{ fontSize: 13, color: hasValue ? "var(--ink)" : "var(--muted)" }}>
+                    {hasValue ? (value as string[]).join(", ") : "—"}
+                  </div>
+                </div>
+              );
+            })}
+            {briefingHour !== undefined && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  border: "1px solid var(--line)",
+                  borderRadius: "var(--radius)",
+                  background: "var(--bg-1)",
+                }}
+              >
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Briefing hour (UTC)
+                </div>
+                <div style={{ fontSize: 13 }}>{briefingHour}</div>
+              </div>
+            )}
+          </div>
+
+          {profile.answers.length > 0 && (
+            <>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Answers</div>
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                {profile.answers.map((a, i) => (
+                  <div
+                    key={a.question_id}
+                    style={{
+                      padding: "14px 16px",
+                      borderTop: i ? "1px solid var(--line)" : 0,
+                    }}
+                  >
+                    <div className="tiny mono" style={{ color: "var(--muted)", marginBottom: 4 }}>
+                      {a.question_id} · {relativeTime(a.asked_at)}
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 4 }}>
+                      {a.question}
+                    </div>
+                    <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>
+                      {a.answer || <span style={{ color: "var(--muted)" }}>(skipped)</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+// -- Memory ------------------------------------------------------------------
+//
+// Read-only surface over the three memory layers we already store:
+//   - Identity:  ops.knowledge_doc (hot or scope=company)
+//   - Context:   ops.goal_context (per-goal markdown)
+//   - History:   brain.memory (Hermes episodes + Phase 9.2 wrap-ups)
+//
+// Editing flows live in their natural homes (Goal Detail for context,
+// the existing knowledge tooling for identity). This tab is the
+// single pane that says "here is what your agents know."
+
+function MemoryTab() {
+  const memQ = useFetch<MemoryExploreResponse>(
+    () => api.exploreMemory({ historyLimit: 50 }),
+    [],
+  );
+  const data = memQ.data;
+  const counts = {
+    identity: data?.identity.length ?? 0,
+    context: data?.context.length ?? 0,
+    history: data?.history.length ?? 0,
+  };
+
+  // Phase 9.5 — inline web ingest. One URL input, one button. Lean.
+  const [url, setUrl] = useState("");
+  const [ingestBusy, setIngestBusy] = useState(false);
+  const [ingestErr, setIngestErr] = useState<string | null>(null);
+  const [ingestOk, setIngestOk] = useState<string | null>(null);
+
+  const onIngest = async (): Promise<void> => {
+    const trimmed = url.trim();
+    if (!trimmed || ingestBusy) return;
+    setIngestBusy(true);
+    setIngestErr(null);
+    setIngestOk(null);
+    try {
+      const result = await api.ingestUrlToMemory({ url: trimmed });
+      setIngestOk(`Ingested "${result.title}" (${result.length.toLocaleString()} chars${result.truncated ? ", truncated" : ""})`);
+      setUrl("");
+      memQ.refetch();
+    } catch (e) {
+      setIngestErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIngestBusy(false);
+    }
+  };
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Memory.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Three layers. <b>Identity</b> is what every agent always knows about
+        your studio. <b>Context</b> is what each goal carries between runs.
+        <b> History</b> is the narrative record — what your agents have done
+        and learned. All loaded automatically; nothing to wire by hand.
+      </div>
+
+      <div
+        style={{
+          padding: 14,
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-lg)",
+          background: "var(--bg-1)",
+          marginBottom: 24,
+        }}
+      >
+        <div className="eyebrow" style={{ marginBottom: 8 }}>Ingest a web page</div>
+        <div className="small" style={{ color: "var(--ink-2)", marginBottom: 12 }}>
+          Drop any URL — we fetch it, extract the text, and store it as a
+          memory your agents can recall. Works for articles, docs, blog
+          posts. JavaScript-only sites won't extract well.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="url"
+            placeholder="https://…"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void onIngest();
+              }
+            }}
+            disabled={ingestBusy}
+            style={{
+              flex: 1,
+              height: 34,
+              padding: "0 12px",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius)",
+              background: "var(--bg)",
+              color: "var(--ink)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12.5,
+              outline: "none",
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => void onIngest()}
+            disabled={ingestBusy || !url.trim()}
+          >
+            {ingestBusy ? "Fetching…" : "Ingest"}
+          </button>
+        </div>
+        {ingestErr && (
+          <div className="tiny" style={{ color: "var(--neg)", marginTop: 8 }}>
+            {ingestErr}
+          </div>
+        )}
+        {ingestOk && (
+          <div className="tiny" style={{ color: "var(--pos)", marginTop: 8 }}>
+            {ingestOk}
+          </div>
+        )}
+      </div>
+
+      {memQ.loading && !data && (
+        <div className="empty-hint" style={{ padding: 16 }}>Loading memory…</div>
+      )}
+      {memQ.error && (
+        <InlineError
+          error={memQ.error}
+          context="memory"
+          onRetry={() => memQ.refetch()}
+          style={{ marginBottom: 14 }}
+        />
+      )}
+
+      {data && (
+        <>
+          <MemoryLayerHeader
+            label="Layer 1 · Identity"
+            sub="loaded into every agent prompt"
+            count={counts.identity}
+          />
+          {data.identity.length === 0 ? (
+            <div className="empty-hint" style={{ padding: 14 }}>
+              No identity docs yet. The onboarding wizard creates one
+              automatically; you can also paste your own under Skills →
+              Knowledge.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+              {data.identity.map((d, i) => (
+                <div
+                  key={d.id}
+                  style={{
+                    padding: "14px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{d.title}</div>
+                    <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                      {d.hot ? "hot · " : ""}{d.scope} · {relativeTime(d.updated_at)}
+                    </div>
+                  </div>
+                  <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap", maxHeight: 90, overflow: "hidden" }}>
+                    {d.content_md.slice(0, 360)}
+                    {d.content_md.length > 360 && <span style={{ color: "var(--muted)" }}>…</span>}
+                  </div>
+                  {d.tags.length > 0 && (
+                    <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 6 }}>
+                      {d.tags.map((t) => `#${t}`).join(" ")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <MemoryLayerHeader
+            label="Layer 2 · Context"
+            sub="loaded when the agent works on a specific goal"
+            count={counts.context}
+          />
+          {data.context.length === 0 ? (
+            <div className="empty-hint" style={{ padding: 14 }}>
+              No goal contexts yet. Open any goal → the <b>Context</b> section
+              accepts notes the agent should always remember about that goal.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+              {data.context.map((c, i) => (
+                <div
+                  key={c.goal_id}
+                  style={{
+                    padding: "14px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{c.goal_title}</div>
+                    <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                      {c.goal_kind} · {c.goal_status} · {relativeTime(c.updated_at)}
+                    </div>
+                  </div>
+                  <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap", maxHeight: 90, overflow: "hidden" }}>
+                    {c.content_md.slice(0, 360)}
+                    {c.content_md.length > 360 && <span style={{ color: "var(--muted)" }}>…</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <MemoryLayerHeader
+            label="Layer 3 · History"
+            sub="auto-recorded after each run"
+            count={counts.history}
+          />
+          {data.history.length === 0 ? (
+            <div className="empty-hint" style={{ padding: 14 }}>
+              No memories yet. As runs complete, summaries land here.
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {data.history.map((h, i) => (
+                <div
+                  key={h.id}
+                  style={{
+                    padding: "12px 16px",
+                    borderTop: i ? "1px solid var(--line)" : 0,
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: h.kind === "episode" ? "var(--info)" : h.kind === "fact" ? "var(--warn)" : "var(--muted)",
+                      paddingTop: 2,
+                    }}
+                  >
+                    {h.kind}
+                  </span>
+                  <div>
+                    {h.title && (
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{h.title}</div>
+                    )}
+                    <div className="small" style={{ color: "var(--ink-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      {h.content.slice(0, 320)}
+                      {h.content.length > 320 && <span style={{ color: "var(--muted)" }}>…</span>}
+                    </div>
+                    {h.goal_title && (
+                      <div className="tiny mono" style={{ color: "var(--muted)", marginTop: 4 }}>
+                        goal: {h.goal_title}
+                      </div>
+                    )}
+                  </div>
+                  <div className="tiny mono" style={{ color: "var(--muted)" }}>
+                    {relativeTime(h.created_at)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+function MemoryLayerHeader({
+  label,
+  sub,
+  count,
+}: {
+  label: string;
+  sub: string;
+  count: number;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        marginBottom: 10,
+      }}
+    >
+      <div>
+        <div className="eyebrow">{label}</div>
+        <div className="tiny" style={{ color: "var(--muted)", marginTop: 2 }}>{sub}</div>
+      </div>
+      <span className="pill">{count}</span>
+    </div>
+  );
+}
+
+// -- Billing -----------------------------------------------------------------
+
+const STATUS_TONE: Record<SubscriptionRow["status"], string> = {
+  trialing:           "var(--info)",
+  active:             "var(--pos)",
+  past_due:           "var(--warn)",
+  canceled:           "var(--muted)",
+  unpaid:             "var(--neg)",
+  incomplete:         "var(--warn)",
+  incomplete_expired: "var(--neg)",
+  paused:             "var(--muted)",
+};
+
+function BillingTab() {
+  const subQ = useFetch<SubscriptionRow>(() => api.getSubscription(), []);
+  const plansQ = useFetch<{ plans: PricingPlan[] }>(() => api.listPricingPlans(), []);
+  const sub = subQ.data;
+  const plans = plansQ.data?.plans ?? [];
+  const [busy, setBusy] = useState<string | null>(null);
+  const [billingErr, setBillingErr] = useState<string | null>(null);
+
+  const startCheckout = async (tier: string): Promise<void> => {
+    if (busy) return;
+    setBusy(tier);
+    setBillingErr(null);
+    try {
+      const session = await api.createCheckoutSession({ tier });
+      window.location.href = session.url;
+    } catch (e) {
+      setBillingErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openPortal = async (): Promise<void> => {
+    if (busy) return;
+    setBusy("portal");
+    setBillingErr(null);
+    try {
+      const session = await api.createPortalSession();
+      window.location.href = session.url;
+    } catch (e) {
+      setBillingErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Section>
+      <div className="h3" style={{ marginBottom: 8 }}>Billing.</div>
+      <div className="small" style={{ color: "var(--ink-2)", marginBottom: 24, maxWidth: 620 }}>
+        Subscription state mirrors Stripe via webhook. Free tier is the default
+        — paid plans light up automatically once a Stripe checkout completes.
+      </div>
+
+      {subQ.loading && !sub && (
+        <div className="empty-hint" style={{ padding: 16 }}>Loading subscription…</div>
+      )}
+      {subQ.error && (
+        <div
+          style={{
+            padding: 14,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--neg)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            marginBottom: 16,
+          }}
+        >
+          <div className="eyebrow" style={{ color: "var(--neg)", marginBottom: 6 }}>
+            Couldn't load subscription
+          </div>
+          <div className="small">{subQ.error.message}</div>
+        </div>
+      )}
+
+      {sub && (
+        <div className="card" style={{ padding: 24, marginBottom: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
+          >
+            <div className="eyebrow">Current plan</div>
+            <span
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: STATUS_TONE[sub.status],
+              }}
+            >
+              {sub.status}
+            </span>
+          </div>
+          <div className="h2" style={{ marginBottom: 4, textTransform: "capitalize" }}>
+            {sub.tier}
+            {sub.is_free && (
+              <span style={{ fontSize: 18, color: "var(--muted)", marginLeft: 8 }}>
+                · OSS
+              </span>
+            )}
+          </div>
+          <div className="small" style={{ color: "var(--ink-2)" }}>
+            {sub.is_free
+              ? "Self-hosted local mode. No subscription needed."
+              : sub.current_period_end
+              ? sub.cancel_at_period_end
+                ? `Ends ${new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                : `Renews ${new Date(sub.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+              : "Active subscription"}
+            {sub.trial_end && new Date(sub.trial_end) > new Date() && (
+              <>
+                {" · trial ends "}
+                {new Date(sub.trial_end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center" }}>
+            {!sub.is_free && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={openPortal}
+                disabled={busy !== null}
+              >
+                {busy === "portal" ? "Opening…" : "Manage plan"}
+              </button>
+            )}
+            {sub.stripe_customer_id && (
+              <span className="tiny mono" style={{ color: "var(--muted)" }}>
+                stripe.{sub.stripe_customer_id.slice(0, 14)}…
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {billingErr && (
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid var(--line)",
+            borderLeft: "2px solid var(--neg)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-1)",
+            marginBottom: 16,
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+          }}
+        >
+          <span className="mono" style={{ color: "var(--neg)", marginRight: 8 }}>
+            BILLING ERROR
+          </span>
+          {billingErr}
+        </div>
+      )}
+
+      {sub?.is_free && plans.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Upgrade</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.min(plans.length, 2)}, 1fr)`,
+              gap: 12,
+            }}
+          >
+            {plans.map((plan) => (
+              <div
+                key={plan.tier}
+                style={{
+                  padding: 18,
+                  border: "1px solid var(--line)",
+                  borderRadius: "var(--radius-lg)",
+                  background: "var(--bg-1)",
+                }}
+              >
+                <div className="eyebrow" style={{ marginBottom: 6 }}>{plan.name}</div>
+                <div className="h3" style={{ marginBottom: 8 }}>{plan.price_display}</div>
+                <ul style={{ paddingLeft: 18, margin: "0 0 14px 0", fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
+                  {plan.highlights.map((h) => (
+                    <li key={h}>{h}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  style={{ width: "100%" }}
+                  onClick={() => startCheckout(plan.tier)}
+                  disabled={busy !== null}
+                >
+                  {busy === plan.tier ? "Redirecting…" : `Upgrade to ${plan.name}`}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sub?.is_free && plans.length === 0 && !plansQ.loading && (
+        <div
+          style={{
+            padding: 14,
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-lg)",
+            color: "var(--muted)",
+            marginBottom: 16,
+            fontSize: 13,
+          }}
+        >
+          No paid tiers configured yet. Set <span className="mono">STRIPE_PRICE_ID_PRO</span> /{" "}
+          <span className="mono">STRIPE_PRICE_ID_STUDIO</span> in <span className="mono">.env</span>{" "}
+          to surface upgrade options.
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div
           style={{ padding: "12px 20px", borderBottom: "1px solid var(--line)" }}

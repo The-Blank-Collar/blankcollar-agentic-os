@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 
-import type { AuditEntry } from "@blankcollar/shared";
+import type { AuditEntry, OrgMember } from "@blankcollar/shared";
 
 import { I } from "../icons";
 import { api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
 import { Empty, ErrorState, Loading } from "../components/States";
+import { RunDrilldown } from "../components/RunDrilldown";
 
 const ACTION_GROUPS: { key: string; label: string; prefix?: string }[] = [
   { key: "all",      label: "All" },
@@ -17,12 +18,40 @@ const ACTION_GROUPS: { key: string; label: string; prefix?: string }[] = [
   { key: "tool",     label: "Tools",     prefix: "tool." },
 ];
 
-export function Activity() {
-  const { data, error, loading, refetch } = useFetch<AuditEntry[]>(
-    () => api.listAudit({ limit: 200 }),
-    [],
-  );
+const RANGE_OPTIONS: { key: string; label: string; hours: number | null }[] = [
+  { key: "all",  label: "All time", hours: null },
+  { key: "24h",  label: "24h",      hours: 24 },
+  { key: "7d",   label: "7d",       hours: 24 * 7 },
+  { key: "30d",  label: "30d",      hours: 24 * 30 },
+];
+
+type Props = {
+  onOpenGoal?: (id: string) => void;
+};
+
+export function Activity({ onOpenGoal }: Props = {}) {
   const [filter, setFilter] = useState<string>("all");
+  const [rangeKey, setRangeKey] = useState<string>("all");
+  const [actorId, setActorId] = useState<string>("");
+  const [drilldownRunId, setDrilldownRunId] = useState<string | null>(null);
+
+  const sinceIso = useMemo(() => {
+    const range = RANGE_OPTIONS.find((r) => r.key === rangeKey);
+    if (!range?.hours) return undefined;
+    return new Date(Date.now() - range.hours * 3_600_000).toISOString();
+  }, [rangeKey]);
+
+  const { data, error, loading, refetch } = useFetch<AuditEntry[]>(
+    () =>
+      api.listAudit({
+        limit: 200,
+        ...(sinceIso ? { since: sinceIso } : {}),
+        ...(actorId ? { actor_id: actorId } : {}),
+      }),
+    [sinceIso, actorId],
+  );
+
+  const membersQ = useFetch<OrgMember[]>(() => api.listOrgMembers(), []);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data?.length ?? 0 };
@@ -77,6 +106,44 @@ export function Activity() {
         ))}
       </div>
 
+      <div
+        className="filterbar"
+        style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
+      >
+        <span className="tiny mono" style={{ color: "var(--muted)" }}>RANGE</span>
+        {RANGE_OPTIONS.map((r) => (
+          <span
+            key={r.key}
+            className={`filter-chip ${rangeKey === r.key ? "active" : ""}`}
+            onClick={() => setRangeKey(r.key)}
+          >
+            {r.label}
+          </span>
+        ))}
+        <span className="tiny mono" style={{ color: "var(--muted)", marginLeft: 8 }}>ACTOR</span>
+        <select
+          value={actorId}
+          onChange={(e) => setActorId(e.target.value)}
+          style={{
+            height: 28,
+            padding: "0 8px",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg)",
+            color: "var(--ink)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+          }}
+        >
+          <option value="">Anyone</option>
+          {(membersQ.data ?? []).map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.full_name ?? m.email} · {m.role ?? "no role"}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {loading && <Loading label="Loading audit feed…" />}
       {error && <ErrorState error={error} onRetry={refetch} />}
       {!loading && !error && filtered.length === 0 && (
@@ -84,19 +151,44 @@ export function Activity() {
       )}
       {!loading && !error && filtered.length > 0 && (
         <div style={{ padding: "0 var(--pad-x)" }}>
-          {filtered.map((e) => <Row key={e.id} entry={e} />)}
+          {filtered.map((e) => (
+            <Row
+              key={e.id}
+              entry={e}
+              onOpenRun={
+                e.target_type === "run" && e.target_id
+                  ? () => setDrilldownRunId(e.target_id!)
+                  : undefined
+              }
+            />
+          ))}
         </div>
+      )}
+
+      {drilldownRunId && (
+        <RunDrilldown
+          runId={drilldownRunId}
+          onClose={() => setDrilldownRunId(null)}
+          onOpenGoal={onOpenGoal}
+        />
       )}
     </div>
   );
 }
 
-const Row = ({ entry }: { entry: AuditEntry }) => {
+const Row = ({
+  entry,
+  onOpenRun,
+}: {
+  entry: AuditEntry;
+  onOpenRun?: () => void;
+}) => {
   const meta = entry.metadata && Object.keys(entry.metadata).length > 0
     ? JSON.stringify(entry.metadata)
     : null;
   return (
     <div
+      onClick={onOpenRun}
       style={{
         display: "grid",
         gridTemplateColumns: "140px 32px 1fr",
@@ -104,7 +196,9 @@ const Row = ({ entry }: { entry: AuditEntry }) => {
         padding: "16px 0",
         borderTop: "1px solid var(--line)",
         alignItems: "flex-start",
+        cursor: onOpenRun ? "pointer" : undefined,
       }}
+      title={onOpenRun ? "Open run drilldown" : undefined}
     >
       <div className="tiny mono" style={{ paddingTop: 6, color: "var(--muted)" }}>
         {relativeTime(entry.created_at)}

@@ -9,7 +9,7 @@
 # build entry uses `context: .` and `dockerfile: apps/website/Dockerfile`.
 # =============================================================================
 
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /repo/apps/website
@@ -19,16 +19,29 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # -----------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 WORKDIR /repo/apps/website
 COPY --from=deps /repo/apps/website/node_modules ./node_modules
 
+# Phase 8.1 — Vite inlines `import.meta.env.VITE_*` at build time. Build args
+# come from docker-compose.yml's website.build.args block; pass them through
+# as ENV so Vite picks them up during `npm run build`.
+ARG VITE_SUPABASE_URL=
+ARG VITE_SUPABASE_ANON_KEY=
+ARG VITE_PAPERCLIP_URL=
+ARG VITE_DEFAULT_ORG_SLUG=
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL} \
+    VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY} \
+    VITE_PAPERCLIP_URL=${VITE_PAPERCLIP_URL} \
+    VITE_DEFAULT_ORG_SLUG=${VITE_DEFAULT_ORG_SLUG}
+
 # Website source — kept under the same relative path as in the repo so the
 # Vite alias `../../packages/shared/src/` continues to resolve.
 COPY apps/website/package.json apps/website/tsconfig.json apps/website/vite.config.ts apps/website/index.html ./
 COPY apps/website/src ./src
+COPY apps/website/public ./public
 
 # Shared package — must land at `/repo/packages/shared` for the alias to work.
 COPY packages/shared /repo/packages/shared
@@ -37,7 +50,7 @@ RUN npm run build
 
 # -----------------------------------------------------------------------------
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # SPA routing: rewrite anything that's not a real file to index.html.
 RUN printf 'server {\n\

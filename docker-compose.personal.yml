@@ -1,0 +1,23 @@
+# =============================================================================
+# Blank Collar — Agentic OS · personal overlay (headless single-user)
+# -----------------------------------------------------------------------------
+# Runs the OS as a personal assistant: backend + channel webhooks only.
+# No website container — you talk to it through Telegram (and later Slack /
+# WhatsApp), or hit the API directly.
+#
+# Activate by listing it in COMPOSE_FILE in .env — every `docker compose`
+# and `make` command picks it up automatically:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.personal.yml
+#     PAPERCLIP_DEFAULT_ORG_SLUG=blankcollar-personal
+#
+# Then:  make up  &&  make personal NAME="Your Name" EMAIL=you@example.com
+#
+# Full walkthrough: docs/HOSTINGER_DEPLOY.md → "Personal headless mode".
+# =============================================================================
+
+services:
+  # The dashboard is the only frontend; park it behind an opt-in profile.
+  # Bring it back any time with:  docker compose --profile frontend up -d website
+  website:
+    profiles: ["frontend"]

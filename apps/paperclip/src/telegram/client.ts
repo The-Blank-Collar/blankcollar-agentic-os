@@ -129,6 +129,21 @@ export async function deleteWebhook(): Promise<true> {
   return true;
 }
 
+/**
+ * Show "typing…" in the chat. Telegram refreshes the indicator on every
+ * call and auto-clears after ~5s, so we send it immediately after queuing
+ * the agent run to give the user instant feedback.
+ *
+ * Best-effort — failures are swallowed by the caller.
+ */
+export async function sendChatAction(
+  chatId: number,
+  action: "typing" | "upload_photo" | "record_voice" = "typing",
+): Promise<true> {
+  await call("sendChatAction", { chat_id: chatId, action });
+  return true;
+}
+
 export async function getWebhookInfo(): Promise<TelegramWebhookInfo> {
   return call<TelegramWebhookInfo>("getWebhookInfo");
 }

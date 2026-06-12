@@ -10,15 +10,24 @@
  */
 
 import type {
+  ActivityRow,
   AgentState,
   AgentSummary,
   ApiError,
   AuditEntry,
   AuditQuery,
   AutonomyModeRow,
+  BillingPortal,
+  BillingPortalSession,
+  CheckoutSessionResult,
+  OrgBootstrapResult,
+  PricingPlan,
   AutonomyModeUpsert,
   AutonomyResolved,
   BrainGraph,
+  BriefingGenerateBody,
+  BriefingKind,
+  BriefingRow,
   CaptureCreateBody,
   CaptureResult,
   ConnectorArtifactRow,
@@ -33,15 +42,34 @@ import type {
   DispatchAllResult,
   DispatchResult,
   Goal,
+  GoalContext,
   GoalCreate,
+  GoalMemoryEntry,
+  MemoryExploreResponse,
+  MemoryIngestUrlBody,
+  MemoryIngestUrlResult,
   GoalListQuery,
   GoalPatch,
   GoalWithDetail,
+  GoalsSummary,
+  HeartbeatResponse,
   InboxItem,
   InboxSummary,
   KeyResult,
   KeyResultCreate,
   KeyResultPatch,
+  InvitationAcceptResult,
+  InvitationCreateBody,
+  InvitationListQuery,
+  InvitationPublic,
+  InvitationRow,
+  OnboardingAnswerBody,
+  OnboardingFinishResult,
+  OnboardingNextResult,
+  OnboardingProfile,
+  OnboardingStartBody,
+  OnboardingStartResult,
+  OrgMember,
   Organization,
   OutcomeCreateBody,
   OutcomeMetricCreateBody,
@@ -60,6 +88,7 @@ import type {
   SkillDraftStatus,
   SkillRow,
   SimilarOutcome,
+  SubscriptionRow,
   SubtaskRow,
   SwarmDispatchResult,
   SwarmPlanResult,
@@ -73,6 +102,13 @@ export interface ApiClientOpts {
   orgSlug?: string;
   /** Override the global `fetch` (handy in tests). */
   fetcher?: typeof fetch;
+  /**
+   * Supplies the current bearer JWT for `Authorization: Bearer <jwt>` on
+   * every request (Phase 8.1). Called fresh on each request so the
+   * client picks up token rotations automatically. Return null/undefined
+   * to skip the header (e.g. unauthenticated demo mode).
+   */
+  getAuthToken?: () => string | null | undefined | Promise<string | null | undefined>;
 }
 
 export class ApiCallError extends Error {
@@ -91,6 +127,13 @@ type Json = Record<string, unknown> | unknown[] | string | number | boolean | nu
 export interface ApiClient {
   // -- Captures (capture-first composer) ----
   createCapture(body: CaptureCreateBody): Promise<CaptureResult>;
+  // -- Briefing + heartbeat + activity (front door) ----
+  getBriefingToday(): Promise<BriefingRow>;
+  listBriefings(opts?: { kind?: BriefingKind; limit?: number }): Promise<BriefingRow[]>;
+  generateBriefing(body?: BriefingGenerateBody): Promise<BriefingRow>;
+  getHeartbeat(opts?: { days?: number }): Promise<HeartbeatResponse>;
+  getGoalsSummary(opts?: { stalledDays?: number }): Promise<GoalsSummary>;
+  listActivity(opts?: { limit?: number }): Promise<ActivityRow[]>;
   // -- Goals ----
   listGoals(query?: GoalListQuery): Promise<Goal[]>;
   getGoal(id: string): Promise<GoalWithDetail>;
@@ -109,6 +152,15 @@ export interface ApiClient {
   // -- Agents ----
   listAgents(opts?: { isActive?: boolean }): Promise<AgentSummary[]>;
   getAgentState(id: string): Promise<AgentState>;
+  // -- Goal context (Phase 9.1) ----
+  getGoalContext(goalId: string): Promise<GoalContext>;
+  updateGoalContext(goalId: string, body: { content_md: string }): Promise<GoalContext>;
+  // -- Goal memory timeline (Phase 9.2) ----
+  listGoalMemory(goalId: string, opts?: { limit?: number }): Promise<GoalMemoryEntry[]>;
+  // -- Memory Explorer (Phase 9.3) ----
+  exploreMemory(opts?: { historyLimit?: number }): Promise<MemoryExploreResponse>;
+  // -- Web ingest (Phase 9.5) ----
+  ingestUrlToMemory(body: MemoryIngestUrlBody): Promise<MemoryIngestUrlResult>;
   // -- Key results ----
   listKeyResults(goalId: string): Promise<KeyResult[]>;
   createKeyResult(goalId: string, body: KeyResultCreate): Promise<KeyResult>;
@@ -123,7 +175,29 @@ export interface ApiClient {
   // -- Org + departments + whoami ----
   getOrgBySlug(slug: string): Promise<Organization>;
   listDepartments(): Promise<Department[]>;
+  listOrgMembers(): Promise<OrgMember[]>;
   whoami(): Promise<Whoami>;
+  // -- Billing (Phase 7.b + 8.2) ----
+  getSubscription(): Promise<SubscriptionRow>;
+  getBillingPortal(): Promise<BillingPortal>;
+  listPricingPlans(): Promise<{ plans: PricingPlan[] }>;
+  createCheckoutSession(body: { tier: string; success_url?: string; cancel_url?: string }): Promise<CheckoutSessionResult>;
+  createPortalSession(body?: { return_url?: string }): Promise<BillingPortalSession>;
+  // -- Org bootstrap (Phase 8.1) ----
+  bootstrapOrg(body?: { full_name?: string; org_name?: string }): Promise<OrgBootstrapResult>;
+  // -- Onboarding (Phase 7 / wizard) ----
+  onboardingStart(body: OnboardingStartBody): Promise<OnboardingStartResult>;
+  onboardingNext(profileId: string): Promise<OnboardingNextResult>;
+  onboardingAnswer(profileId: string, body: OnboardingAnswerBody): Promise<OnboardingProfile>;
+  onboardingFinish(profileId: string): Promise<OnboardingFinishResult>;
+  onboardingProfile(profileId?: string): Promise<OnboardingProfile | null>;
+  // -- Invitations (Phase 6.b) ----
+  listInvitations(query?: InvitationListQuery): Promise<InvitationRow[]>;
+  createInvitation(body: InvitationCreateBody): Promise<InvitationRow>;
+  revokeInvitation(id: string): Promise<InvitationRow>;
+  resendInvitation(id: string): Promise<InvitationRow>;
+  getInvitationByToken(token: string): Promise<InvitationPublic>;
+  acceptInvitation(token: string, body?: { full_name?: string }): Promise<InvitationAcceptResult>;
   // -- Autonomy (Phase 5b / Sprint 5.1) ----
   listAutonomy(): Promise<AutonomyModeRow[]>;
   upsertAutonomy(body: AutonomyModeUpsert): Promise<AutonomyModeRow>;
@@ -182,7 +256,12 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     path: string,
     body?: Json,
   ): Promise<T> {
-    const init: RequestInit = { method, headers: { ...headers } };
+    const reqHeaders: Record<string, string> = { ...headers };
+    if (opts.getAuthToken) {
+      const token = await opts.getAuthToken();
+      if (token) reqHeaders.Authorization = `Bearer ${token}`;
+    }
+    const init: RequestInit = { method, headers: reqHeaders };
     if (body !== undefined) init.body = JSON.stringify(body);
     const res = await fetcher(`${base}${path}`, init);
     if (res.status === 204) return undefined as unknown as T;
@@ -219,6 +298,23 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
   return {
     createCapture: (body) =>
       request<CaptureResult>("POST", "/api/capture", body as unknown as Json),
+    getBriefingToday: () => request<BriefingRow>("GET", "/api/briefing/today"),
+    listBriefings: (opts) =>
+      request<BriefingRow[]>(
+        "GET",
+        `/api/briefing${qs({ kind: opts?.kind, limit: opts?.limit })}`,
+      ),
+    generateBriefing: (body) =>
+      request<BriefingRow>("POST", "/api/briefing/generate", (body ?? {}) as unknown as Json),
+    getHeartbeat: (opts) =>
+      request<HeartbeatResponse>("GET", `/api/heartbeat${qs({ days: opts?.days })}`),
+    getGoalsSummary: (opts) =>
+      request<GoalsSummary>(
+        "GET",
+        `/api/goals/summary${qs({ stalled_days: opts?.stalledDays })}`,
+      ),
+    listActivity: (opts) =>
+      request<ActivityRow[]>("GET", `/api/activity${qs({ limit: opts?.limit })}`),
     listGoals: (query) =>
       request<Goal[]>("GET", `/api/goals${qs(query as Record<string, string | number>)}`),
     getGoal: (id) => request<GoalWithDetail>("GET", `/api/goals/${encodeURIComponent(id)}`),
@@ -258,6 +354,26 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       ),
     getAgentState: (id) =>
       request<AgentState>("GET", `/api/agents/${encodeURIComponent(id)}/state`),
+    getGoalContext: (goalId) =>
+      request<GoalContext>("GET", `/api/goals/${encodeURIComponent(goalId)}/context`),
+    updateGoalContext: (goalId, body) =>
+      request<GoalContext>(
+        "PUT",
+        `/api/goals/${encodeURIComponent(goalId)}/context`,
+        body as unknown as Json,
+      ),
+    listGoalMemory: (goalId, opts) =>
+      request<GoalMemoryEntry[]>(
+        "GET",
+        `/api/goals/${encodeURIComponent(goalId)}/memory${qs({ limit: opts?.limit })}`,
+      ),
+    exploreMemory: (opts) =>
+      request<MemoryExploreResponse>(
+        "GET",
+        `/api/memory/explore${qs({ history_limit: opts?.historyLimit })}`,
+      ),
+    ingestUrlToMemory: (body) =>
+      request<MemoryIngestUrlResult>("POST", "/api/memory/ingest-url", body as unknown as Json),
     listKeyResults: (goalId) =>
       request<KeyResult[]>(
         "GET",
@@ -296,7 +412,69 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     getOrgBySlug: (slug) =>
       request<Organization>("GET", `/api/orgs/by-slug/${encodeURIComponent(slug)}`),
     listDepartments: () => request<Department[]>("GET", "/api/departments"),
+    listOrgMembers: () => request<OrgMember[]>("GET", "/api/orgs/members"),
     whoami: () => request<Whoami>("GET", "/api/whoami"),
+    getSubscription: () =>
+      request<SubscriptionRow>("GET", "/api/billing/subscription"),
+    getBillingPortal: () =>
+      request<BillingPortal>("GET", "/api/billing/portal-url"),
+    listPricingPlans: () =>
+      request<{ plans: PricingPlan[] }>("GET", "/api/billing/plans"),
+    createCheckoutSession: (body) =>
+      request<CheckoutSessionResult>("POST", "/api/billing/checkout", body as unknown as Json),
+    createPortalSession: (body) =>
+      request<BillingPortalSession>("POST", "/api/billing/portal", (body ?? {}) as unknown as Json),
+    bootstrapOrg: (body) =>
+      request<OrgBootstrapResult>("POST", "/api/orgs/bootstrap", (body ?? {}) as unknown as Json),
+    onboardingStart: (body) =>
+      request<OnboardingStartResult>("POST", "/api/onboarding/start", body as unknown as Json),
+    onboardingNext: (profileId) =>
+      request<OnboardingNextResult>(
+        "GET",
+        `/api/onboarding/questions${qs({ profile_id: profileId })}`,
+      ),
+    onboardingAnswer: (profileId, body) =>
+      request<OnboardingProfile>(
+        "POST",
+        `/api/onboarding/answer${qs({ profile_id: profileId })}`,
+        body as unknown as Json,
+      ),
+    onboardingFinish: (profileId) =>
+      request<OnboardingFinishResult>(
+        "POST",
+        `/api/onboarding/finish${qs({ profile_id: profileId })}`,
+      ),
+    onboardingProfile: async (profileId) => {
+      try {
+        return await request<OnboardingProfile>(
+          "GET",
+          `/api/onboarding/profile${qs(profileId ? { profile_id: profileId } : undefined)}`,
+        );
+      } catch (e) {
+        // 404 = no profile yet; return null instead of throwing.
+        if (e instanceof ApiCallError && e.status === 404) return null;
+        throw e;
+      }
+    },
+    listInvitations: (query) =>
+      request<InvitationRow[]>(
+        "GET",
+        `/api/invitations${qs({ status: query?.status, limit: query?.limit })}`,
+      ),
+    createInvitation: (body) =>
+      request<InvitationRow>("POST", "/api/invitations", body as unknown as Json),
+    revokeInvitation: (id) =>
+      request<InvitationRow>("POST", `/api/invitations/${encodeURIComponent(id)}/revoke`),
+    resendInvitation: (id) =>
+      request<InvitationRow>("POST", `/api/invitations/${encodeURIComponent(id)}/resend`),
+    getInvitationByToken: (token) =>
+      request<InvitationPublic>("GET", `/api/invitations/by-token/${encodeURIComponent(token)}`),
+    acceptInvitation: (token, body) =>
+      request<InvitationAcceptResult>(
+        "POST",
+        `/api/invitations/by-token/${encodeURIComponent(token)}/accept`,
+        (body ?? {}) as unknown as Json,
+      ),
     listAutonomy: () => request<AutonomyModeRow[]>("GET", "/api/autonomy"),
     upsertAutonomy: (body) =>
       request<AutonomyModeRow>("PUT", "/api/autonomy", body as unknown as Json),

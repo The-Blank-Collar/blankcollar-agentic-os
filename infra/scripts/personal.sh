@@ -139,12 +139,23 @@ docker exec -i bc_postgres psql \
   -v "slug=$PERSONAL_ORG_SLUG" \
   -c "$SQL_SELF_AUDIT" >/dev/null
 
-# 5. Tell Paperclip which org to default to. Restarts paperclip with the new
-#    PAPERCLIP_DEFAULT_ORG_SLUG so resolveCallerScope() returns this org.
+# 5. Tell Paperclip which org to default to. Persist the slug in .env so it
+#    survives restarts and reboots, then recreate paperclip. Running compose
+#    from the repo root (no -f) honours COMPOSE_FILE in .env, so the prod /
+#    personal overlays keep applying on the restart.
 echo "▶ pointing Paperclip at $PERSONAL_ORG_SLUG…"
-docker compose -f "$ROOT_DIR/docker-compose.yml" stop paperclip >/dev/null 2>&1 || true
-PAPERCLIP_DEFAULT_ORG_SLUG="$PERSONAL_ORG_SLUG" \
-  docker compose -f "$ROOT_DIR/docker-compose.yml" up -d paperclip
+ENV_FILE="$ROOT_DIR/.env"
+if grep -qE "^PAPERCLIP_DEFAULT_ORG_SLUG=" "$ENV_FILE" 2>/dev/null; then
+  awk -v val="$PERSONAL_ORG_SLUG" '
+    BEGIN { done = 0 }
+    /^PAPERCLIP_DEFAULT_ORG_SLUG=/ { if (!done) { print "PAPERCLIP_DEFAULT_ORG_SLUG=" val; done = 1 }; next }
+    { print }
+  ' "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
+else
+  printf '\nPAPERCLIP_DEFAULT_ORG_SLUG=%s\n' "$PERSONAL_ORG_SLUG" >> "$ENV_FILE"
+fi
+(cd "$ROOT_DIR" && docker compose stop paperclip >/dev/null 2>&1 || true)
+(cd "$ROOT_DIR" && docker compose up -d paperclip)
 
 cat <<EOF
 
@@ -160,5 +171,6 @@ Next:
    curl -s http://localhost:\${PAPERCLIP_PORT:-3000}/api/briefing/today | jq
 
 To go back to the multi-tenant demo:
-   PAPERCLIP_DEFAULT_ORG_SLUG=blankcollar-demo docker compose up -d paperclip
+   set PAPERCLIP_DEFAULT_ORG_SLUG=blankcollar-demo in .env, then:
+   docker compose up -d paperclip
 EOF

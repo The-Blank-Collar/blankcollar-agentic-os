@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for caring about Blank Collar. Until the project opens up publicly, contributions are by invitation. Once it does, this is the working agreement.
+Thanks for caring about Blank Collar. Contributions are welcome — this is the working agreement.
 
 ## Before you change anything
 
@@ -8,11 +8,39 @@ Thanks for caring about Blank Collar. Until the project opens up publicly, contr
 2. Skim `docs/ROADMAP.md` to find the right phase for your change.
 3. Check open issues to avoid duplicating work.
 
-## Local workflow
+## Local workflow (no LLM credentials needed)
+
+```bash
+git clone https://github.com/the-blank-collar/blankcollar-agentic-os.git
+cd blankcollar-agentic-os
+cp .env.example .env
+make bootstrap     # spins up the whole stack
+make doctor        # 26/26 green when ready
+```
+
+The stack runs in **FakeLLM mode** out of the box — every Claude call returns
+a deterministic canned reply prefixed with `[FakeLLM mode — set
+PORTKEY_API_KEY in .env to enable real Claude]`. The whole pipeline still
+works (briefings, classifier, Telegram bot, Hermes runs) so you can develop
+features end-to-end without paying for API tokens.
+
+When you're ready for real Claude:
+
+1. Create a Portkey account at https://app.portkey.ai/.
+2. Either (a) add a workspace + Anthropic provider in the Model Catalog and
+   set `PAPERCLIP_LLM_MODEL=@your-workspace/claude-sonnet-4-5-…`, OR
+   (b) create a legacy Virtual Key and set `PORTKEY_VIRTUAL_KEY_ANTHROPIC`.
+3. Set `PORTKEY_API_KEY` in `.env`.
+4. `docker compose up -d` to pick up the new env vars.
+
+You can also explicitly force FakeLLM mode (handy when testing offline)
+with `BLANKCOLLAR_FAKE_LLM=true` in `.env` — that overrides any Portkey
+credentials you might have set.
+
+## Feature workflow
 
 ```bash
 git checkout -b feat/<short-description>
-./infra/scripts/bootstrap.sh
 # … make changes …
 ./infra/scripts/doctor.sh
 git commit -m "feat: <imperative summary>"

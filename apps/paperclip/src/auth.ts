@@ -1,23 +1,34 @@
 /**
  * Supabase JWT verification + scope derivation.
  *
- * v0 behaviour:
- *   - SUPABASE_JWT_SECRET unset      → no-op, every request stays stubbed
- *                                      to the demo org's owner.
- *   - SUPABASE_JWT_SECRET set:
- *       * If `Authorization: Bearer <jwt>` is present → verify; on success,
- *         attach a derived Scope to `request.bcScope`.
- *       * If absent → fall through (still stub) unless PAPERCLIP_AUTH_ENFORCE=true,
- *         in which case respond 401.
+ * Two verification paths, auto-detected per token:
  *
- * Phase 6 will flip the default to enforce + add invitation flow for new users.
+ *   1. Asymmetric (modern Supabase default — ES256 / RS256)
+ *      Uses the project's JWKS endpoint at
+ *      `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`. The remote keyset
+ *      is cached and refreshed automatically by jose.
+ *
+ *   2. HS256 (legacy Supabase / self-managed projects)
+ *      Falls back to the shared `SUPABASE_JWT_SECRET` when JWKS is
+ *      unavailable or the token is HS256-signed. Kept for installs
+ *      that haven't migrated to asymmetric signing.
+ *
+ * v0 behaviour:
+ *   - Neither SUPABASE_URL nor SUPABASE_JWT_SECRET set → no-op,
+ *     every request stays stubbed to the demo org's owner.
+ *   - Either set:
+ *       * `Authorization: Bearer <jwt>` present → verify; on success,
+ *         attach a derived Scope to `request.bcScope`.
+ *       * Header absent → fall through (still stub) unless
+ *         PAPERCLIP_AUTH_ENFORCE=true, in which case respond 401.
  */
 
-import { jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { config } from "./config.js";
 import { query } from "./db.js";
+import { bootstrapToScope, bootstrapUserOrg } from "./orgs/bootstrap.js";
 import type { RoleKind, Scope } from "./schemas.js";
 
 declare module "fastify" {
@@ -32,6 +43,7 @@ type SupabaseClaims = {
   email?: string | null;
   aud?: string;
   exp?: number;
+  user_metadata?: { full_name?: string; name?: string } | null;
 };
 
 let secretKey: Uint8Array | undefined;
@@ -44,14 +56,57 @@ function getSecret(): Uint8Array | undefined {
   return secretKey;
 }
 
+let cachedJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
+
+function getJwks(): ReturnType<typeof createRemoteJWKSet> | undefined {
+  if (!config.supabaseProjectUrl) return undefined;
+  if (!cachedJwks) {
+    try {
+      // Strip any trailing slash before composing the path.
+      const base = config.supabaseProjectUrl.replace(/\/+$/, "");
+      const url = new URL(`${base}/auth/v1/.well-known/jwks.json`);
+      cachedJwks = createRemoteJWKSet(url, {
+        // Tolerate brief unavailability — jose caches the JWKS in-memory.
+        cooldownDuration: 30_000,
+        cacheMaxAge: 10 * 60_000,
+      });
+    } catch {
+      cachedJwks = undefined;
+    }
+  }
+  return cachedJwks;
+}
+
+/**
+ * Detect available verifiers without a token.
+ * Used by the preHandler to know whether auth should engage at all.
+ */
+export function authConfigured(): boolean {
+  return Boolean(config.supabaseJwtSecret || config.supabaseProjectUrl);
+}
+
 export async function verifyBearer(token: string): Promise<SupabaseClaims> {
+  // Try the modern JWKS path first. jose will pick the right algorithm
+  // (ES256 / RS256 / etc) from the token header automatically.
+  const jwks = getJwks();
+  if (jwks) {
+    try {
+      const { payload } = await jwtVerify(token, jwks);
+      return payload as SupabaseClaims;
+    } catch {
+      // Asymmetric verification failed — could be a legacy HS256 token,
+      // or a real signature mismatch. Fall through to HS256 attempt; if
+      // both fail the route handler 401s.
+    }
+  }
   const key = getSecret();
-  if (!key) throw new Error("SUPABASE_JWT_SECRET not configured");
-  const { payload } = await jwtVerify(token, key, {
-    // Supabase signs with HS256 by default for the "anon"/"service_role" keys
-    // and the user JWTs the project hands out via @supabase/supabase-js.
-    algorithms: ["HS256"],
-  });
+  if (!key) {
+    throw new Error(
+      "JWT verification unavailable — set SUPABASE_URL (modern, asymmetric) " +
+        "or SUPABASE_JWT_SECRET (legacy HS256) in .env.",
+    );
+  }
+  const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
   return payload as SupabaseClaims;
 }
 
@@ -109,8 +164,28 @@ export async function authPreHandler(
   // Only intercept API routes.
   if (!request.url.startsWith("/api/")) return;
 
-  // Auth is OFF (no Supabase configured) → no-op.
-  if (!config.supabaseJwtSecret) return;
+  // CORS preflight — the browser sends OPTIONS without a Bearer header
+  // before any cross-origin POST/PATCH/DELETE. Let it through to the CORS
+  // plugin's handler; blocking it 401s the preflight and the real request
+  // never fires.
+  if (request.method === "OPTIONS") return;
+
+  // Public endpoints — never auth-gated regardless of mode:
+  //   /api/health           — Docker healthcheck (must be reachable)
+  //   /api/webhooks/*       — Stripe + Telegram + capture (own signature
+  //                           verification at the route level)
+  //   /api/invitations/by-token/* — recipient may not have an account yet
+  if (
+    request.url === "/api/health" ||
+    request.url.startsWith("/api/health?") ||
+    request.url.startsWith("/api/webhooks/") ||
+    request.url.startsWith("/api/invitations/by-token/")
+  ) {
+    return;
+  }
+
+  // Auth is OFF (no Supabase configured at all) → no-op.
+  if (!authConfigured()) return;
 
   const header = request.headers.authorization;
   const bearer = header?.startsWith("Bearer ")
@@ -138,6 +213,27 @@ export async function authPreHandler(
     if (scope) {
       request.bcScope = scope;
       return;
+    }
+    // No account yet. In auto-bootstrap mode (the default for hosted
+    // SaaS) we provision the user's own org on the spot — owner role,
+    // two seed agents, and a welcome goal. The next request lands on
+    // a working dashboard with no further setup.
+    if (config.autoBootstrap) {
+      try {
+        const fullName =
+          claims.user_metadata?.full_name?.trim() ||
+          claims.user_metadata?.name?.trim() ||
+          null;
+        const result = await bootstrapUserOrg({ email, full_name: fullName });
+        request.bcScope = bootstrapToScope(result);
+        return;
+      } catch (err) {
+        request.log.error({ err, email }, "auto-bootstrap failed");
+        if (config.authEnforce) {
+          return reply.code(500).send({ error: "bootstrap_failed" });
+        }
+        // Soft mode — fall through to stub scope.
+      }
     }
   }
   // Token is valid but the user has no provisioned account/role.

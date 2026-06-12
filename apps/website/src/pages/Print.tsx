@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactElement } from "react";
 
 import { Sidebar } from "../shell/Sidebar";
 import { Topbar } from "../shell/Topbar";
@@ -15,7 +15,7 @@ import "../styles/print.css";
 
 const noop = (): void => undefined;
 
-const SCREENS: { label: string; page: string; el: () => JSX.Element }[] = [
+const SCREENS: { label: string; page: string; el: () => ReactElement }[] = [
   { label: "01 — Dashboard / Company Overview", page: "Studio · Dashboard",   el: () => <Dashboard onOpenGoal={noop} onOpenBrain={noop} /> },
   { label: "02 — Board (Kanban)",               page: "Studio · Board",       el: () => <Kanban onOpenGoal={noop} /> },
   { label: "03 — Goals",                        page: "Goals",                el: () => <Goals onOpenGoal={noop} onNewGoal={noop} /> },

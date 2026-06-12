@@ -7,7 +7,6 @@ import pytest
 
 from app.nango import NangoError, _validate_endpoint, nango_invoke
 
-
 # ---------- _validate_endpoint ------------------------------------------
 
 

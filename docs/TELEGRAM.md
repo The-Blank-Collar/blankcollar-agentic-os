@@ -1,16 +1,29 @@
 # Telegram bot — beginner playbook
 
-The whole loop:
+The whole loop (v2 — full agent cascade):
 
 ```
 You (phone)  →  Telegram  →  ngrok  →  paperclip /api/webhooks/telegram
                                                      ↓
-                                        Portkey → Claude → reply
+                                       persist capture + goal + queue run
                                                      ↓
-You (phone)  ←  Telegram  ←  Telegram Bot API  ←  paperclip
+                                       send "typing…" to chat, ack 200
+                                                     ↓
+                                  paperclip Worker claims the run
+                                                     ↓
+                              Worker → hermes:80 (Hermes runner)
+                                                     ↓
+                                      Hermes → Portkey → Claude
+                                                     ↓
+                                  Worker mirrors result into ops.run
+                                                     ↓
+                              Worker `succeed()` hook reads goal.metadata
+                                                     ↓
+You (phone)  ←  Telegram  ←  Telegram Bot API  ←  paperclip (channel-reply)
 ```
 
-End-to-end round-trip: ~3-5 seconds.
+End-to-end round-trip: ~4-6 seconds (depends on Hermes warmup + brain recall).
+The webhook always returns 200 immediately; the reply lands when Hermes finishes.
 
 ## What you need (one-time setup, ~10 min)
 
@@ -130,18 +143,27 @@ and the outbound `sendMessage` to Telegram.
 
 ## What's stored
 
-Every message creates two real rows:
+Every message creates three real rows:
 
 - `ops.goal` — title = first 200 chars of the message, kind=ephemeral,
-  metadata.source=`telegram` + chat info.
+  metadata.source=`telegram` + chat_id + message_id (the worker reads
+  this to know where to send the reply).
 - `ops.capture` — full text + parsed intent, links to the goal.
+- `ops.run`    — queued Hermes run with the user message as input.
 
-Plus an audit entry (`telegram.message`).
+Plus three audit entries: `telegram.message`, `run.dispatch`, and on
+completion `run.succeeded` (or `run.failed`).
 
 You can see them in the console at `localhost:3000`:
 
-- **Activity** tab → your `telegram.message` entries.
+- **Activity** tab → your `telegram.message` + `run.*` entries (click a
+  `run.*` row to open the drill-down with full input/output JSON).
 - **Goals** tab → the goals created from your Telegram messages.
+
+When something goes wrong (Hermes is down, Portkey is misconfigured),
+the Worker's `fail()` hook still sends a friendly Telegram reply with
+the error message, then logs the failure in `core.audit_log` so you
+can see it in Activity.
 
 ## Troubleshooting
 
@@ -170,16 +192,17 @@ When you're done testing or if the token leaked:
 5. Update `TELEGRAM_BOT_TOKEN` in `.env`, restart paperclip, re-run
    `setup-telegram.sh`.
 
-## What's next (Sprint TG.b — deferred)
+## What's next (Sprint TG.c — deferred)
 
-- **Real agent loop** — instead of a direct chatComplete, the message
-  flows through plan + dispatch + a real Hermes run. The reply lands
-  back in Telegram via the worker's success hook.
 - **Long messages** — chunked into multiple Telegram messages instead of
   truncated at 4096 chars.
 - **Voice + image** — Telegram supports audio + image messages; OpenClaw
   can transcribe + describe them.
 - **Multiple bots per org** — bot-token-per-department; route inbound
   messages to the right team.
+- **Reply-as-thread** — when a run produces multiple outputs (e.g. swarm
+  decomposition), reply with each one as a separate Telegram message in
+  the thread instead of joining into a single 4096-char block.
 
-For now, v1 proves the round trip. Tell me when you're ready for v2.
+v2 is wired (capture → goal → Hermes run → reply). Tell me when you're
+ready for v3.

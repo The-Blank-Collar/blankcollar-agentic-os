@@ -32,6 +32,13 @@ export const config = {
   supabaseJwtSecret: env.SUPABASE_JWT_SECRET ?? "",
   supabaseProjectUrl: env.SUPABASE_URL ?? "",
   authEnforce: env.PAPERCLIP_AUTH_ENFORCE === "true",
+  /**
+   * When a verified Supabase user signs in but has no `core.user_account`
+   * row, auto-create their org + owner role + seed pack. Default true so
+   * the hosted SaaS path "just works" — set to false only if you want to
+   * gate provisioning behind manual approval.
+   */
+  autoBootstrap: env.PAPERCLIP_AUTO_BOOTSTRAP !== "false",
 
   /**
    * AI gateway — Portkey routes every LLM call through a single observable
@@ -57,6 +64,18 @@ export const config = {
   llmMaxTokens: Number(env.PAPERCLIP_LLM_MAX_TOKENS ?? 800),
   brandDir: env.BRAND_DIR ?? "/app/brand",
   brandName: env.BRAND_NAME ?? "blankcollar",
+
+  /**
+   * Transactional email (Phase 8.4). Provider is one of:
+   *   - `console` (default) — logs to stdout, no API call
+   *   - `resend`
+   *   - `postmark`
+   * MAIL_API_KEY is required for resend/postmark; MAIL_FROM defaults to
+   * "Blank Collar <noreply@blankcollar.ai>" if unset.
+   */
+  mailProvider: env.MAIL_PROVIDER ?? "console",
+  mailApiKey: env.MAIL_API_KEY ?? "",
+  mailFrom: env.MAIL_FROM ?? "",
 
   /** Routine scheduler — wakes periodically and fires due routines. */
   schedulerEnabled: env.PAPERCLIP_SCHEDULER_ENABLED !== "false",
@@ -86,21 +105,36 @@ export const config = {
 export type Config = typeof config;
 
 /**
- * Hard-fail at boot if any required env is missing. The gateway and its
- * downstream callers (briefings, capture classifier) all assume Portkey
- * is configured — silent fallbacks would mask the problem.
+ * Soft validation at boot: warn loudly if Portkey isn't configured but
+ * don't throw. The gateway transparently falls back to a FakeLLM that
+ * returns canned responses, so a fresh clone can `make bootstrap` and
+ * play with the stack before hooking up real LLM credentials.
+ *
+ * Set `PORTKEY_API_KEY` (and either a `@workspace/model` reference in
+ * `PAPERCLIP_LLM_MODEL` or `PORTKEY_VIRTUAL_KEY_ANTHROPIC` for legacy
+ * routing) to switch from FakeLLM to real Claude.
  *
  * Called from index.ts before any route is registered.
  */
-export function requireConfig(): void {
-  const missing: string[] = [];
-  if (!config.portkeyApiKey) missing.push("PORTKEY_API_KEY");
-  if (!config.portkeyVirtualKeyAnthropic) missing.push("PORTKEY_VIRTUAL_KEY_ANTHROPIC");
-  if (missing.length > 0) {
-    throw new Error(
-      `[config] required env var(s) not set: ${missing.join(", ")}. ` +
-        "Get a Portkey key at https://app.portkey.ai/, create an Anthropic " +
-        "virtual key, and set both in .env. See docs/ENVIRONMENT.md.",
+export function requireConfig(): { fakeLlm: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  const usingModelCatalog = config.llmModel.startsWith("@");
+  if (!config.portkeyApiKey) {
+    warnings.push(
+      "PORTKEY_API_KEY is unset — running in FakeLLM mode. Real LLM calls " +
+        "(briefings, classifier, Telegram, Hermes) will return canned text. " +
+        "Set PORTKEY_API_KEY in .env to enable Claude.",
+    );
+  } else if (!usingModelCatalog && !config.portkeyVirtualKeyAnthropic) {
+    warnings.push(
+      "PORTKEY_API_KEY is set but PORTKEY_VIRTUAL_KEY_ANTHROPIC is not — " +
+        "and PAPERCLIP_LLM_MODEL is a plain name (legacy routing). LLM " +
+        "calls will fail until you either (a) set the virtual key OR (b) " +
+        "switch PAPERCLIP_LLM_MODEL to a `@workspace/model` reference.",
     );
   }
+  for (const w of warnings) {
+    console.warn(`[config] ${w}`);
+  }
+  return { fakeLlm: !config.portkeyApiKey, warnings };
 }

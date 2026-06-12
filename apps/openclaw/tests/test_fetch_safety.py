@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from app.fetch import _extract_text, _is_safe_url
 
-
 # ---------- URL safety -----------------------------------------------------
 
 

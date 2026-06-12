@@ -198,6 +198,12 @@ export interface AuditEntry {
 export interface AuditQuery {
   action?: string;
   target_type?: string;
+  /** UUID of a specific actor (user or agent). */
+  actor_id?: string;
+  /** ISO timestamp; rows with created_at >= since. */
+  since?: string;
+  /** ISO timestamp; rows with created_at < until. */
+  until?: string;
   limit?: number;
 }
 
@@ -576,6 +582,166 @@ export interface SwarmDispatchResult {
   queued_run_ids: string[];
 }
 
+// ---------- Briefings + heartbeat + activity (Phase 4 / front door) -------
+
+export type BriefingKind = "daily" | "weekly" | "on_demand";
+
+export interface BriefingSources {
+  period_start: string;
+  period_end: string;
+  hours: number;
+  goal_count: number;
+  active_goal_count: number;
+  decision_count: number;
+  run_count: number;
+  audit_count: number;
+  [k: string]: unknown;
+}
+
+export interface BriefingRow {
+  id: string;
+  org_id: string;
+  user_id: string | null;
+  kind: BriefingKind;
+  generated_at: string;
+  period_start: string | null;
+  period_end: string | null;
+  summary_md: string;
+  sources: BriefingSources;
+  audio_url: string | null;
+}
+
+export interface BriefingGenerateBody {
+  kind?: BriefingKind;
+  period_hours?: number;
+}
+
+export interface HeartbeatPoint {
+  date: string;
+  value: number;
+}
+
+export interface HeartbeatSeries {
+  kpi: string;
+  label: string;
+  unit: string;
+  points: HeartbeatPoint[];
+}
+
+export interface HeartbeatResponse {
+  period_days: number;
+  period_start: string;
+  period_end: string;
+  series: HeartbeatSeries[];
+}
+
+export interface GoalsSummary {
+  total: number;
+  by_kind: { ephemeral: number; standing: number; routine: number; decision: number };
+  by_status: {
+    draft: number;
+    active: number;
+    paused: number;
+    achieved: number;
+    archived: number;
+  };
+  stalled_count: number;
+}
+
+export interface ActivityRow {
+  run_id: string;
+  goal_id: string;
+  goal_title: string;
+  goal_kind: string;
+  agent_id: string | null;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  duration_ms: number | null;
+  subtask_title: string | null;
+}
+
+// ---------- Goal context (Phase 9.1) --------------------------------------
+
+export interface GoalContext {
+  id: string;
+  org_id: string;
+  goal_id: string;
+  content_md: string;
+  content_hash: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------- Goal memory timeline (Phase 9.2) ------------------------------
+
+export type MemoryKind = "fact" | "episode" | "document" | "conversation";
+
+export interface GoalMemoryEntry {
+  id: string;
+  kind: MemoryKind | string;
+  title: string | null;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+// ---------- Memory Explorer (Phase 9.3) -----------------------------------
+
+export interface MemoryIdentityRow {
+  id: string;
+  slug: string;
+  title: string;
+  scope: string;
+  hot: boolean;
+  content_md: string;
+  tags: string[];
+  updated_at: string;
+}
+
+export interface MemoryContextRow {
+  goal_id: string;
+  goal_title: string;
+  goal_kind: string;
+  goal_status: string;
+  content_md: string;
+  content_hash: string | null;
+  updated_at: string;
+}
+
+export interface MemoryHistoryRow {
+  id: string;
+  goal_id: string | null;
+  goal_title: string | null;
+  kind: string;
+  title: string | null;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MemoryExploreResponse {
+  identity: MemoryIdentityRow[];
+  context: MemoryContextRow[];
+  history: MemoryHistoryRow[];
+}
+
+export interface MemoryIngestUrlBody {
+  url: string;
+  title?: string;
+  goal_id?: string;
+  tags?: string[];
+}
+
+export interface MemoryIngestUrlResult {
+  memory_id: string;
+  title: string;
+  length: number;
+  truncated: boolean;
+  url: string;
+}
+
 // ---------- Captures (Phase 4 / capture-first composer) -------------------
 
 export type CaptureSource = "text" | "email" | "voice" | "image" | "webhook";
@@ -622,11 +788,226 @@ export interface Organization {
   created_at: string;
 }
 
+export type WhoamiMode = "demo" | "verified";
+
+export interface WhoamiUser {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+}
+
 export interface Whoami {
   org: { id: string; slug: string | null; name: string | null };
   role: string;
   department: { id: string; name: string } | null;
   goal_id: string | null;
+  user: WhoamiUser | null;
+  mode: WhoamiMode;
+}
+
+export interface OrgMember {
+  id: string;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  created_at: string;
+  role: string | null;
+  department_id: string | null;
+  department_name: string | null;
+}
+
+// ---------- Invitations (Phase 6.b) ---------------------------------------
+
+export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
+export type InvitableRole = "owner" | "department_lead" | "team_member" | "auditor";
+
+export interface InvitationRow {
+  id: string;
+  org_id: string;
+  email: string;
+  role: string;
+  department_id: string | null;
+  department_name: string | null;
+  status: InvitationStatus;
+  invited_by_user_id: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Only present on POST /api/invitations response (and on resend). */
+  token?: string;
+  /** Always present on responses; convenient absolute URL for sharing. */
+  invite_url?: string;
+}
+
+export interface InvitationCreateBody {
+  email: string;
+  role?: InvitableRole;
+  department_id?: string | null;
+}
+
+export interface InvitationListQuery {
+  status?: InvitationStatus;
+  limit?: number;
+}
+
+export interface InvitationPublic {
+  id: string;
+  email: string;
+  role: string;
+  org: { slug: string | null; name: string | null };
+  department: { id: string; name: string | null } | null;
+  status: InvitationStatus;
+  expires_at: string;
+  invited_at: string;
+}
+
+export interface InvitationAcceptResult {
+  user_id: string;
+  org: { slug: string; name: string } | null;
+  role: InvitableRole;
+  department_id: string | null;
+  accepted_at: string | null;
+}
+
+// ---------- Onboarding (Phase 7 / wizard) ---------------------------------
+
+export type OnboardingMode = "single_user" | "multi_user";
+export type OnboardingTrack = "company" | "individual";
+
+export interface OnboardingQuestion {
+  id: string;
+  prompt: string;
+  hint?: string;
+  optional?: boolean;
+}
+
+export interface OnboardingAnswerRow {
+  question_id: string;
+  question: string;
+  answer: string;
+  asked_at: string;
+}
+
+export interface OnboardingProfile {
+  id: string;
+  org_id: string;
+  user_id: string | null;
+  mode: OnboardingMode;
+  answers: OnboardingAnswerRow[];
+  derived: Record<string, unknown>;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnboardingStartBody {
+  mode: OnboardingMode;
+  user_email?: string;
+  user_name?: string;
+}
+
+export interface OnboardingStartResult {
+  profile_id: string;
+  mode: OnboardingMode;
+  track: OnboardingTrack;
+  questions: OnboardingQuestion[];
+  answered: number;
+}
+
+export interface OnboardingNextResult {
+  profile_id: string;
+  mode: OnboardingMode;
+  track: OnboardingTrack;
+  total: number;
+  answered: number;
+  next: OnboardingQuestion | null;
+  remaining: OnboardingQuestion[];
+}
+
+export interface OnboardingAnswerBody {
+  question_id: string;
+  answer: string;
+}
+
+export interface OnboardingDerived {
+  voice_words?: string[];
+  banned_words?: string[];
+  decision_categories?: string[];
+  channels?: string[];
+  routine_hints?: string[];
+  briefing_hour_utc?: number;
+  [k: string]: unknown;
+}
+
+export interface OnboardingFinishResult {
+  profile: OnboardingProfile;
+  derived: OnboardingDerived;
+  routines_created: number;
+}
+
+// ---------- Billing (Phase 7.b) -------------------------------------------
+
+export type SubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete"
+  | "incomplete_expired"
+  | "paused";
+
+export interface SubscriptionRow {
+  id: string;
+  org_id: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  tier: string;
+  status: SubscriptionStatus;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  trial_end: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  /** Convenience flag from /api/billing/subscription (always present). */
+  is_free?: boolean;
+}
+
+export interface BillingPortal {
+  portal_url: string | null;
+  checkout_url: string | null;
+  configured: boolean;
+  tier: string;
+}
+
+export interface PricingPlan {
+  tier: "pro" | "studio";
+  name: string;
+  price_id: string;
+  price_display: string;
+  interval: "month" | "year";
+  highlights: string[];
+}
+
+export interface CheckoutSessionResult {
+  session_id: string;
+  url: string;
+  tier: string;
+}
+
+export interface BillingPortalSession {
+  url: string;
+}
+
+export interface OrgBootstrapResult {
+  user_id: string;
+  org_id: string;
+  org_slug: string;
+  org_name: string;
+  created: boolean;
 }
 
 export interface DispatchOk {

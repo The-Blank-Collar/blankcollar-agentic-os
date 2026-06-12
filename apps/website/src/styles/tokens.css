@@ -1,22 +1,44 @@
 :root {
-  /* Swiss editorial monochrome — dark first */
-  --bg: #0B0B0C;
+  /* Brand palette — aligned to theblankcollar.com design system.
+   * Dark-first; the light theme overrides below.
+   *
+   * Strategic colour use:
+   *   --lime  (#D6F41F) — signature accent. Use SPARINGLY — for the
+   *                       most-important "yes" moments, primary CTAs,
+   *                       hover targets. Not for every checkmark.
+   *   --pink  (#FF1F8F) — secondary accent. Use for focused states,
+   *                       active selections, important destructive
+   *                       confirmations. The "wake-up" colour.
+   *   --cream (#F4F2EC) — primary ink on dark / surface on light.
+   */
+  --bg: #0A0A0A;
   --bg-1: #111113;
   --bg-2: #16161A;
   --bg-3: #1C1C20;
   --line: #25252B;
   --line-2: #34343C;
-  --ink: #F5F4F0;
-  --ink-2: #B8B7B0;
-  --ink-3: #75747010;
-  --muted: #75747C;
+  --ink: #F4F2EC;
+  --ink-2: #C9CCD8;
+  --ink-3: #8A8FA310;
+  --muted: #6B6E80;
   --muted-2: #4A4A50;
-  --accent: #F5F4F0;
-  --accent-ink: #0B0B0C;
-  --pos: #B8FF5A;
+
+  /* Brand accents */
+  --cream: #F4F2EC;
+  --midnight: #0E1020;
+  --lime: #D6F41F;
+  --lime-fg: #D6F41F;
+  --pink: #FF1F8F;
+  --accent: var(--pink);
+  --accent-ink: var(--midnight);
+
+  /* Semantic states — rebalanced so positive ≠ lime
+   * (lime is reserved as a scarce signature accent above) */
+  --pos: #7DD957;
   --warn: #FFB454;
-  --neg: #FF6B5A;
+  --neg: #FF1F8F;
   --info: #7DC8FF;
+
   --grid: 8px;
   --pad-x: 32px;
   --pad-y: 24px;
@@ -31,18 +53,26 @@
   --font-serif: "Instrument Serif", Georgia, serif;
 }
 html[data-theme="light"] {
-  --bg: #F5F4F0;
-  --bg-1: #ECEAE3;
+  --bg: #F4F2EC;
+  --bg-1: #ECE9E0;
   --bg-2: #FFFFFF;
-  --bg-3: #F9F8F4;
+  --bg-3: #E2DFD3;
   --line: #DAD7CD;
   --line-2: #C5C2B6;
-  --ink: #0B0B0C;
-  --ink-2: #2A2A2E;
-  --muted: #75747C;
+  --ink: #0E1020;
+  --ink-2: #2A2C3C;
+  --muted: #6B6E80;
   --muted-2: #A09F98;
-  --accent: #0B0B0C;
-  --accent-ink: #F5F4F0;
+
+  /* Brand accents — light mode uses the deeper lime for legibility */
+  --cream: #F4F2EC;
+  --midnight: #0E1020;
+  --lime: #D6F41F;
+  --lime-fg: #1F4D00;
+  --pink: #FF1F8F;
+  --accent: var(--pink);
+  --accent-ink: var(--cream);
+
   --pos: #2D7A2D;
   --warn: #B86A00;
   --neg: #C0392B;
@@ -105,9 +135,13 @@ button { font-family: inherit; font-size: 13px; cursor: pointer; }
 }
 .btn:hover { background: var(--bg-2); border-color: var(--ink-2); }
 .btn-primary {
-  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  background: var(--accent); color: var(--cream); border-color: var(--accent);
+  font-weight: 500;
 }
-.btn-primary:hover { background: var(--ink-2); border-color: var(--ink-2); }
+.btn-primary:hover {
+  /* Brighter pink on hover — pulls the eye without leaving the brand */
+  background: #ff4ba2; border-color: #ff4ba2; color: var(--cream);
+}
 .btn-ghost { border-color: transparent; }
 .btn-ghost:hover { background: var(--bg-2); }
 .btn-sm { height: 26px; padding: 0 10px; font-size: 12px; }
@@ -127,11 +161,12 @@ button { font-family: inherit; font-size: 13px; cursor: pointer; }
 .dot.neg { background: var(--neg); }
 .dot.info { background: var(--info); }
 .dot.idle { background: var(--muted-2); }
+.dot.brand { background: var(--lime); }
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
   50% { box-shadow: 0 0 0 4px transparent; opacity: 0.6; }
 }
-.dot.live { background: var(--pos); color: var(--pos); animation: pulse 2s ease-in-out infinite; }
+.dot.live { background: var(--lime); color: var(--lime); animation: pulse 2s ease-in-out infinite; }
 
 /* Pill / chip */
 .pill {
@@ -267,7 +302,7 @@ button { font-family: inherit; font-size: 13px; cursor: pointer; }
 .nav-item:hover { background: var(--bg-2); color: var(--ink); }
 .nav-item.active {
   background: var(--bg-2); color: var(--ink);
-  box-shadow: inset 2px 0 0 var(--ink);
+  box-shadow: inset 2px 0 0 var(--pink);
 }
 .nav-item .ico { width: 14px; height: 14px; opacity: 0.85; flex-shrink: 0; }
 .nav-item .count { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); flex-shrink: 0; }
@@ -769,11 +804,11 @@ html[data-theme="light"] .brain-panel { background: rgba(245,244,240,0.8); }
 .live-tag {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); font-size: 10.5px;
-  color: var(--pos); text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--lime); text-transform: uppercase; letter-spacing: 0.1em;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.live-tag .dot { background: var(--pos); }
+.live-tag .dot { background: var(--lime); }
 
 /* Channel logos (text-based mini) */
 .ch-tag {

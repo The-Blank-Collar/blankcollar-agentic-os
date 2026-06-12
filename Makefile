@@ -89,6 +89,14 @@ gates: ## Static gates: typecheck + lint + tests across paperclip + cli
 setup-keys: ## Interactively prompt for each API key → write to .env (hidden, no shell history)
 	@./infra/scripts/setup-keys.sh
 
+.PHONY: setup-supabase
+setup-supabase: ## Wire Supabase auth — paste the 3 dashboard values, .env updated, containers rebuilt
+	@./infra/scripts/setup-supabase.sh
+
+.PHONY: setup-stripe
+setup-stripe: ## Wire Stripe Checkout — paste secret key + price IDs + webhook secret, .env updated, paperclip restarted
+	@./infra/scripts/setup-stripe.sh
+
 .PHONY: ps
 ps: ## Show running containers
 	$(COMPOSE) ps

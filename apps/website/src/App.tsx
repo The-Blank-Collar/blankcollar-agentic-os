@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Sidebar } from "./shell/Sidebar";
 import { Topbar } from "./shell/Topbar";
 import { Dashboard } from "./pages/Dashboard";
@@ -13,10 +13,15 @@ import { Inbox } from "./pages/Inbox";
 import { Kanban } from "./pages/Kanban";
 import { Settings } from "./pages/Settings";
 import { Print } from "./pages/Print";
-import { MobilePlaceholder } from "./pages/MobilePlaceholder";
+import { Mobile } from "./pages/Mobile";
 import { goals } from "./data/fixtures";
 import { CommandPalette } from "./lib/cmdk";
 import { GoalComposer } from "./components/GoalComposer";
+import { InviteAccept } from "./components/InviteAccept";
+import { OnboardingWizard } from "./components/OnboardingWizard";
+import { api } from "./lib/api";
+import { useAuth } from "./lib/auth";
+import { AuthGate } from "./pages/AuthGate";
 import {
   DEFAULT_TWEAKS,
   TweakRadio,
@@ -53,11 +58,19 @@ const CRUMBS: Record<Exclude<PageId, "goal">, string[]> = {
 };
 
 export default function App() {
+  const auth = useAuth();
   const [tweaks, setTweak] = useTweaks(DEFAULT_TWEAKS);
   const [page, setPage] = useState<PageId>("dashboard");
   const [goalId, setGoalId] = useState<string | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("invite");
+    return t && /^[a-f0-9]{32,128}$/.test(t) ? t : null;
+  });
   const [printMode, setPrintMode] = useState<boolean>(
     typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "") === "print",
   );
@@ -89,6 +102,70 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  // Phase 8.1 bootstrap. In auth mode, the very first sign-in for a
+  // verified user provisions their org + owner role + seed pack on the
+  // server. The auth preHandler does this implicitly, but firing the
+  // explicit endpoint once keeps the state machine deterministic — we
+  // know the org exists before any other page hits whoami.
+  useEffect(() => {
+    if (auth.mode !== "auth") {
+      setBootstrapped(true);
+      return;
+    }
+    if (!auth.session) {
+      setBootstrapped(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const fullName = (auth.user?.user_metadata?.full_name as string | undefined) ?? undefined;
+        const result = await api.bootstrapOrg(fullName ? { full_name: fullName } : undefined);
+        // Fresh provision → make sure the wizard auto-opens for them
+        // even if a stale dismissal flag is sitting in storage from
+        // earlier testing.
+        if (result.created) {
+          window.localStorage.removeItem("bc.onboarding.dismissed");
+          window.sessionStorage.removeItem("bc.onboarding.dismissed");
+        }
+      } catch {
+        // Best-effort. If bootstrap fails we still let the app render —
+        // whoami will surface the issue with a friendlier shape.
+      }
+      if (!cancelled) setBootstrapped(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.mode, auth.session, auth.user]);
+
+  // First-run onboarding. If no profile exists yet (404), or one exists but
+  // hasn't been completed, offer the wizard. Suppressed only for the
+  // current TAB via sessionStorage — so the dismissal doesn't follow the
+  // user across browser sessions or across distinct sign-ins. Honours the
+  // legacy localStorage flag too, but writes the new one going forward.
+  useEffect(() => {
+    if (!bootstrapped) return;
+    if (inviteToken) return; // Don't compete with the invite landing.
+    const dismissedSession = window.sessionStorage.getItem("bc.onboarding.dismissed") === "true";
+    if (dismissedSession) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await api.onboardingProfile();
+        if (cancelled) return;
+        if (!profile || !profile.completed_at) {
+          setOnboardingOpen(true);
+        }
+      } catch {
+        // Best-effort — don't block the app if the endpoint is down.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken, bootstrapped]);
+
   const openGoal = (id: string): void => {
     setGoalId(id);
     setPage("goal");
@@ -107,6 +184,46 @@ export default function App() {
     return <Print />;
   }
 
+  // Phase 8.1 — when auth is enabled and the user isn't signed in, render
+  // the AuthGate. Demo mode (no Supabase env) skips this entirely.
+  if (auth.mode === "auth") {
+    if (auth.loading) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--bg)",
+            color: "var(--muted)",
+            fontSize: 13,
+            fontFamily: "var(--font-sans)",
+          }}
+        >
+          Loading…
+        </div>
+      );
+    }
+    if (!auth.session) return <AuthGate />;
+    if (!bootstrapped) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--bg)",
+            color: "var(--muted)",
+            fontSize: 13,
+            fontFamily: "var(--font-sans)",
+          }}
+        >
+          Setting up your studio…
+        </div>
+      );
+    }
+  }
+
   const crumbs = (() => {
     if (page === "goal") {
       const g = goals.find((x) => x.id === goalId);
@@ -115,7 +232,7 @@ export default function App() {
     return CRUMBS[page] ?? ["Studio"];
   })();
 
-  let content: JSX.Element;
+  let content: ReactElement;
   switch (page) {
     case "goal":
       content = (
@@ -147,13 +264,13 @@ export default function App() {
       content = <Tools />;
       break;
     case "activity":
-      content = <Activity />;
+      content = <Activity onOpenGoal={openGoal} />;
       break;
     case "inbox":
       content = <Inbox onOpenGoal={openGoal} />;
       break;
     case "settings":
-      content = <Settings />;
+      content = <Settings onOpenOnboarding={() => setOnboardingOpen(true)} />;
       break;
     default:
       content = (
@@ -184,9 +301,7 @@ export default function App() {
       </div>
 
       {surface === "mobile" ? (
-        <div className="mobile-stage">
-          <MobilePlaceholder />
-        </div>
+        <Mobile onCapture={() => setComposerOpen(true)} />
       ) : (
         <div className="shell">
           <Sidebar
@@ -217,6 +332,34 @@ export default function App() {
         open={composerOpen}
         onClose={() => setComposerOpen(false)}
         onCreated={(id) => openGoal(id)}
+      />
+
+      {inviteToken && (
+        <InviteAccept
+          token={inviteToken}
+          onClose={() => {
+            setInviteToken(null);
+            // Strip the invite param so a refresh doesn't re-open the modal.
+            const url = new URL(window.location.href);
+            url.searchParams.delete("invite");
+            window.history.replaceState({}, "", url.toString());
+          }}
+        />
+      )}
+
+      <OnboardingWizard
+        open={onboardingOpen}
+        onClose={() => {
+          setOnboardingOpen(false);
+          // Suppress for this TAB only (sessionStorage). A fresh tab,
+          // a new sign-in, or a re-bootstrap will surface the wizard
+          // again automatically. Re-open any time from
+          // Settings → Onboarding without clearing storage.
+          window.sessionStorage.setItem("bc.onboarding.dismissed", "true");
+        }}
+        onCompleted={() => {
+          window.sessionStorage.setItem("bc.onboarding.dismissed", "true");
+        }}
       />
 
       <TweaksPanel title="Tweaks">

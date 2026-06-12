@@ -14,12 +14,16 @@ import { agentRoutes } from "./routes/agents.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { autonomyRoutes } from "./routes/autonomy.js";
 import { auditRoutes } from "./routes/audit.js";
+import { billingRoutes } from "./routes/billing.js";
 import { brainRoutes } from "./routes/brain.js";
 import { briefingRoutes } from "./routes/briefings.js";
 import { captureRoutes } from "./routes/captures.js";
 import { channelRoutes } from "./routes/channels.js";
 import { connectorRoutes } from "./routes/connectors.js";
+import { goalContextRoutes } from "./routes/goal-context.js";
 import { goalRoutes } from "./routes/goals.js";
+import { memoryRoutes } from "./routes/memory.js";
+import { memoryIngestRoutes } from "./routes/memory-ingest.js";
 import { healthRoutes } from "./routes/health.js";
 import { heartbeatRoutes } from "./routes/heartbeat.js";
 import { inboxRoutes } from "./routes/inbox.js";
@@ -27,6 +31,7 @@ import { keyResultRoutes } from "./routes/keyresults.js";
 import { documentRoutes } from "./routes/documents.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { upstreamRoutes } from "./routes/upstream.js";
+import { invitationRoutes } from "./routes/invitations.js";
 import { llmRoutes } from "./routes/llm.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { orgRoutes } from "./routes/orgs.js";
@@ -90,11 +95,23 @@ async function main(): Promise<void> {
     maxAge: 86_400,
   });
 
-  // Supabase JWT auth (no-op when SUPABASE_JWT_SECRET unset).
+  // Supabase JWT auth (no-op when neither SUPABASE_URL nor
+  // SUPABASE_JWT_SECRET is set). Modern Supabase projects sign with
+  // asymmetric keys we fetch via JWKS at SUPABASE_URL; legacy projects
+  // hand out HS256 tokens verified with the shared secret.
   app.addHook("preHandler", authPreHandler);
-  if (config.supabaseJwtSecret) {
+  if (config.supabaseProjectUrl && config.supabaseJwtSecret) {
     app.log.info(
-      `auth=supabase enforce=${config.authEnforce} (set PAPERCLIP_AUTH_ENFORCE=true to require tokens)`,
+      `auth=supabase (jwks + hs256 fallback) enforce=${config.authEnforce}`,
+    );
+  } else if (config.supabaseProjectUrl) {
+    app.log.info(
+      `auth=supabase (jwks via ${config.supabaseProjectUrl}/auth/v1/.well-known/jwks.json) ` +
+        `enforce=${config.authEnforce}`,
+    );
+  } else if (config.supabaseJwtSecret) {
+    app.log.info(
+      `auth=supabase (hs256 legacy) enforce=${config.authEnforce}`,
     );
   } else {
     app.log.info("auth=stub (Supabase not configured; demo-org owner for all callers)");
@@ -113,8 +130,12 @@ async function main(): Promise<void> {
   await app.register(webhookRoutes);
   await app.register(healthRoutes);
   await app.register(orgRoutes);
+  await app.register(invitationRoutes);
   await app.register(outcomeRoutes);
   await app.register(goalRoutes);
+  await app.register(goalContextRoutes);
+  await app.register(memoryRoutes);
+  await app.register(memoryIngestRoutes);
   await app.register(keyResultRoutes);
   await app.register(captureRoutes);
   await app.register(briefingRoutes);
@@ -127,6 +148,7 @@ async function main(): Promise<void> {
   await app.register(routineRoutes);
   await app.register(onboardingRoutes);
   await app.register(paymentRoutes);
+  await app.register(billingRoutes);
   await app.register(policyRoutes);
   await app.register(selfImprovementRoutes);
   await app.register(knowledgeRoutes);
