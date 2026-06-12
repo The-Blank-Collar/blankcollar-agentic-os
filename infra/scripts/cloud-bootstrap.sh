@@ -13,6 +13,10 @@
 #   …or if you've already cloned the repo on the server:
 #     sudo bash ./infra/scripts/cloud-bootstrap.sh
 #
+#   Self-managed ingress (no Coolify — e.g. the Hostinger + Caddy overlay
+#   path in docs/HOSTINGER_DEPLOY.md):
+#     curl -fsSL .../cloud-bootstrap.sh | sudo SKIP_COOLIFY=1 bash
+#
 # What it does (in order):
 #   1. apt update + upgrade  (security patches)
 #   2. Adds a 4 GB swap file (insurance against memory bursts on the 8 GB box)
@@ -84,7 +88,9 @@ ufw default allow outgoing
 ufw allow 22/tcp comment 'SSH'
 ufw allow 80/tcp comment 'HTTP (Coolify Caddy)'
 ufw allow 443/tcp comment 'HTTPS (Coolify Caddy)'
-ufw allow 8000/tcp comment 'Coolify admin UI'
+if [[ "${SKIP_COOLIFY:-0}" != "1" ]]; then
+  ufw allow 8000/tcp comment 'Coolify admin UI'
+fi
 ufw --force enable
 ufw status verbose
 
@@ -111,7 +117,9 @@ fi
 # 6. Coolify (official one-liner)
 # -----------------------------------------------------------------------------
 step "6/7  Coolify — install via official installer"
-if [[ ! -d /data/coolify ]]; then
+if [[ "${SKIP_COOLIFY:-0}" == "1" ]]; then
+  echo "  · SKIP_COOLIFY=1 — skipping (self-managed Caddy ingress)"
+elif [[ ! -d /data/coolify ]]; then
   curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash
 else
   echo "  · /data/coolify already present; skipping installer"
@@ -123,7 +131,17 @@ fi
 PUBLIC_IP="$(curl -fsSL https://ipv4.icanhazip.com 2>/dev/null || echo '<your-server-ip>')"
 
 step "7/7  Done. Next steps"
-cat <<EOF
+if [[ "${SKIP_COOLIFY:-0}" == "1" ]]; then
+  cat <<EOF
+
+✓ Server is bootstrapped (self-managed ingress — no Coolify).
+
+Next: clone the repo, configure .env, and bring the stack up behind
+Caddy. Follow docs/HOSTINGER_DEPLOY.md → "Personal headless mode".
+
+EOF
+else
+  cat <<EOF
 
 ✓ Server is bootstrapped.
 
@@ -139,3 +157,4 @@ admin" onward. The repo is already public on GitHub, so the only
 remaining task on the server is wiring Coolify to deploy from it.
 
 EOF
+fi
